@@ -1,3 +1,16 @@
 {
-  "worktree": { "bgIsolation": "none" }
+  "worktree": { "bgIsolation": "none" },
+  "permissions": {
+    "allow": [
+      "Bash(git *)",
+      "Bash(gh *)",
+      "Bash(cargo *)",
+      "Bash(rustup *)",
+      "Bash(rustc *)"
+    ],
+    "deny": [
+      "Bash(git push --force*)",
+      "Bash(git push -f*)"
+    ]
+  }
 }
