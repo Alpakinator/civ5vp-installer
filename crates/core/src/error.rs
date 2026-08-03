@@ -22,6 +22,13 @@ pub enum GameFolderProblem {
     NotAbsolute,
     /// Nothing there, or there but not a directory.
     NotADirectory,
+    /// The MODS and Text Folders are not in the same `Sid Meier's Civilization 5` folder.
+    ///
+    /// In a real install they always are, and the installer relies on it: the game's `cache`
+    /// folder is their sibling, and clearing it is the one write rule 6 allows outside a
+    /// Claimed Folder. Two folders that disagree about where the game is mean the installer
+    /// cannot say which `cache` is the right one, so it refuses rather than guessing.
+    NotBesideTheOthers,
 }
 
 /// Anything that can stop a Deployment.
@@ -94,6 +101,12 @@ impl InstallError {
                 ),
                 GameFolderProblem::NotADirectory => format!(
                     "There is no {which} folder at {}. Check the path and try again.",
+                    path.display()
+                ),
+                GameFolderProblem::NotBesideTheOthers => format!(
+                    "Your MODS and Text folders should both be inside the same \
+                     \"Sid Meier's Civilization 5\" folder, but the {which} folder is at {}. \
+                     Pick them again, or let the installer detect them for you.",
                     path.display()
                 ),
             },

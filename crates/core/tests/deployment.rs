@@ -31,9 +31,14 @@ fn core_over(game: &GameFixture) -> Core {
     )
 }
 
-/// The tracer bullet: one configuration, all the way through, asserted on disk.
+/// The tracer bullet: one configuration, all the way through, reported back to the caller.
+///
+/// The resulting file tree is asserted in `matrix.rs`, which does it for all six legal
+/// configurations. What is checked here is the part the shell renders — what the Core says it
+/// did — and that the deployed DLL is the built one rather than the repository's stale copy
+/// (ADR-0001).
 #[test]
-fn community_patch_only_deploys_one_mod_folder_and_the_built_dll() {
+fn a_deployment_reports_what_it_did() {
     let game = GameFixture::new();
     let core = core_over(&game);
 
@@ -44,24 +49,17 @@ fn community_patch_only_deploys_one_mod_folder_and_the_built_dll() {
         .execute(&plan, &ProgressReporter::silent())
         .expect("the install should succeed");
 
+    assert_eq!(outcome.deployed, vec![ClaimedFolder::CommunityPatch]);
+    assert_eq!(outcome.removed, Vec::new());
     assert_eq!(
-        game.files(),
-        vec![
-            "MODS/(1) Community Patch/(1) Community Patch.modinfo",
-            "MODS/(1) Community Patch/Core Files/Core Values/DefinesChanges.sql",
-            "MODS/(1) Community Patch/CvGameCore_Expansion2.dll",
-            "MODS/(1) Community Patch/LUA/CityView.lua",
-        ],
+        outcome.built_dll,
+        game.game_root()
+            .join("MODS/(1) Community Patch/CvGameCore_Expansion2.dll"),
     );
-
-    // The deployed DLL is the one the toolchain built, not the stale one checked into the
-    // repository (ADR-0001).
     assert_eq!(
         game.read("MODS/(1) Community Patch/CvGameCore_Expansion2.dll"),
         DLL_MARKER,
     );
-    assert_eq!(outcome.deployed, vec![ClaimedFolder::CommunityPatch]);
-    assert_eq!(outcome.removed, Vec::new());
 }
 
 /// Progress reaches the caller, in order, and the last word is about the game.
@@ -133,6 +131,149 @@ fn content_outside_the_claimed_folders_survives() {
     assert_eq!(
         game.read("DLC/Expansion2/Expansion2.Civ5Pkg"),
         "the game's own DLC"
+    );
+}
+
+/// User story 23: the stale-cache corruption the community fixes by hand. The game's `cache`
+/// folder is emptied after Deployment, and `ModUserData` — its sibling — is left alone.
+#[test]
+fn the_game_cache_is_cleared_and_mod_user_data_is_preserved() {
+    let game = GameFixture::new();
+    let core = core_over(&game);
+    game.plant(
+        "cache/Civ5DebugDatabase.db",
+        "stale cache from the last install",
+    );
+    game.plant("cache/Localization-Merged.db", "also stale");
+    game.plant(
+        "ModUserData/(1) Community Patch.db",
+        "my saved mod settings",
+    );
+
+    let plan = core.plan(&community_patch_only(), &game.folders()).unwrap();
+    core.execute(&plan, &ProgressReporter::silent()).unwrap();
+
+    assert!(
+        !game.game_root().join("cache/Civ5DebugDatabase.db").exists(),
+        "the cache should have been cleared",
+    );
+    assert!(
+        !game
+            .game_root()
+            .join("cache/Localization-Merged.db")
+            .exists(),
+        "the cache should have been cleared",
+    );
+    assert!(
+        game.game_root().join("cache").is_dir(),
+        "the cache folder itself should survive — the game expects to find it",
+    );
+    assert_eq!(
+        game.read("ModUserData/(1) Community Patch.db"),
+        "my saved mod settings",
+        "ModUserData is never touched",
+    );
+}
+
+/// User story 24: Uninstall returns an unmodded game.
+#[test]
+fn uninstall_removes_every_claimed_folder_and_leaves_everything_else() {
+    let game = GameFixture::new();
+    let core = core_over(&game);
+    game.plant("MODS/Some Other Mod/SomeOtherMod.modinfo", "not ours");
+    game.plant("DLC/Expansion2/Expansion2.Civ5Pkg", "the game's own DLC");
+    game.plant(
+        "ModUserData/(1) Community Patch.db",
+        "my saved mod settings",
+    );
+    let unmodded = game.files();
+
+    let plan = core.plan(&community_patch_only(), &game.folders()).unwrap();
+    core.execute(&plan, &ProgressReporter::silent()).unwrap();
+    game.plant("cache/Civ5DebugDatabase.db", "written by the game since");
+    assert_ne!(
+        game.files(),
+        unmodded,
+        "the install should have changed something"
+    );
+
+    let outcome = core
+        .uninstall(&game.folders(), &ProgressReporter::silent())
+        .expect("uninstall should succeed");
+
+    assert_eq!(
+        game.files(),
+        unmodded,
+        "the game should be back to unmodded"
+    );
+    assert_eq!(outcome.removed, vec![ClaimedFolder::CommunityPatch]);
+}
+
+/// Uninstalling a game that was never modded is a no-op rather than an error, so the button
+/// is safe to press twice.
+#[test]
+fn uninstall_is_idempotent() {
+    let game = GameFixture::new();
+    let core = core_over(&game);
+    game.plant("MODS/Some Other Mod/SomeOtherMod.modinfo", "not ours");
+    let before = game.files();
+
+    for _ in 0..2 {
+        let outcome = core
+            .uninstall(&game.folders(), &ProgressReporter::silent())
+            .expect("uninstalling an unmodded game should succeed");
+        assert_eq!(outcome.removed, Vec::new());
+        assert_eq!(game.files(), before);
+    }
+}
+
+/// Uninstall deletes things, so it runs the same folder checks a Deployment does — otherwise
+/// a relative MODS folder would aim `remove_dir_all` at the working directory (rule 6).
+#[test]
+fn uninstall_refuses_game_folders_it_cannot_trust() {
+    let game = GameFixture::new();
+    let core = core_over(&game);
+    let folders = GameFolders {
+        mods: PathBuf::from("MODS"),
+        ..game.folders()
+    };
+
+    let error = core
+        .uninstall(&folders, &ProgressReporter::silent())
+        .expect_err("a relative MODS folder should be refused");
+
+    assert!(
+        error.user_message().contains("full path"),
+        "expected a plain-language message, got: {}",
+        error.user_message(),
+    );
+    assert!(!Path::new("MODS").exists());
+}
+
+/// The `cache` folder Sync clears is the MODS and Text Folders' sibling. If those two do not
+/// agree on where the game is, there is no single right answer — so the configuration is
+/// refused rather than a `cache` somewhere being emptied on a guess.
+#[test]
+fn game_folders_that_disagree_about_where_the_game_is_are_refused() {
+    let game = GameFixture::new();
+    let core = core_over(&game);
+    let elsewhere = game.game_root().join("somewhere-else");
+    std::fs::create_dir_all(elsewhere.join("Text")).unwrap();
+
+    let folders = GameFolders {
+        text: elsewhere.join("Text"),
+        ..game.folders()
+    };
+    let error = core
+        .plan(&community_patch_only(), &folders)
+        .expect_err("MODS and Text in different places should be refused");
+
+    assert!(
+        error
+            .user_message()
+            .contains("same \"Sid Meier's Civilization 5\" folder"),
+        "expected a plain-language message, got: {}",
+        error.user_message(),
     );
 }
 
@@ -248,25 +389,18 @@ fn game_folders_that_are_not_real_absolute_directories_are_refused() {
     );
 }
 
-/// The walking skeleton cannot deploy Vox Populi yet. It says so at plan time, before any
-/// fetching or building happens — ticket 02 replaces this with the real matrix.
+/// Vox Populi used to be refused at plan time — the walking skeleton could only deploy the
+/// Community Patch. It plans now. What the whole matrix actually deploys is `matrix.rs`.
 #[test]
-fn vox_populi_is_refused_at_plan_time_for_now() {
+fn vox_populi_is_a_legal_configuration() {
     let game = GameFixture::new();
     let core = core_over(&game);
 
     let configuration = InstallConfiguration {
-        flavor: Flavor::VoxPopuli { eui: Eui::Disabled },
+        flavor: Flavor::VoxPopuli { eui: Eui::Enabled },
         ..community_patch_only()
     };
-    let error = core
-        .plan(&configuration, &game.folders())
-        .expect_err("Vox Populi is not deployable in the walking skeleton");
 
-    assert!(
-        error.user_message().contains("Vox Populi"),
-        "expected a plain-language message, got: {}",
-        error.user_message(),
-    );
-    assert_eq!(game.files(), Vec::<String>::new());
+    core.plan(&configuration, &game.folders())
+        .expect("Vox Populi with EUI is a legal configuration");
 }

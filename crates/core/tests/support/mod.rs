@@ -8,6 +8,10 @@
 //! committed fixture tree, [`MarkerToolchainRunner`] writes a recognisable marker instead of
 //! compiling. So the fast suite never clones, downloads, or compiles anything.
 
+// Each integration test file compiles its own copy of this module, and none of them uses all
+// of it — the failure providers belong to `deployment.rs`, the matrix constants to `matrix.rs`.
+#![allow(dead_code)]
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -119,6 +123,11 @@ impl GameFixture {
             fixture.game_root().join("MODS"),
             fixture.game_root().join("DLC"),
             fixture.game_root().join("Text"),
+            // The Documents side of a real install has these beside MODS and Text. `cache` is
+            // cleared after every Deployment; `ModUserData` holds the player's own mod saves
+            // and is never touched.
+            fixture.game_root().join("cache"),
+            fixture.game_root().join("ModUserData"),
             fixture.work_dir(),
         ] {
             fs::create_dir_all(folder).unwrap();

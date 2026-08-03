@@ -31,12 +31,12 @@ mod progress;
 mod tree;
 
 pub use boundaries::{BoundaryError, BuildRequest, SourceProvider, ToolchainRunner};
-pub use claimed::{ClaimedFolder, DeploymentTarget, GameFolders};
+pub use claimed::{ClaimedFile, ClaimedFolder, DeploymentTarget, GameFolders};
 pub use configuration::{
     Eui, Flavor, FortyThreeCivs, InstallConfiguration, InstallationSource, Version,
 };
 pub use error::{GameFolderProblem, InstallError};
-pub use install::{Core, InstallOutcome};
+pub use install::{Core, InstallOutcome, UninstallOutcome};
 pub use plan::Plan;
 pub use progress::{ProgressEvent, ProgressReporter, Stage};
 
