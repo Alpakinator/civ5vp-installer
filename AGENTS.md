@@ -26,7 +26,7 @@ UPDATE_SNAPSHOTS=true cargo test  # accept changed egui_kittest snapshot baselin
 
 `--screenshot` takes `--size <WxH>` and `--scale <factor>`, each repeatable; every screen is rendered at every combination. `cargo run -- --help` lists them.
 
-There are no `#[ignore]`d tests yet — tickets 04, 05 and 06 add the first real-clone and real-toolchain ones. The command runs and reports nothing until then.
+The only `#[ignore]`d test today is ticket 03's `detection_finds_the_game_on_this_machine`, which asks the real Steam install on the developer's machine to be found — the one check the fixture trees cannot make. The real-clone and real-toolchain ones arrive with tickets 04, 05 and 06.
 
 Run clippy and the fast suite regularly; the full suite once before handing work back.
 

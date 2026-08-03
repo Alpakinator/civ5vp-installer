@@ -3,6 +3,7 @@
 use std::process::ExitCode;
 use std::sync::Arc;
 
+use civ5vp_core::{AppDataStore, SearchLocations};
 use civ5vp_installer::cli::{self, Command};
 use civ5vp_installer::{InstallerApp, placeholder, screenshot};
 
@@ -34,7 +35,15 @@ fn main() -> ExitCode {
 }
 
 fn run_app() -> Result<(), String> {
-    let core = Arc::new(placeholder::core(work_dir()));
+    // The App Data Store is the installer's one directory: the Core works in it, the settings
+    // live in it, and the Upstream Cache and Toolchain Cache join them there in later tickets.
+    // The executable itself stores nothing beside itself.
+    let store = AppDataStore::for_this_platform().map_err(|problem| {
+        eprintln!("[civ5vp-installer] {}", problem.log_detail());
+        problem.user_message()
+    })?;
+    let core = Arc::new(placeholder::core(store.root().to_path_buf()));
+    let locations = SearchLocations::for_this_platform();
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Civ 5 VP Installer")
@@ -44,13 +53,7 @@ fn run_app() -> Result<(), String> {
     eframe::run_native(
         "civ5vp-installer",
         native_options,
-        Box::new(|_cc| Ok(Box::new(InstallerApp::new(core)))),
+        Box::new(move |_cc| Ok(Box::new(InstallerApp::launch(core, store, &locations)))),
     )
     .map_err(|err| format!("could not open the installer window: {err}"))
-}
-
-/// Scratch space for the Core. The App Data Store — the real home for this, alongside the
-/// Upstream Cache and the Toolchain Cache — arrives with ticket 03.
-fn work_dir() -> std::path::PathBuf {
-    std::env::temp_dir().join("civ5vp-installer")
 }

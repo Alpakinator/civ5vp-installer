@@ -24,10 +24,12 @@
 mod boundaries;
 mod claimed;
 mod configuration;
+mod detect;
 mod error;
 mod install;
 mod plan;
 mod progress;
+mod settings;
 mod tree;
 
 pub use boundaries::{BoundaryError, BuildRequest, SourceProvider, ToolchainRunner};
@@ -35,10 +37,16 @@ pub use claimed::{ClaimedFolder, DeploymentTarget, GameFolders};
 pub use configuration::{
     Eui, Flavor, FortyThreeCivs, InstallConfiguration, InstallationSource, Version,
 };
+pub use detect::{
+    DetectedGame, Detection, DocumentsFolder, FolderKind, FolderRejected, GameInstallation,
+    RejectionReason, SearchLocations, detect_game, game_folders, resolve_game_folders,
+    validate_documents_folder, validate_game_installation,
+};
 pub use error::{GameFolderProblem, InstallError};
 pub use install::{Core, InstallOutcome};
 pub use plan::Plan;
 pub use progress::{ProgressEvent, ProgressReporter, Stage};
+pub use settings::{AppDataStore, Settings, SettingsError, Startup, start_up};
 
 /// The file name of the Built DLL, in the game's MODS Folder and in the build directory.
 pub const BUILT_DLL_FILE_NAME: &str = "CvGameCore_Expansion2.dll";
