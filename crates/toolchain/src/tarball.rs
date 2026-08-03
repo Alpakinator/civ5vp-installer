@@ -178,6 +178,48 @@ pub fn clang_path(llvm_root: &Path) -> PathBuf {
 mod tests {
     use super::*;
 
+    /// Unpack a real LLVM release tarball, without the 1.45 GiB disc image alongside it.
+    ///
+    /// `#[ignore]`d and driven by an environment variable. It exists because the fixture in
+    /// this file is a few kilobytes compressed by `lzma-rs` itself, and the pinned artifact is
+    /// a gigabyte compressed by whatever `xz` llvm.org runs — a stream with many blocks, and
+    /// the one place a pure-Rust xz decoder is most likely to disagree with the encoder that
+    /// produced it.
+    ///
+    /// ```bash
+    /// CIV5VP_LLVM_ARCHIVE=/path/to/clang+llvm-18.1.8-....tar.xz \
+    ///   cargo test --release -p civ5vp-toolchain --lib -- --ignored --nocapture unpacks_a_real
+    /// ```
+    #[test]
+    #[ignore = "needs a real LLVM release tarball in CIV5VP_LLVM_ARCHIVE"]
+    fn unpacks_a_real_llvm_release() {
+        let Some(archive) = std::env::var_os("CIV5VP_LLVM_ARCHIVE") else {
+            panic!("set CIV5VP_LLVM_ARCHIVE to a clang+llvm release tarball");
+        };
+        let archive = PathBuf::from(archive);
+        let Some(pinned) = crate::pinned::llvm_for_host() else {
+            panic!("no pinned LLVM for this host to compare against");
+        };
+
+        let dir = tempfile::tempdir().unwrap();
+        let started = std::time::Instant::now();
+        let kept = extract_llvm(
+            &archive,
+            pinned.archive_root,
+            dir.path(),
+            &civ5vp_core::ProgressReporter::silent(),
+        )
+        .unwrap_or_else(|error| panic!("{}\n  detail: {}", error.message(), error.detail()));
+
+        println!("kept {kept} files in {:?}", started.elapsed());
+        let clang = clang_path(dir.path());
+        assert!(clang.is_file(), "{} should exist", clang.display());
+        assert!(dir.path().join("bin/lld-link").exists());
+        assert!(dir.path().join("lib/clang/18/include/stddef.h").exists());
+        // The filter did its job: none of LLVM's own static libraries came through.
+        assert!(!dir.path().join("lib/libLLVMCore.a").exists());
+    }
+
     #[test]
     fn only_the_compiler_driver_linker_and_builtin_headers_are_kept() {
         assert!(is_kept("bin/clang-cl"));
