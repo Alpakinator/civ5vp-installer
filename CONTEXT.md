@@ -38,7 +38,7 @@ Glossary for the Vox Populi installer for Civilization V. Terms only — no impl
 
 **Claimed Folders** — the exact set of folders the installer owns and may create, sync, or delete: `(1) Community Patch`, `(2) Vox Populi`, `(3a) VP - EUI Compatibility Files`, `(3b) 43 Civs Community Patch`, `(4a) Squads for VP` in the MODS Folder; `VPUI` and `UI_bc1` in the DLC Folder.
 
-A folder that upstream has renamed is Claimed under **every** name it has gone by, and is deployed under the one in current use. `(3a)` was `(3a) EUI Compatibility Files` up to and including `Release-5.0`; both spellings are Claimed, because both are Versions the installer offers and a player who installs one after the other must not end up with the mod twice.
+A folder that upstream has renamed is Claimed under **every** name it has gone by, and is deployed under the one in current use. `(3a)` was `(3a) EUI Compatibility Files` up to and including `Release-5.1`; both spellings are Claimed, because both are Versions the installer offers and a player who installs one after the other must not end up with the mod twice.
 
 **Claimed Files** — the exact set of individual files the installer owns, in folders it does not own: `VPUI_tips_en_us.xml` in the Text Folder. A Claimed Folder is replaced wholesale, which is what makes Sync exact; that is not available in a folder the game and other mods also write to, so those files are named one by one instead.
 

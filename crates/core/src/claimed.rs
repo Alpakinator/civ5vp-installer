@@ -121,10 +121,10 @@ impl ClaimedFolder {
     /// Every name this folder has been known by, the one in current use first.
     ///
     /// Upstream renames these. `(3a)` was `(3a) EUI Compatibility Files` up to and including
-    /// `Release-5.0` and `(3a) VP - EUI Compatibility Files` by `Release-5.4.2`, and the
-    /// installer supports installing either — so a single hardcoded name would make an older
-    /// Release fail with "the mod files are missing …" for a folder that is right there under
-    /// its old name.
+    /// `Release-5.1`, and `(3a) VP - EUI Compatibility Files` from `Release-5.2` onwards. The
+    /// installer offers every one of those Versions, so a single hardcoded name would make an
+    /// older Release fail with "the mod files are missing …" for a folder that is right there
+    /// under its old name.
     ///
     /// Every name here is Claimed. That matters as much for removal as for deployment: a player
     /// who installs an old Release and then a new one must not be left with both folders, which

@@ -1,4 +1,4 @@
-//! Synthetic archives, built byte by byte, so the readers can be tested without the 580 MB
+//! Synthetic archives, built byte by byte, so the readers can be tested without the 1.45 GiB
 //! download (rule 13).
 //!
 //! Everything here is `#[cfg(test)]`: it is compiled into the test binary only and is not

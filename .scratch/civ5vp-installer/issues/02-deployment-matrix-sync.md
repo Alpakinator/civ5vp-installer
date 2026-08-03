@@ -135,9 +135,9 @@ untouched rather than overwritten, but nobody can see or change it until that pi
 ## A rename found by installing a real Release
 
 Checking the leftover checkouts from ticket 04's real-upstream test turned up a genuine bug this
-ticket had shipped: **upstream renamed `(3a)`**. It is `(3a) EUI Compatibility Files` in
-`Release-4.15` and `Release-5.0`, and `(3a) VP - EUI Compatibility Files` in `Release-5.4.2` and
-`master` (confirmed against the GitHub tree API for all four refs).
+ticket had shipped: **upstream renamed `(3a)`**. It is `(3a) EUI Compatibility Files` through
+`Release-5.1` and `(3a) VP - EUI Compatibility Files` from `Release-5.2` onwards (confirmed
+against the GitHub tree API for 4.15, 5.0, 5.1, 5.2, 5.4.2 and `master`).
 
 The matrix hardcoded the current name, so installing any Release up to 5.0 with EUI would have
 failed with "the mod files are missing the (3a) VP - EUI Compatibility Files folder" — for a

@@ -27,6 +27,7 @@
     clippy::expect_used,
     clippy::panic,
     clippy::todo,
+    clippy::unreachable,
     clippy::unimplemented
 )]
 

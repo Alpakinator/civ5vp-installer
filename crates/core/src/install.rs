@@ -195,6 +195,11 @@ impl Core {
     ) -> Result<InstallOutcome, InstallError> {
         progress.report(Stage::Sync, "Installing into the game.");
 
+        // Resolved before a single deletion, not between them. `fetch` has already checked the
+        // same thing, but Sync must not depend on that: the moment this runs after a removal
+        // it becomes a way for a Deployment to stop half-done, which is what rule 7 forbids.
+        let sources = self.resolve_sources(plan, source_root)?;
+
         let mut removed = Vec::new();
         for folder in plan.removed_folders() {
             for path in folder.every_path_in(&plan.folders) {
@@ -202,17 +207,20 @@ impl Core {
                     continue;
                 }
                 tree::remove_if_present(&path)?;
-                progress.report(
-                    Stage::Sync,
-                    format!(
-                        "Removed {} — not part of this install.",
-                        folder.folder_name()
-                    ),
-                );
-                removed.push(folder);
+                if !removed.contains(&folder) {
+                    // One line per folder, not one per name it has gone by: a player reading
+                    // the log does not care that it was found under an older spelling.
+                    progress.report(
+                        Stage::Sync,
+                        format!(
+                            "Removed {} — not part of this install.",
+                            folder.folder_name()
+                        ),
+                    );
+                    removed.push(folder);
+                }
             }
         }
-        removed.dedup();
 
         // Claimed Files sit among content the installer does not own, so they are removed one
         // by one rather than with the folder around them.
@@ -227,7 +235,6 @@ impl Core {
             }
         }
 
-        let sources = self.resolve_sources(plan, source_root)?;
         let mut deployed = Vec::new();
         for (index, from) in sources {
             let Some(deployment) = plan.deployments.get(index) else {
@@ -299,11 +306,12 @@ impl Core {
                     continue;
                 }
                 tree::remove_if_present(&path)?;
-                progress.report(Stage::Sync, format!("Removed {}.", folder.folder_name()));
-                removed.push(folder);
+                if !removed.contains(&folder) {
+                    progress.report(Stage::Sync, format!("Removed {}.", folder.folder_name()));
+                    removed.push(folder);
+                }
             }
         }
-        removed.dedup();
 
         let mut removed_files = Vec::new();
         for file in ClaimedFile::ALL {

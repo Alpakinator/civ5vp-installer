@@ -41,6 +41,13 @@ const TAG_ALLOCATION_EXTENT: u16 = 258;
 const TAG_FILE_ENTRY: u16 = 261;
 const TAG_EXTENDED_FILE_ENTRY: u16 = 266;
 
+/// The largest logical block size this reader will accept.
+///
+/// Real optical media use 512..=32768; the value is read straight out of the image and then
+/// used as an allocation length for every directory entry, so an unbounded one is an abort
+/// waiting to happen rather than an error a user can be shown (rule 9).
+const MAX_BLOCK_SIZE: u64 = 32 * 1024;
+
 /// Fixed header sizes, up to but not including the extended-attribute area.
 const FILE_ENTRY_HEADER: usize = 176;
 const EXTENDED_FILE_ENTRY_HEADER: usize = 216;
@@ -150,10 +157,15 @@ impl<R: Read + Seek> Udf<R> {
                 "the volume descriptor sequence has no partition or no file set",
             ));
         };
-        if block_size == 0 {
-            return Err(unreadable(
-                "the logical volume declares a block size of zero",
-            ));
+        // Bounded, not merely non-zero. `block_size` comes straight out of the image and is
+        // then used as an allocation length for every directory entry read, so a descriptor
+        // claiming 4 GiB would abort the process on the allocator rather than return an error
+        // a user can be shown (rule 9). Real UDF block sizes are 512..=32768.
+        if block_size == 0 || block_size > MAX_BLOCK_SIZE {
+            return Err(unreadable(&format!(
+                "the logical volume declares a block size of {block_size}, which is not a size \
+                 any real disc uses"
+            )));
         }
 
         let mut volume = Self {
@@ -206,7 +218,11 @@ impl<R: Read + Seek> Udf<R> {
     /// Read a whole member into memory. For the MSIs, which are a few megabytes at most.
     pub fn read_file(&mut self, path: &str) -> Result<Vec<u8>, ToolchainError> {
         let entry = self.resolve(path)?;
-        let mut bytes = Vec::with_capacity(entry.size as usize);
+        // Deliberately not `with_capacity(entry.size)`: that length is whatever the image says
+        // it is, and a file entry claiming 2^60 bytes would abort on the allocator before a
+        // single byte was read. Growing as the bytes actually arrive costs a few reallocations
+        // on a several-megabyte MSI and cannot be talked into a huge one.
+        let mut bytes = Vec::new();
         self.copy_entry(&entry, &mut bytes)?;
         Ok(bytes)
     }
@@ -275,8 +291,18 @@ impl<R: Read + Seek> Udf<R> {
         let extended_attributes = le_u32(&buffer, header - 8)? as usize;
         let descriptors_length = le_u32(&buffer, header - 4)? as usize;
 
-        let start = header + extended_attributes;
-        let end = start + descriptors_length;
+        // `checked_add`, because on a 32-bit target both of these are `u32`-derived and their
+        // sum can wrap — which would slip past the bound below and panic on the slice instead.
+        let (Some(start), Some(end)) = (
+            header.checked_add(extended_attributes),
+            header
+                .checked_add(extended_attributes)
+                .and_then(|s| s.checked_add(descriptors_length)),
+        ) else {
+            return Err(unreadable(&format!(
+                "file entry at block {icb_block} declares lengths that do not add up"
+            )));
+        };
         if end > buffer.len() {
             return Err(unreadable(&format!(
                 "file entry at block {icb_block} claims {descriptors_length} bytes of \

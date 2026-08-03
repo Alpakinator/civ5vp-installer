@@ -14,7 +14,7 @@ pub const SDK_ISO: PinnedDownload = PinnedDownload {
     url: "https://web.archive.org/web/20161230154527/http://download.microsoft.com/download/2/E/9/2E911956-F90F-4BFB-8231-E292A7B6F287/GRMSDK_EN_DVD.iso",
     sha256: "65739fb0874cc17ea6962d8ce7915364c7161fa106ed1bf1c917924c18ac63ca",
     // Measured from the archive.org copy's `Content-Length` (2026-08-03). The document says
-    // "~580 MB", which is what Microsoft's own download page advertised; the snapshot at this
+    // "~1.45 GiB", which is what Microsoft's own download page advertised; the snapshot at this
     // URL is 1.45 GiB. Only used to phrase progress before the server answers with a real
     // length — the SHA-256 is what decides whether the bytes are the right ones.
     approximate_bytes: 1_552_508_928,
@@ -97,7 +97,7 @@ pub const fn llvm_for_host() -> Option<PinnedLlvm> {
 /// One MSI inside the ISO, with the CABs that hold its payload.
 ///
 /// `docs/pinned-artifacts.md` §1 calls this list "the extraction contract": everything else
-/// in the 580 MB image is ignored.
+/// in the 1.45 GiB image is ignored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IsoMember {
     /// Path of the MSI inside the ISO, forward-slashed, as the document writes it.
