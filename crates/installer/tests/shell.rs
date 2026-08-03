@@ -6,13 +6,16 @@
 //!   reader would, and the install that follows is asserted on disk;
 //! * looks — every screen is rendered to a committed PNG baseline, so a later change to the
 //!   theme shows up as a visual diff rather than as nothing at all (rule 15).
+//!
+//! Everything is read back out of the accessibility tree. The shell exposes no accessor for
+//! its own state (rule 12), so what these tests assert on is what a user can actually see.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use civ5vp_core::GameFolders;
-use civ5vp_installer::{InstallerApp, Screen, Status, placeholder};
+use civ5vp_installer::{InstallerApp, Screen, placeholder};
 use egui_kittest::kittest::Queryable as _;
 use egui_kittest::{Harness, SnapshotResults};
 
@@ -31,54 +34,77 @@ fn harness_over(app: InstallerApp) -> Harness<'static, InstallerApp> {
         .build_ui_state(|ui, app: &mut InstallerApp| app.show(ui), app)
 }
 
-/// The walking skeleton's demo, driven the way a user drives it.
-#[test]
-fn clicking_install_deploys_the_community_patch() {
-    let temp = tempfile::tempdir().unwrap();
-    let folders = GameFolders {
-        mods: temp.path().join("game/MODS"),
-        dlc: temp.path().join("game/DLC"),
-        text: temp.path().join("game/Text"),
-    };
-    for folder in [&folders.mods, &folders.dlc, &folders.text] {
-        std::fs::create_dir_all(folder).unwrap();
+/// A game whose three folders exist, plus somewhere for the Core to work.
+struct TempGame {
+    temp: tempfile::TempDir,
+    folders: GameFolders,
+}
+
+impl TempGame {
+    fn new() -> Self {
+        let temp = tempfile::tempdir().unwrap();
+        let folders = GameFolders {
+            mods: temp.path().join("game/MODS"),
+            dlc: temp.path().join("game/DLC"),
+            text: temp.path().join("game/Text"),
+        };
+        for folder in [&folders.mods, &folders.dlc, &folders.text] {
+            std::fs::create_dir_all(folder).unwrap();
+        }
+        Self { temp, folders }
     }
 
-    let core = Arc::new(placeholder::core(temp.path().join("app-data")));
-    let mut harness = harness_over(InstallerApp::with_paths(core, &miniature_repo(), &folders));
+    fn core(&self) -> Arc<civ5vp_core::Core> {
+        Arc::new(placeholder::core(self.temp.path().join("app-data")))
+    }
+}
 
-    assert_eq!(harness.state().status(), &Status::Ready);
-    harness.get_by_label("Install").click();
-
-    // The install runs on a worker thread, so step the UI until it reports back.
+/// Step the UI until `text` shows up somewhere in the accessibility tree.
+///
+/// The install runs on a worker thread, so this is a wait, not a single frame. It gives up
+/// after about two seconds rather than hanging a test run.
+#[track_caller]
+fn wait_for_label(harness: &mut Harness<'_, InstallerApp>, text: &str) {
     for _ in 0..200 {
         harness.step();
-        if harness.state().status() != &Status::Installing {
-            break;
+        if harness.query_all_by_label_contains(text).next().is_some() {
+            return;
         }
         std::thread::sleep(Duration::from_millis(10));
     }
+    panic!("the shell never showed {text:?}");
+}
 
+/// The walking skeleton's demo, driven the way a user drives it.
+#[test]
+fn clicking_install_deploys_the_community_patch() {
+    let game = TempGame::new();
+    let mut harness = harness_over(InstallerApp::with_paths(
+        game.core(),
+        &miniature_repo(),
+        &game.folders,
+    ));
+
+    harness.step();
     assert!(
-        matches!(harness.state().status(), Status::Installed { .. }),
-        "expected the install to finish, got {:?} — activity: {:?}",
-        harness.state().status(),
-        harness.state().activity(),
+        harness.query_by_label("Ready.").is_some(),
+        "the shell should start out idle",
     );
+
+    harness.get_by_label("Install").click();
+    wait_for_label(&mut harness, "Installed (1) Community Patch.");
+
+    // Progress from the Core reached the shell, including the last line of Sync — the one
+    // that arrives in the same breath as the result.
     assert!(
         harness
-            .state()
-            .status_line()
-            .contains("(1) Community Patch"),
-        "the shell should name what it installed, got {:?}",
-        harness.state().status_line(),
-    );
-    assert!(
-        !harness.state().activity().is_empty(),
-        "progress from the Core should have reached the shell",
+            .query_all_by_label_contains("Installing into the game: Installed the DLL.")
+            .next()
+            .is_some(),
+        "the shell should have shown the Core's progress, down to the last event",
     );
 
-    let deployed = folders.mods.join("(1) Community Patch");
+    let deployed = game.folders.mods.join("(1) Community Patch");
     assert!(deployed.join("(1) Community Patch.modinfo").is_file());
     assert_eq!(
         std::fs::read_to_string(deployed.join("CvGameCore_Expansion2.dll")).unwrap(),
@@ -89,40 +115,43 @@ fn clicking_install_deploys_the_community_patch() {
 /// A failure the user can act on, not a stack trace: the source folder does not exist.
 #[test]
 fn a_bad_source_folder_is_explained_and_nothing_is_installed() {
-    let temp = tempfile::tempdir().unwrap();
-    let folders = GameFolders {
-        mods: temp.path().join("game/MODS"),
-        dlc: temp.path().join("game/DLC"),
-        text: temp.path().join("game/Text"),
-    };
-    std::fs::create_dir_all(&folders.mods).unwrap();
-
-    let core = Arc::new(placeholder::core(temp.path().join("app-data")));
+    let game = TempGame::new();
     let mut harness = harness_over(InstallerApp::with_paths(
-        core,
-        &temp.path().join("no-such-checkout"),
+        game.core(),
+        &game.temp.path().join("no-such-checkout"),
+        &game.folders,
+    ));
+
+    harness.get_by_label("Install").click();
+    wait_for_label(&mut harness, "There is no folder at");
+
+    assert!(
+        !game.folders.mods.join("(1) Community Patch").exists(),
+        "nothing should have been written to the game",
+    );
+}
+
+/// Rule 6, from the outside: a MODS folder that is not a real absolute location is refused,
+/// so Sync never aims its deletes at whatever the working directory happens to be.
+#[test]
+fn a_relative_mods_folder_is_refused_before_anything_is_written() {
+    let game = TempGame::new();
+    let folders = GameFolders {
+        mods: PathBuf::from("MODS"),
+        ..game.folders.clone()
+    };
+    let mut harness = harness_over(InstallerApp::with_paths(
+        game.core(),
+        &miniature_repo(),
         &folders,
     ));
 
     harness.get_by_label("Install").click();
-    for _ in 0..200 {
-        harness.step();
-        if harness.state().status() != &Status::Installing {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
+    wait_for_label(&mut harness, "The MODS folder needs to be a full path");
 
-    let Status::Failed { message } = harness.state().status() else {
-        panic!("expected a failure, got {:?}", harness.state().status());
-    };
     assert!(
-        message.contains("no folder at"),
-        "expected a plain-language message, got {message:?}",
-    );
-    assert!(
-        !folders.mods.join("(1) Community Patch").exists(),
-        "nothing should have been written to the game",
+        !Path::new("MODS").exists(),
+        "a relative MODS folder must never be created next to the process",
     );
 }
 

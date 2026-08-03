@@ -4,12 +4,22 @@
 //! and draws what the Core reports (rule 3). It is a library as well as a binary so that the
 //! `egui_kittest` harness can drive the real UI through its AccessKit tree.
 
+// Rule 9: no panicking paths in code reachable from the UI. `main.rs` is a separate crate
+// root and keeps the latitude the rule allows for startup wiring.
+#![deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::todo,
+    clippy::unimplemented
+)]
+
 pub mod app;
 pub mod cli;
 pub mod placeholder;
 pub mod screenshot;
 
-pub use app::{InstallerApp, Screen, Status};
+pub use app::{InstallerApp, Screen};
 
 /// Where the detail behind a user-facing error goes.
 ///

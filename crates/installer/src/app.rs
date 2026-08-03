@@ -15,9 +15,10 @@ use civ5vp_core::{
 
 use crate::placeholder;
 
-/// What the shell is currently showing. Presentation state, not domain state.
+/// What the shell is currently showing. Presentation state, not domain state, and
+/// deliberately not public: nothing outside this crate should be reading the shell's mind.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Status {
+enum Status {
     Ready,
     Installing,
     Installed { summary: String },
@@ -107,6 +108,8 @@ impl InstallerApp {
             Screen::Ready => {}
             Screen::Installing => {
                 app.status = Status::Installing;
+                // Illustrative sample lines, not asserted against the Core's wording — a
+                // preview never runs an install.
                 app.activity = vec![
                     "Fetching sources: Getting the mod files ready.".to_owned(),
                     "Fetching sources: Mod files ready.".to_owned(),
@@ -134,23 +137,16 @@ impl InstallerApp {
         app
     }
 
-    pub fn status(&self) -> &Status {
-        &self.status
-    }
-
-    /// The one line describing where the install has got to.
-    pub fn status_line(&self) -> String {
+    /// The one line describing where the install has got to. Rendered as a label, which is
+    /// also how the tests read it — there is no accessor for the shell's state, so the tests
+    /// see exactly what a user (or a screen reader) sees.
+    fn status_line(&self) -> String {
         match &self.status {
             Status::Ready => "Ready.".to_owned(),
             Status::Installing => "Installing…".to_owned(),
             Status::Installed { summary } => summary.clone(),
             Status::Failed { message } => message.clone(),
         }
-    }
-
-    /// Progress lines received from the Core so far.
-    pub fn activity(&self) -> &[String] {
-        &self.activity
     }
 
     /// Draw the whole UI. Shared by the real binary, `--screenshot`, and the kittest harness,
@@ -288,6 +284,8 @@ impl InstallerApp {
                 true
             }
             Err(TryRecvError::Empty) => false,
+            // The worker died without sending a result, so there is no Core error to quote —
+            // this is the one message the shell has to author itself.
             Err(TryRecvError::Disconnected) => {
                 self.status = Status::Failed {
                     message: "The install stopped unexpectedly. Your game has not been changed."
@@ -296,6 +294,15 @@ impl InstallerApp {
                 true
             }
         };
+
+        if finished {
+            // The worker reports its result last, but events it sent just before that may
+            // still be sitting in the channel. Without this the tail of Sync — the lines
+            // saying what was actually installed — would be dropped.
+            while let Ok(event) = run.progress.try_recv() {
+                lines.push(format!("{}: {}", event.stage.label(), event.message));
+            }
+        }
 
         self.activity.extend(lines);
         if !finished {

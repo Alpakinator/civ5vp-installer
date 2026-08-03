@@ -2,9 +2,11 @@
 
 mod support;
 
+use std::path::{Path, PathBuf};
+
 use civ5vp_core::{
-    ClaimedFolder, Core, Eui, Flavor, FortyThreeCivs, InstallConfiguration, InstallationSource,
-    ProgressReporter, Stage,
+    ClaimedFolder, Core, Eui, Flavor, FortyThreeCivs, GameFolders, InstallConfiguration,
+    InstallationSource, ProgressReporter, Stage,
 };
 use support::{
     DLL_MARKER, FailingSourceProvider, FailingToolchainRunner, FixtureSourceProvider, GameFixture,
@@ -188,6 +190,61 @@ fn a_failed_build_leaves_the_game_untouched() {
         error.user_message().contains("Release"),
         "expected the Release suggestion, got: {}",
         error.user_message(),
+    );
+}
+
+/// Rule 6: Sync derives every path it writes from a game folder root, so a root that is not
+/// a real absolute location would send its deletes at the working directory. Each such folder
+/// is refused at plan time, before any fetching, building, or writing.
+#[test]
+fn game_folders_that_are_not_real_absolute_directories_are_refused() {
+    let game = GameFixture::new();
+    let core = core_over(&game);
+    let good = game.folders();
+
+    let cases = [
+        (
+            "relative",
+            GameFolders {
+                mods: PathBuf::from("MODS"),
+                ..good.clone()
+            },
+            "full path",
+        ),
+        (
+            "empty",
+            GameFolders {
+                dlc: PathBuf::new(),
+                ..good.clone()
+            },
+            "Choose your DLC folder",
+        ),
+        (
+            "missing",
+            GameFolders {
+                text: good.text.join("does-not-exist"),
+                ..good.clone()
+            },
+            "There is no Text folder at",
+        ),
+    ];
+
+    for (name, folders, expected) in cases {
+        let error = core
+            .plan(&community_patch_only(), &folders)
+            .err()
+            .unwrap_or_else(|| panic!("the {name} case should be refused"));
+        assert!(
+            error.user_message().contains(expected),
+            "{name}: expected a message mentioning {expected:?}, got: {}",
+            error.user_message(),
+        );
+    }
+
+    assert_eq!(game.files(), Vec::<String>::new());
+    assert!(
+        !Path::new("MODS").exists(),
+        "a relative MODS folder must never be created next to the test process",
     );
 }
 

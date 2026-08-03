@@ -35,7 +35,7 @@ pub use claimed::{ClaimedFolder, DeploymentTarget, GameFolders};
 pub use configuration::{
     Eui, Flavor, FortyThreeCivs, InstallConfiguration, InstallationSource, Version,
 };
-pub use error::InstallError;
+pub use error::{GameFolderProblem, InstallError};
 pub use install::{Core, InstallOutcome};
 pub use plan::Plan;
 pub use progress::{ProgressEvent, ProgressReporter, Stage};

@@ -5,6 +5,25 @@ use std::path::PathBuf;
 
 use crate::boundaries::BoundaryError;
 
+/// Why a game folder cannot be used as a Deployment target.
+///
+/// Rule 6 says every path the installer writes to is derived from a Claimed Folder root. That
+/// only holds if the root itself is a real, absolute location: a relative or empty path would
+/// send Sync's deletes and copies at whatever the working directory happens to be.
+///
+/// This is the safety floor, not folder detection — ticket 03 adds the marker checks
+/// (`CivilizationV.exe`, `Assets/DLC/Expansion2/`, `UserSettings.ini`) that decide whether a
+/// folder really is the game.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GameFolderProblem {
+    /// No path at all.
+    NotChosen,
+    /// A relative path, which would be resolved against the working directory.
+    NotAbsolute,
+    /// Nothing there, or there but not a directory.
+    NotADirectory,
+}
+
 /// Anything that can stop a Deployment.
 ///
 /// Rule 10: `user_message` is what the UI shows — a sentence a non-programmer can act on.
@@ -27,6 +46,13 @@ pub enum InstallError {
     },
     /// The Installation Source does not contain a folder the configuration needs.
     MissingInSource { folder_name: String, path: PathBuf },
+    /// A game folder the installer cannot safely write to.
+    UnusableGameFolder {
+        /// Which one, in the user's words: "MODS", "DLC", "Text".
+        which: &'static str,
+        path: PathBuf,
+        problem: GameFolderProblem,
+    },
     /// A configuration this build of the installer cannot deploy yet.
     UnsupportedConfiguration { message: String, detail: String },
 }
@@ -53,6 +79,24 @@ impl InstallError {
                 "The sources are missing the \"{folder_name}\" folder, so there is nothing to \
                  install. Your game is unchanged."
             ),
+            Self::UnusableGameFolder {
+                which,
+                path,
+                problem,
+            } => match problem {
+                GameFolderProblem::NotChosen => {
+                    format!("Choose your {which} folder before installing.")
+                }
+                GameFolderProblem::NotAbsolute => format!(
+                    "The {which} folder needs to be a full path starting from the root of the \
+                     drive, not \"{}\".",
+                    path.display()
+                ),
+                GameFolderProblem::NotADirectory => format!(
+                    "There is no {which} folder at {}. Check the path and try again.",
+                    path.display()
+                ),
+            },
             Self::UnsupportedConfiguration { message, .. } => message.clone(),
         }
     }
@@ -75,6 +119,14 @@ impl InstallError {
             } => format!("deployment: {action} {} failed: {cause}", path.display()),
             Self::MissingInSource { folder_name, path } => format!(
                 "installation source has no \"{folder_name}\" at {}",
+                path.display()
+            ),
+            Self::UnusableGameFolder {
+                which,
+                path,
+                problem,
+            } => format!(
+                "{which} folder rejected before planning: {problem:?} at {}",
                 path.display()
             ),
             Self::UnsupportedConfiguration { detail, .. } => detail.clone(),
