@@ -7,7 +7,7 @@
 **Status:** ready-for-agent
 
 - [ ] Version picker lists real Releases and latest master from the upstream repository; arbitrary ref accepted via advanced input
-- [ ] First materialization downloads roughly one working tree's worth, not full history; switching Versions fetches only changed content
+- [ ] First materialization transfers under 1.5 GB on the wire, against ~4.5 GB of full history; a subsequent Version switch transfers under 250 MB. Both are measured, not estimated. These are provisional ceilings — once real numbers exist, tighten them to just above what the chosen clone strategy actually costs
 - [ ] Checkout of the selected Version feeds the Core's source-provider boundary; a real Release installs end-to-end (fake toolchain still supplying the DLL)
 - [ ] Network failure mid-fetch leaves the cache consistent and the game untouched; retry succeeds
 - [ ] Works without git installed on the machine
