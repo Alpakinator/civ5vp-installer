@@ -196,3 +196,56 @@ without extracting it and is what found the documentation errors above, and
 thing the kilobyte-sized fixtures cannot reach. The fast
 suite never opens a socket: the whole bootstrap sequence runs against a synthetic UDF image
 built byte by byte in-process, containing four real MSIs over seven real CABs.
+
+## Proven end to end — and a fix-up bug found by doing it
+
+Compiled a real Win32 object with the bootstrapped toolchain: C++ including `<windows.h>` and
+`<string>`, through `clang-cl --target=i386-pc-windows-msvc` with the reference build's flags,
+against the SDK this installer extracted. Output: `Intel i386 COFF object file, 8 sections`.
+`lld-link` runs too. So the extracted SDK is not merely *present*, it is *usable*.
+
+Two things had to be true, and only one of them was.
+
+### 1. The compiler blocker is solved by bundling one small library
+
+The pinned llvm.org build needs `libtinfo.so.5` only to ask the terminal whether it supports
+colour. Dropping a real ncurses-5 `libtinfo.so.5` (187 KB, from Ubuntu's `libtinfo5` package)
+beside it and setting `LD_LIBRARY_PATH` makes it run:
+
+```
+without:  error while loading shared libraries: libtinfo.so.5
+with:     clang version 18.1.8
+```
+
+The earlier attempt failed because it *aliased* `libtinfo.so.5` to the system's `libtinfo.so.6`;
+ncurses 5 and 6 export incompatible versioned symbols. Shipping the real ncurses-5 library is a
+different thing and works. This keeps the most portable compiler available: the llvm.org build
+requires only **glibc 2.27**, against **2.34+** for a distro-built binary — measured with
+`objdump -T`. For an installer shipped to players on arbitrary distributions that difference
+matters more than matching the reference's point release.
+
+### 2. Fix-up 6 shadows real SDK headers — a defect
+
+`fixups.rs` writes empty 58-byte stubs for `DriverSpecs.h`, `SpecStrings.h` (both cases) into
+**every** include root. `docs/pinned-artifacts.md` §3 item 6 calls these "WDK-only headers…
+shipped only with the Driver Kit", but that is wrong: **the SDK ships them**, as
+`driverspecs.h` (31 KB) and `specstrings.h` (23 KB). The stubs land beside the real files and
+win, for two compounding reasons:
+
+* `kernelspecs.h:33` uses a **quoted** include, `#include "DriverSpecs.h"`, which searches its
+  own directory first — so the stub next to it always wins, whatever `-I` order is used;
+* stubs are also written into the **VC9** include directory, which is searched before the SDK's,
+  so `<specstrings.h>` resolves to a 58-byte file globally.
+
+The result is that `__ANNOTATION` is never defined and `windows.h` cannot be included at all.
+Verified: `#include <specstrings.h>` followed by `#ifdef __ANNOTATION` reports it **missing**.
+
+Replacing the two SDK stubs with symlinks to the real lowercase headers, and dropping the four
+from the VC9 include directory, is what made the compile above succeed. `DelayImp.h` and
+`Warnings.h` stubs are fine and were left alone — VC9 genuinely does not ship those.
+
+**The rule fix-up 6 needs:** stub a header only when no case-variant of it exists anywhere on
+the include path. Where one does exist, fix-up 2's case symlink is the correct answer.
+
+**This is also why §4's `DriverSpecs.h` check is worse than useless.** It does not merely fail to
+prove anything — it reported success against the very stub that was breaking the build.
