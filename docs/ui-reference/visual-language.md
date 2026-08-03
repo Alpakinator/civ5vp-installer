@@ -68,8 +68,8 @@ synthetic bold; hierarchy comes from size and colour.
 
 | Style   | Size | Colour           | Use |
 | ------- | ---- | ---------------- | --- |
-| Display | 30 px | Parchment bright | The window title, once, in the header. |
-| Caption | 18 px | Gold bright      | Panel captions ("What to install"). |
+| Display | 26 px | Parchment bright | The window title, once, in the header. |
+| Caption | 17 px | Gold bright      | Panel captions ("What to install"). |
 | Body    | 16 px | Parchment        | Everything conversational. |
 | Button  | 17 px | Parchment bright | Button labels. |
 | Small   | 13 px | Parchment dim    | Activity-log lines, fine print. |
@@ -84,7 +84,7 @@ Four motifs, and only these four. Restraint is the style.
    ziggurat" read.
 2. **Sunburst fan.** Straight rays fanning symmetrically from a low centre point, used once:
    behind the window title. Rays are 1.5 px Gold at low opacity (≈ 22%), spanning roughly
-   150° of arc, inner radius ≈ 16 px, outer radius ≈ 58 px, one ray every 10°. The fan is
+   150° of arc, inner radius ≈ 14 px, outer radius ≈ 48 px, one ray every 10°. The fan is
    ornament behind text — it must never fight the lettering.
 3. **Diamond rule.** A horizontal divider: a 1 px Gold-dark hairline across the full width,
    over-struck for its central ≈ 160 px by a 1 px Gold line, with a small solid Gold
@@ -111,12 +111,16 @@ Four motifs, and only these four. Restraint is the style.
 
 ## Proportions and spacing
 
+- Window: 900 × 640 points is both the default and the minimum — the layout is designed
+  down to that size and the window will not shrink further.
 - Page margin: 20 px on every side of the window.
-- Header: ≈ 64 px tall — title centred, fan behind, diamond rule below.
-- Panels: 14 px internal padding; 10 px vertical rhythm between panels.
-- Grid (label/field rows): 12 px column gap, 6 px row gap; fields 360 px wide.
-- Buttons: minimum 150 × 34 px for the primary action; label centred.
-- Progress bar: 18 px tall, full content width, 3 px between trough frame and fill.
+- Header: ≈ 50 px tall — title centred, fan behind, diamond rule below.
+- Panels: 10 px internal padding; 6 px vertical rhythm between panels.
+- Grid (label/field rows): 12 px column gap, 4 px row gap; fields 360 px wide.
+- Buttons: minimum 150 × 30 px for the primary action; label centred.
+- Progress bar: 14 px tall, full content width, 3 px between trough frame and fill.
+- The activity log is the flexible element: it takes exactly the height that remains and
+  scrolls inside itself, pinned to the newest line, so no screen ever overflows the page.
 
 ## Component recipes
 

@@ -47,7 +47,10 @@ fn run_app() -> Result<(), String> {
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Civ 5 VP Installer")
-            .with_inner_size(cli::DEFAULT_SIZE),
+            .with_inner_size(cli::DEFAULT_SIZE)
+            // The layout is designed down to this size and no further; below it the
+            // activity log would have no room left. Ticket 09 verifies at and above it.
+            .with_min_inner_size(cli::DEFAULT_SIZE),
         ..Default::default()
     };
     eframe::run_native(
