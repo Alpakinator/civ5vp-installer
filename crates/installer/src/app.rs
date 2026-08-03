@@ -12,9 +12,9 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 
 use civ5vp_core::{
-    AppDataStore, Core, Flavor, FortyThreeCivs, GameFolders, InstallConfiguration, InstallError,
-    InstallOutcome, InstallationSource, ProgressEvent, ProgressReporter, SearchLocations, Settings,
-    resolve_game_folders, start_up,
+    AppDataStore, Core, Eui, Flavor, FortyThreeCivs, GameFolders, InstallConfiguration,
+    InstallError, InstallOutcome, InstallationSource, ProgressEvent, ProgressReporter,
+    SearchLocations, Settings, resolve_game_folders, start_up,
 };
 
 use crate::placeholder;
@@ -76,9 +76,31 @@ pub struct InstallerApp {
     /// out from them, or the sentence explaining why there are none. Recomputed whenever a
     /// folder is edited. The shell holds the answer; it never reaches one.
     resolved: Result<GameFolders, String>,
+    flavor: Flavor,
+    forty_three_civs: FortyThreeCivs,
     activity: Vec<String>,
     status: Status,
     running: Option<RunningInstall>,
+}
+
+/// The Flavor choices, as the player reads them.
+///
+/// There are three, not two-plus-a-checkbox, and that is the point: EUI is legal only with Vox
+/// Populi, and listing the legal combinations means the shell cannot offer the illegal one
+/// without a rule of its own to enforce (rule 3). [`Flavor`] makes the same guarantee at the
+/// type level; this is that guarantee drawn.
+fn flavor_choices() -> [(Flavor, &'static str); 3] {
+    [
+        (Flavor::CommunityPatch, "Community Patch only"),
+        (
+            Flavor::VoxPopuli { eui: Eui::Disabled },
+            "Vox Populi — the full overhaul",
+        ),
+        (
+            Flavor::VoxPopuli { eui: Eui::Enabled },
+            "Vox Populi with EUI — adds the Enhanced User Interface",
+        ),
+    ]
 }
 
 impl InstallerApp {
@@ -96,6 +118,14 @@ impl InstallerApp {
                 ..
             }) => display_path(path),
             _ => String::new(),
+        };
+        // The remembered Flavor and toggles, or the configuration most players want.
+        let (flavor, forty_three_civs) = match &startup.configuration {
+            Some(configuration) => (configuration.flavor.clone(), configuration.forty_three_civs),
+            None => (
+                Flavor::VoxPopuli { eui: Eui::Enabled },
+                FortyThreeCivs::Disabled,
+            ),
         };
         let game_folder = startup
             .game_installation
@@ -128,6 +158,8 @@ impl InstallerApp {
             game_folder,
             documents_folder,
             resolved,
+            flavor,
+            forty_three_civs,
             activity: Vec::new(),
             status: Status::Ready,
             running: None,
@@ -161,6 +193,8 @@ impl InstallerApp {
                 dlc: PathBuf::from(format!("{game}/Assets/DLC")),
                 text: PathBuf::from(format!("{documents}/Text")),
             }),
+            flavor: Flavor::VoxPopuli { eui: Eui::Enabled },
+            forty_three_civs: FortyThreeCivs::Disabled,
             activity: Vec::new(),
             status: Status::Ready,
             running: None,
@@ -189,13 +223,19 @@ impl InstallerApp {
                 ];
             }
             Screen::Installed => {
+                // The Flavor above is Vox Populi with EUI, so this says what that installs —
+                // a preview whose result contradicts its own selection is a confusing picture
+                // to review a baseline against.
+                let summary = "Installed (1) Community Patch, (2) Vox Populi, \
+                               (3a) VP - EUI Compatibility Files, (4a) Squads for VP, VPUI, \
+                               UI_bc1.";
                 app.status = Status::Installed {
-                    summary: "Installed (1) Community Patch.".to_owned(),
+                    summary: summary.to_owned(),
                 };
                 app.activity = vec![
                     "Fetching sources: Mod files ready.".to_owned(),
                     "Building the DLL: DLL built.".to_owned(),
-                    "Installing into the game: Installed (1) Community Patch.".to_owned(),
+                    format!("Installing into the game: {summary}"),
                 ];
             }
             Screen::Failed => {
@@ -237,8 +277,8 @@ impl InstallerApp {
     fn contents(&mut self, ui: &mut egui::Ui) {
         ui.heading("Civ 5 VP Installer");
         ui.label(
-            "Walking skeleton: Community Patch only, from a local checkout, with a placeholder \
-             DLL build. The installed DLL is a marker file, not a compiled one.",
+            "Sources come from a local checkout, and the DLL build is a placeholder: the \
+             installed DLL is a marker file, not a compiled one.",
         );
         ui.add_space(8.0);
 
@@ -278,6 +318,35 @@ impl InstallerApp {
             Err(explanation) => {
                 ui.label(explanation);
             }
+        }
+
+        ui.add_space(8.0);
+        let mut chosen = false;
+        ui.group(|ui| {
+            ui.label("What to install");
+            for (choice, label) in flavor_choices() {
+                chosen |= ui.radio_value(&mut self.flavor, choice, label).changed();
+            }
+            ui.add_space(4.0);
+            // 43 Civs is legal with either Flavor and with or without EUI, so it is the one
+            // genuinely independent toggle.
+            let mut enabled = self.forty_three_civs == FortyThreeCivs::Enabled;
+            if ui
+                .checkbox(&mut enabled, "43 Civs — room for 43 civilizations on a map")
+                .changed()
+            {
+                self.forty_three_civs = if enabled {
+                    FortyThreeCivs::Enabled
+                } else {
+                    FortyThreeCivs::Disabled
+                };
+                chosen = true;
+            }
+        });
+        if chosen && self.resolved.is_ok() {
+            // Remembered like the folders are, so the next launch starts from the same choice
+            // (user story 26).
+            self.remember();
         }
 
         ui.add_space(8.0);
@@ -340,16 +409,14 @@ impl InstallerApp {
         }
     }
 
-    /// The walking skeleton's one Install Configuration. Ticket 02 gives the Flavor and the
-    /// toggles controls of their own; until then the only part the player chooses is where the
-    /// sources come from.
+    /// What the player has chosen, as the Core wants it.
     fn configuration(&self) -> InstallConfiguration {
         InstallConfiguration {
             source: InstallationSource::LocalRepo {
                 path: PathBuf::from(self.source_folder.trim()),
             },
-            flavor: Flavor::CommunityPatch,
-            forty_three_civs: FortyThreeCivs::Disabled,
+            flavor: self.flavor.clone(),
+            forty_three_civs: self.forty_three_civs,
         }
     }
 

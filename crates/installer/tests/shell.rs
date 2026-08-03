@@ -131,6 +131,31 @@ fn wait_for_label(harness: &mut Harness<'_, InstallerApp>, text: &str) {
     panic!("the shell never showed {text:?}");
 }
 
+/// Step until the install has finished, however it ended.
+///
+/// Waiting for a progress line is not the same thing, and the difference is a real race: the
+/// Core reports each Claimed Folder as it lands, so a line naming one arrives while the folders
+/// after it — and the Claimed Files after those — are still being written. Anything asserting
+/// on disk has to wait for the end, not for a landmark on the way.
+///
+/// The status line reads "Ready." before an install and "Installing…" during one, and neither
+/// afterwards, so "neither of those" is the finished signal. Both are checked because the click
+/// is not processed until the next frame.
+#[track_caller]
+fn wait_for_the_install_to_finish(harness: &mut Harness<'_, InstallerApp>) {
+    for _ in 0..400 {
+        harness.step();
+        let waiting = ["Ready.", "Installing…"]
+            .into_iter()
+            .any(|status| harness.query_all_by_label(status).next().is_some());
+        if !waiting {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    panic!("the install never finished");
+}
+
 /// What a text field currently holds, read out of the accessibility tree the way a screen
 /// reader would — the shell exposes no accessor of its own (rule 12).
 #[track_caller]
@@ -181,8 +206,12 @@ fn a_launch_pre_fills_the_folders_it_detects() {
     }
 }
 
-/// The walking skeleton's demo, driven the way a user drives it, into the folders detection
-/// found.
+/// An install driven the way a user drives it, into the folders detection found, with the
+/// smallest Flavor picked explicitly.
+///
+/// The Flavor is chosen rather than left at its default on purpose: the default is Vox Populi
+/// with EUI, so a test that did not click would be asserting about a much larger install than
+/// its name suggests.
 #[test]
 fn clicking_install_deploys_the_community_patch() {
     let game = TempGame::new();
@@ -199,8 +228,21 @@ fn clicking_install_deploys_the_community_patch() {
         "Community-Patch-DLL folder",
         &miniature_repo().display().to_string(),
     );
+    harness.get_by_label("Community Patch only").click();
     harness.get_by_label("Install").click();
-    wait_for_label(&mut harness, "Installed (1) Community Patch.");
+    wait_for_the_install_to_finish(&mut harness);
+    assert!(
+        harness
+            .query_all_by_label("Installed (1) Community Patch.")
+            .next()
+            .is_some(),
+        "the shell should report what it installed",
+    );
+
+    assert!(
+        !game.mods_folder().join("(2) Vox Populi").exists(),
+        "Community Patch only should not have deployed Vox Populi",
+    );
 
     // Progress from the Core reached the shell, including the last line of Sync — the one
     // that arrives in the same breath as the result.
@@ -220,6 +262,95 @@ fn clicking_install_deploys_the_community_patch() {
     );
 }
 
+/// Picking a Flavor in the UI reaches the Core and changes what lands on disk.
+///
+/// The matrix is the Core's, and `matrix.rs` asserts it exhaustively. What this proves is the
+/// wiring: that the three radio buttons are the three legal Flavors and that choosing one is
+/// what the install then does — including the EUI Lua strip, which is the change a player is
+/// most likely to notice if it silently did not happen.
+#[test]
+fn picking_vox_populi_with_eui_installs_the_whole_thing() {
+    let game = TempGame::new();
+    let mut harness = harness_over(game.launch(&game.locations()));
+    harness.step();
+    set_text(
+        &mut harness,
+        "Community-Patch-DLL folder",
+        &miniature_repo().display().to_string(),
+    );
+
+    harness
+        .get_by_label("Vox Populi with EUI — adds the Enhanced User Interface")
+        .click();
+    harness.get_by_label("Install").click();
+    wait_for_the_install_to_finish(&mut harness);
+
+    let mods = game.mods_folder();
+    let dlc = game.game_folder().join("Assets/DLC");
+    for expected in [
+        mods.join("(1) Community Patch/(1) Community Patch.modinfo"),
+        mods.join("(2) Vox Populi/(2) Vox Populi.modinfo"),
+        mods.join("(3a) VP - EUI Compatibility Files/LUA/EUI_core_library.lua"),
+        mods.join("(4a) Squads for VP/UI/Squads.lua"),
+        dlc.join("VPUI/VPUI_0.Civ5Pkg"),
+        dlc.join("UI_bc1/EUI_0.Civ5Pkg"),
+        game.documents_folder().join("Text/VPUI_tips_en_us.xml"),
+    ] {
+        assert!(
+            expected.is_file(),
+            "expected {} to be installed",
+            expected.display()
+        );
+    }
+    assert!(
+        !mods.join("(1) Community Patch/LUA").exists(),
+        "EUI replaces the Lua in (1), so the original must not be there",
+    );
+}
+
+/// The other half of the wiring: turning a toggle off again takes its folder away.
+#[test]
+fn switching_the_flavor_down_removes_what_no_longer_belongs() {
+    let game = TempGame::new();
+    let mut harness = harness_over(game.launch(&game.locations()));
+    harness.step();
+    set_text(
+        &mut harness,
+        "Community-Patch-DLL folder",
+        &miniature_repo().display().to_string(),
+    );
+
+    harness
+        .get_by_label("Vox Populi with EUI — adds the Enhanced User Interface")
+        .click();
+    harness.get_by_label("Install").click();
+    wait_for_the_install_to_finish(&mut harness);
+    assert!(game.mods_folder().join("(2) Vox Populi").exists());
+
+    harness.get_by_label("Community Patch only").click();
+    harness.get_by_label("Install").click();
+    wait_for_the_install_to_finish(&mut harness);
+
+    for gone in [
+        game.mods_folder().join("(2) Vox Populi"),
+        game.mods_folder().join("(3a) VP - EUI Compatibility Files"),
+        game.game_folder().join("Assets/DLC/UI_bc1"),
+        game.documents_folder().join("Text/VPUI_tips_en_us.xml"),
+    ] {
+        assert!(
+            !gone.exists(),
+            "{} should have been removed",
+            gone.display()
+        );
+    }
+    assert!(
+        game.mods_folder()
+            .join("(1) Community Patch/LUA/CityView.lua")
+            .is_file(),
+        "and the Lua EUI had replaced should be back",
+    );
+}
+
 /// User story 26: what the last run used pre-fills the next one, with nothing to detect.
 #[test]
 fn what_one_launch_settles_the_next_launch_starts_from() {
@@ -232,7 +363,7 @@ fn what_one_launch_settles_the_next_launch_starts_from() {
         &miniature_repo().display().to_string(),
     );
     harness.get_by_label("Install").click();
-    wait_for_label(&mut harness, "Installed (1) Community Patch.");
+    wait_for_the_install_to_finish(&mut harness);
 
     // A second launch of the same installer, with nowhere to search: everything it shows can
     // only have come out of the App Data Store.
