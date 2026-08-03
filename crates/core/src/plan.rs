@@ -62,10 +62,18 @@ impl SourceSelection {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FolderDeployment {
     pub(crate) claimed: ClaimedFolder,
-    /// Path relative to the source root. Usually the Claimed Folder's own name, but not
-    /// always — the DLC folders do not sit at the repository root.
-    pub(crate) source_subdir: String,
     pub(crate) selection: SourceSelection,
+}
+
+impl FolderDeployment {
+    /// The names to look for in the Installation Source, in order of preference.
+    ///
+    /// More than one, because upstream renames folders: which name a given Version uses is a
+    /// fact about that Version, so it is settled by looking, not by the Plan (see
+    /// [`ClaimedFolder::folder_names`]).
+    pub(crate) fn source_candidates(&self) -> &'static [&'static str] {
+        self.claimed.folder_names()
+    }
 }
 
 /// What a Deployment is going to do. Produced by [`crate::Core::plan`], executed by
@@ -205,11 +213,8 @@ fn files_for(configuration: &InstallConfiguration) -> Vec<ClaimedFile> {
 /// A Claimed Folder filled from the folder of the same name at the source root.
 ///
 /// That is every one of them: the DLC folders `VPUI` and `UI_bc1` sit at the repository root
-/// beside the mod folders, not under a `DLC` directory.
+/// beside the mod folders, not under a `DLC` directory. "The same name" means any of the names
+/// that folder has gone by — which one a Version uses is settled when the source is in hand.
 fn at_own_name(claimed: ClaimedFolder, selection: SourceSelection) -> FolderDeployment {
-    FolderDeployment {
-        claimed,
-        source_subdir: claimed.folder_name().to_owned(),
-        selection,
-    }
+    FolderDeployment { claimed, selection }
 }

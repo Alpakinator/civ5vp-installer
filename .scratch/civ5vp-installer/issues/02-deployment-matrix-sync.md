@@ -51,11 +51,11 @@ from older VP versions do not leave a corrupt install. Same rule-6 problem: thos
 Claimed Folders. Low risk to add, but it is still a change to the Claimed set.
 
 **3. `(5) Modpack Maker for VP`** exists on `master` and is deployed by every component
-(`.iss:53`). It is not in `CONTEXT.md`'s Claimed Folders list at all. There is a wrinkle beyond
-the Claimed-set change: it is absent from the fork's `docker` branch and presumably from older
-`Release-*` tags, so adding it naively would make installing an older Release fail with "the mod
-files are missing the (5) Modpack Maker for VP folder". Deploying it needs a notion of a folder
-that is optional by Version, which is a design decision rather than a line of code.
+(`.iss:53`). It is not in `CONTEXT.md`'s Claimed Folders list at all. The wrinkle is now measured
+rather than suspected: the upstream tree API shows it absent from `Release-4.15` and `Release-5.0`
+and present in `Release-5.4.2`, so adding it naively would make installing an older Release fail
+with "the mod files are missing the (5) Modpack Maker for VP folder". Deploying it needs a notion
+of a folder that is optional by Version — a design decision rather than a line of code.
 
 ### Two smaller deviations, deliberate
 
@@ -131,3 +131,25 @@ configurations and needs no rule of its own to exclude the seventh (rule 3).
 Still missing from the UI, and belonging to ticket 04: the Version picker. The shell can only
 express a Local Repo, so a remembered Upstream Cache Version cannot be drawn — it is preserved
 untouched rather than overwritten, but nobody can see or change it until that picker exists.
+
+## A rename found by installing a real Release
+
+Checking the leftover checkouts from ticket 04's real-upstream test turned up a genuine bug this
+ticket had shipped: **upstream renamed `(3a)`**. It is `(3a) EUI Compatibility Files` in
+`Release-4.15` and `Release-5.0`, and `(3a) VP - EUI Compatibility Files` in `Release-5.4.2` and
+`master` (confirmed against the GitHub tree API for all four refs).
+
+The matrix hardcoded the current name, so installing any Release up to 5.0 with EUI would have
+failed with "the mod files are missing the (3a) VP - EUI Compatibility Files folder" — for a
+folder sitting right there under its old name. Since ticket 04 makes every one of those Releases
+selectable, this was a live failure on a supported path, not a hypothetical.
+
+Fixed by making a Claimed Folder know every name it has gone by: the source name is resolved
+when the source is in hand rather than fixed when the Plan is made, the folder is deployed under
+the name in current use, and Sync removes the other spellings so installing a newer Version over
+an older one cannot leave the game loading the mod twice. `CONTEXT.md` amended to match, per the
+rule-6 process. Reverting to a single name fails three tests.
+
+The general lesson is worth keeping: folder names are a property of the Version, not of the
+installer, and anything else this matrix hardcodes is suspect the same way. `(5) Modpack Maker
+for VP` appearing only in newer Releases is the same phenomenon seen from the other side.

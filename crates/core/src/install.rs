@@ -82,6 +82,42 @@ impl Core {
         self.sync(plan, &source_root, &built_dll, progress)
     }
 
+    /// One Claimed Folder and the folder in *this* Installation Source that fills it.
+    ///
+    /// Separate from [`crate::plan::FolderDeployment`] because the source folder's name is a
+    /// fact about the Version in hand, not about the configuration: a Plan is made before
+    /// anything is fetched, and older Versions spell some of these differently.
+    fn resolve_sources(
+        &self,
+        plan: &Plan,
+        source_root: &Path,
+    ) -> Result<Vec<(usize, PathBuf)>, InstallError> {
+        let mut resolved = Vec::new();
+        for (index, deployment) in plan.deployments.iter().enumerate() {
+            let candidates = deployment.source_candidates();
+            let found = candidates
+                .iter()
+                .map(|name| source_root.join(name))
+                .find(|path| path.is_dir());
+            let Some(path) = found else {
+                return Err(InstallError::MissingInSource {
+                    item: SourceItem::Folder,
+                    name: deployment.claimed.folder_name().to_owned(),
+                    path: source_root.join(deployment.claimed.folder_name()),
+                });
+            };
+            if !tree::holds_anything_selected(&path, &deployment.selection)? {
+                return Err(InstallError::MissingInSource {
+                    item: SourceItem::Contents,
+                    name: deployment.claimed.folder_name().to_owned(),
+                    path,
+                });
+            }
+            resolved.push((index, path));
+        }
+        Ok(resolved)
+    }
+
     fn fetch(&self, plan: &Plan, progress: &ProgressReporter) -> Result<PathBuf, InstallError> {
         progress.report(Stage::Fetch, "Getting the mod files ready.");
         let source_root = self
@@ -91,23 +127,7 @@ impl Core {
 
         // Check everything the plan needs is actually there before the build burns minutes —
         // and, more importantly, before Sync starts deleting (rule 7).
-        for deployment in &plan.deployments {
-            let path = source_root.join(&deployment.source_subdir);
-            if !path.is_dir() {
-                return Err(InstallError::MissingInSource {
-                    item: SourceItem::Folder,
-                    name: deployment.source_subdir.clone(),
-                    path,
-                });
-            }
-            if !tree::holds_anything_selected(&path, &deployment.selection)? {
-                return Err(InstallError::MissingInSource {
-                    item: SourceItem::Contents,
-                    name: deployment.source_subdir.clone(),
-                    path,
-                });
-            }
-        }
+        self.resolve_sources(plan, &source_root)?;
         for file in &plan.files {
             let path = source_root.join(file.source_path());
             if !path.is_file() {
@@ -177,8 +197,10 @@ impl Core {
 
         let mut removed = Vec::new();
         for folder in plan.removed_folders() {
-            let path = folder.path_in(&plan.folders);
-            if path.exists() {
+            for path in folder.every_path_in(&plan.folders) {
+                if !path.exists() {
+                    continue;
+                }
                 tree::remove_if_present(&path)?;
                 progress.report(
                     Stage::Sync,
@@ -190,6 +212,7 @@ impl Core {
                 removed.push(folder);
             }
         }
+        removed.dedup();
 
         // Claimed Files sit among content the installer does not own, so they are removed one
         // by one rather than with the folder around them.
@@ -204,17 +227,24 @@ impl Core {
             }
         }
 
+        let sources = self.resolve_sources(plan, source_root)?;
         let mut deployed = Vec::new();
-        for deployment in &plan.deployments {
+        for (index, from) in sources {
+            let Some(deployment) = plan.deployments.get(index) else {
+                continue;
+            };
             let destination = deployment.claimed.path_in(&plan.folders);
             // Replace rather than merge: this is what makes Sync exact — no file from a
-            // previous configuration can survive inside a Claimed Folder.
+            // previous configuration can survive inside a Claimed Folder. Every *other* name
+            // this folder has gone by is removed too, so installing a newer Version over an
+            // older one cannot leave the game with both.
+            for stale in deployment.claimed.every_path_in(&plan.folders) {
+                if stale != destination {
+                    tree::remove_if_present(&stale)?;
+                }
+            }
             tree::remove_if_present(&destination)?;
-            tree::copy_selected(
-                &source_root.join(&deployment.source_subdir),
-                &destination,
-                &deployment.selection,
-            )?;
+            tree::copy_selected(&from, &destination, &deployment.selection)?;
             progress.report(
                 Stage::Sync,
                 format!("Installed {}.", deployment.claimed.folder_name()),
@@ -264,13 +294,16 @@ impl Core {
 
         let mut removed = Vec::new();
         for folder in ClaimedFolder::ALL {
-            let path = folder.path_in(folders);
-            if path.exists() {
+            for path in folder.every_path_in(folders) {
+                if !path.exists() {
+                    continue;
+                }
                 tree::remove_if_present(&path)?;
                 progress.report(Stage::Sync, format!("Removed {}.", folder.folder_name()));
                 removed.push(folder);
             }
         }
+        removed.dedup();
 
         let mut removed_files = Vec::new();
         for file in ClaimedFile::ALL {

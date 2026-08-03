@@ -576,3 +576,104 @@ fn community_patch_only_puts_nothing_in_the_dlc_or_text_folders() {
     assert_eq!(std::fs::read_dir(&folders.dlc).unwrap().count(), 0);
     assert_eq!(std::fs::read_dir(&folders.text).unwrap().count(), 0);
 }
+
+/// An older Release spells `(3a)` differently, and installing one still works.
+///
+/// Upstream renamed `(3a) EUI Compatibility Files` to `(3a) VP - EUI Compatibility Files`
+/// between `Release-5.0` and `Release-5.4.2`. Both are Versions this installer offers, so a
+/// single hardcoded name would fail on every Release up to 5.0 with "the mod files are missing
+/// the (3a) VP - EUI Compatibility Files folder" — for a folder sitting right there under its
+/// old name. It is deployed under the current name whichever the source used.
+#[test]
+fn a_version_that_uses_the_old_name_for_the_eui_folder_still_installs() {
+    let game = GameFixture::new();
+    let older = older_release_source(&game);
+
+    let core = Core::new(
+        Box::new(FixtureSourceProvider::new(older)),
+        Box::new(MarkerToolchainRunner),
+        game.work_dir(),
+    );
+    let plan = core
+        .plan(
+            &configuration(vox_populi(Eui::Enabled), FortyThreeCivs::Disabled),
+            &game.folders(),
+        )
+        .unwrap();
+    core.execute(&plan, &ProgressReporter::silent())
+        .expect("an older Release is still installable");
+
+    assert_eq!(
+        game.files(),
+        expected(&[
+            COMMUNITY_PATCH,
+            VOX_POPULI,
+            EUI_COMPATIBILITY_FILES,
+            SQUADS,
+            VPUI_DLC,
+            UI_BC1_DLC,
+            TIPS,
+        ]),
+        "the folder should be deployed under the name in current use",
+    );
+}
+
+/// Installing a newer Version over an older one does not leave both spellings behind.
+///
+/// This is the stale-install corruption Sync exists to prevent, in the one shape a per-folder
+/// name change creates: the game would load two copies of the same mod.
+#[test]
+fn installing_the_new_name_over_the_old_one_leaves_only_one() {
+    let game = GameFixture::new();
+    let older = older_release_source(&game);
+    let with_eui = configuration(vox_populi(Eui::Enabled), FortyThreeCivs::Disabled);
+
+    let old_core = Core::new(
+        Box::new(FixtureSourceProvider::new(older)),
+        Box::new(MarkerToolchainRunner),
+        game.work_dir(),
+    );
+    let plan = old_core.plan(&with_eui, &game.folders()).unwrap();
+    old_core
+        .execute(&plan, &ProgressReporter::silent())
+        .unwrap();
+
+    // …then the current one, which spells it the new way.
+    let plan = core_over(&game).plan(&with_eui, &game.folders()).unwrap();
+    core_over(&game)
+        .execute(&plan, &ProgressReporter::silent())
+        .unwrap();
+
+    assert!(
+        !game
+            .folders()
+            .mods
+            .join("(3a) EUI Compatibility Files")
+            .exists(),
+        "the folder under its old name must not survive alongside the new one",
+    );
+    assert_eq!(
+        game.files(),
+        expected(&[
+            COMMUNITY_PATCH,
+            VOX_POPULI,
+            EUI_COMPATIBILITY_FILES,
+            SQUADS,
+            VPUI_DLC,
+            UI_BC1_DLC,
+            TIPS,
+        ]),
+    );
+}
+
+/// The miniature repository as an older Release spelled it: `(3a)` under its pre-5.4 name.
+fn older_release_source(game: &GameFixture) -> std::path::PathBuf {
+    let root = game.work_dir().join("older-release");
+    copy_dir(&miniature_repo(), &root);
+    std::fs::rename(
+        root.join("(3a) VP - EUI Compatibility Files"),
+        root.join("(3a) EUI Compatibility Files"),
+    )
+    .unwrap();
+    root
+}

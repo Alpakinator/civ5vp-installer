@@ -118,16 +118,39 @@ impl ClaimedFolder {
         Self::UiBc1,
     ];
 
-    /// The folder's name on disk, in both the Installation Source and the game folder.
-    pub fn folder_name(self) -> &'static str {
+    /// Every name this folder has been known by, the one in current use first.
+    ///
+    /// Upstream renames these. `(3a)` was `(3a) EUI Compatibility Files` up to and including
+    /// `Release-5.0` and `(3a) VP - EUI Compatibility Files` by `Release-5.4.2`, and the
+    /// installer supports installing either — so a single hardcoded name would make an older
+    /// Release fail with "the mod files are missing …" for a folder that is right there under
+    /// its old name.
+    ///
+    /// Every name here is Claimed. That matters as much for removal as for deployment: a player
+    /// who installs an old Release and then a new one must not be left with both folders, which
+    /// is exactly the stale-install corruption Sync exists to prevent.
+    pub fn folder_names(self) -> &'static [&'static str] {
         match self {
-            Self::CommunityPatch => "(1) Community Patch",
-            Self::VoxPopuli => "(2) Vox Populi",
-            Self::EuiCompatibilityFiles => "(3a) VP - EUI Compatibility Files",
-            Self::FortyThreeCivsCommunityPatch => "(3b) 43 Civs Community Patch",
-            Self::SquadsForVoxPopuli => "(4a) Squads for VP",
-            Self::Vpui => "VPUI",
-            Self::UiBc1 => "UI_bc1",
+            Self::CommunityPatch => &["(1) Community Patch"],
+            Self::VoxPopuli => &["(2) Vox Populi"],
+            Self::EuiCompatibilityFiles => &[
+                "(3a) VP - EUI Compatibility Files",
+                "(3a) EUI Compatibility Files",
+            ],
+            Self::FortyThreeCivsCommunityPatch => &["(3b) 43 Civs Community Patch"],
+            Self::SquadsForVoxPopuli => &["(4a) Squads for VP"],
+            Self::Vpui => &["VPUI"],
+            Self::UiBc1 => &["UI_bc1"],
+        }
+    }
+
+    /// The name this folder is deployed under: the current one, whatever the source called it.
+    pub fn folder_name(self) -> &'static str {
+        // `folder_names` is never empty — every arm above is a non-empty literal — so this
+        // cannot fall through. Rule 9 forbids `unwrap` here, hence the explicit arm.
+        match self.folder_names() {
+            [current, ..] => current,
+            [] => "",
         }
     }
 
@@ -144,11 +167,20 @@ impl ClaimedFolder {
 
     /// Where this Claimed Folder lives in the user's game.
     pub fn path_in(self, folders: &GameFolders) -> PathBuf {
-        let root: &Path = match self.target() {
+        self.root_in(folders).join(self.folder_name())
+    }
+
+    /// Every place in the game this folder could be, old names included. What Sync removes.
+    pub(crate) fn every_path_in(self, folders: &GameFolders) -> Vec<PathBuf> {
+        let root = self.root_in(folders);
+        self.folder_names().iter().map(|n| root.join(n)).collect()
+    }
+
+    fn root_in(self, folders: &GameFolders) -> &Path {
+        match self.target() {
             DeploymentTarget::ModsFolder => &folders.mods,
             DeploymentTarget::DlcFolder => &folders.dlc,
-        };
-        root.join(self.folder_name())
+        }
     }
 }
 
