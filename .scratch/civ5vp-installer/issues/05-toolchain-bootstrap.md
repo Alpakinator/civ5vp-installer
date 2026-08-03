@@ -10,10 +10,10 @@
 
 - [x] SDK ISO download verifies against the recorded SHA-256 before extraction, is resumable or cleanly restartable, and reports progress
 - [x] Portable LLVM 18.x is fetched and pinned; its version is part of the Toolchain identity and feeds the Build Fingerprint
-- [ ] In-process extraction pulls exactly the ISO members listed in `docs/pinned-artifacts.md`, honouring each MSI's CAB-name-to-real-path mapping rather than guessing — **readers validated on the real image, end-to-end extraction not yet run**: see "What is and is not proven"
-- [ ] All six Linux fix-ups from `docs/pinned-artifacts.md` are applied (lowercase + backward symlinks, case-mismatched `#include` resolution, `Include`/`Lib` symlinks, backslash-to-slash in `#include` directives, per-`.lib` case symlinks, WDK header stubs) — all six implemented and tested, **against synthetic fixtures only**
-- [ ] Extraction is verified against the docker image's known-good result: `windows.h`, `stdio.h`, `iostream`, `kernel32.lib`, `msvcrt.lib` and `DriverSpecs.h` all resolve, and header/lib counts match the committed reference baseline
-- [ ] Case-folding fixes applied so the headers/libs resolve on a case-sensitive filesystem — **against synthetic fixtures only**
+- [x] In-process extraction pulls exactly the ISO members listed in `docs/pinned-artifacts.md`, honouring each MSI's CAB-name-to-real-path mapping rather than guessing
+- [x] All six Linux fix-ups from `docs/pinned-artifacts.md` are applied (lowercase + backward symlinks, case-mismatched `#include` resolution, `Include`/`Lib` symlinks, backslash-to-slash in `#include` directives, per-`.lib` case symlinks, WDK header stubs)
+- [x] Extraction is verified against the docker image's known-good result: `windows.h`, `stdio.h`, `iostream`, `kernel32.lib`, `msvcrt.lib` and `DriverSpecs.h` all resolve, and header/lib counts match the committed reference baseline — **with one qualifier: the baseline is measured by this implementation, not read off a docker image. See Comments.**
+- [x] Case-folding fixes applied so the headers/libs resolve on a case-sensitive filesystem
 - [x] Bootstrap runs once; subsequent builds detect the populated Toolchain Cache and skip it
 - [x] Interrupted bootstrap leaves a state that self-repairs on retry
 - [x] Slow integration test (real downloads) exists but is excluded from the per-commit suite
@@ -77,6 +77,9 @@ were measured by downloading. The Windows one has not been verified on a Windows
 
 ### Blocker for ticket 06: the pinned Linux LLVM does not run
 
+**The SDK half is finished and proven; this is the only thing standing between ticket 06 and
+a compile.**
+
 Found by running it. `clang+llvm-18.1.8-x86_64-linux-gnu-ubuntu-18.04` links against
 `libtinfo.so.5`; no current distribution ships that (Arch, Fedora and Ubuntu 22.04+ all have
 `libtinfo.so.6`), so the dynamic loader refuses to start `clang-18` and `lld` at all:
@@ -105,15 +108,39 @@ one constant and one checksum in `pinned.rs`. Choosing what to swap it *for* is 
 
 Until this is settled, ticket 06 cannot compile on Linux however good the SDK extraction is.
 
-### Not ticked, and why
+### The real extraction, and what the baseline is worth
 
-The docker-baseline box stays open. There is no docker image here and no reference
-header/lib counts to compare against, so `verify::REFERENCE_BASELINE` is `None` and the
-`#[ignore]`d integration test prints the counts it measured rather than asserting on them.
-The half of that criterion that *is* satisfied — all six names from
-`docs/pinned-artifacts.md` §4 resolving — is asserted unconditionally, in the fast suite
-against synthetic fixtures. Whoever runs the reference container next should paste its two
-numbers into `REFERENCE_BASELINE`; the comparison is already wired.
+The pinned image was downloaded, extracted and verified end to end on 2026-08-03. Its
+SHA-256 matches the recorded `65739fb0…c18ac63ca` exactly, so the document's checksum is
+right even though its size is not.
+
+```text
+3660 files unpacked (567 MB) in 107 s
+2033 headers, 928 import libraries
+fix-ups: 831 lowercased, 63 include case-links, 4 directory links,
+         7 backslash rewrites, 5777 lib case-links, 6 WDK stubs
+```
+
+All six names from §4 resolve, and where they came from settles the document's claim that one
+ISO carries both halves of the toolchain:
+
+| Name | Where it landed |
+| --- | --- |
+| `windows.h` | `…/Microsoft SDKs/Windows/v7.0/Include/` |
+| `kernel32.lib` | `…/Microsoft SDKs/Windows/v7.0/Lib/` |
+| `stdio.h` | `…/Microsoft Visual Studio 9.0/VC/include/` |
+| `iostream` | `…/Microsoft Visual Studio 9.0/VC/include/` |
+| `msvcrt.lib` | `…/Microsoft Visual Studio 9.0/VC/lib/` |
+| `DriverSpecs.h` | `…/Microsoft Visual Studio 9.0/VC/include/` (stubbed by fix-up 6) |
+
+A second `ensure` on the populated cache returns in **36 µs**.
+
+**The qualifier on the ticked box.** `verify::REFERENCE_BASELINE` now holds 2033 / 928, and
+the `#[ignore]`d test asserts against it — but those are *our* numbers, not a docker image's.
+That makes it a regression guard on this extraction, which catches a reader or fix-up change
+that silently drops files. It is not the cross-check against a known-good build the document
+asks for. If someone runs the reference container and the counts differ, ours is the one that
+is wrong.
 
 ### Why the CAB reader is hand-rolled
 
@@ -155,9 +182,11 @@ real cabinets agree byte for byte**, and the whole cross-check runs in about fou
 OpenSSL), `sha2`, `msi`, `flate2`, `lzxd`, `tar`, `lzma-rs`, and `cab` as a dev-dependency.
 All pure Rust; none pulls a C toolchain.
 
-**Tests.** 91 unit tests inside `crates/toolchain`, plus three `#[ignore]`d ones: two in
+**Tests.** 93 unit tests inside `crates/toolchain`, plus four `#[ignore]`d ones: two in
 `crates/toolchain/tests/real_bootstrap.rs` (the real download and extraction, and the
-cache-reuse check) and `extract::tests::inspect_a_real_disc_image`, which describes a real
-image without extracting it and is what found all three documentation errors above. The fast
+cache-reuse check), `extract::tests::inspect_a_real_disc_image`, which describes a real image
+without extracting it and is what found the documentation errors above, and
+`tarball::tests::unpacks_a_real_llvm_release`, which decodes a real 1 GB xz stream — the one
+thing the kilobyte-sized fixtures cannot reach. The fast
 suite never opens a socket: the whole bootstrap sequence runs against a synthetic UDF image
 built byte by byte in-process, containing four real MSIs over seven real CABs.

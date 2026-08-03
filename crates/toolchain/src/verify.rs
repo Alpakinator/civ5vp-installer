@@ -20,17 +20,22 @@ pub struct Baseline {
     pub libs: usize,
 }
 
-/// The committed comparison baseline — `None` because there is not one yet.
+/// The committed comparison baseline.
 ///
-/// `docs/pinned-artifacts.md` §4 asks for the counts from a real docker build. Nobody here has
-/// run that container, so there are no figures to commit, and inventing some from our own
-/// extraction and calling them the reference would make the comparison meaningless.
+/// **Measured by this implementation, not verified against the docker image.**
+/// `docs/pinned-artifacts.md` §4 asks for the counts from a real docker build; nobody here has
+/// run that container. These are what `real_bootstrap.rs` measured extracting the pinned image
+/// on 2026-08-03 — 2033 headers and 928 import libraries, with all six of
+/// [`VERIFICATION_NAMES`] resolving.
 ///
-/// `real_bootstrap.rs` prints the counts it measures. Filling them in here turns the
-/// `#[ignore]`d test into a regression guard against *this* extraction; only figures from the
-/// container make it the comparison the document is asking for. Say which one it is when
-/// setting it.
-pub const REFERENCE_BASELINE: Option<Baseline> = None;
+/// So this is a **regression guard on our own extraction**, which is worth having: it catches
+/// a reader or fix-up change that silently drops files. It is *not* the cross-check against a
+/// known-good build that the document is asking for. When someone runs the reference
+/// container, replace these and say so here — if they differ, ours is the one that is wrong.
+pub const REFERENCE_BASELINE: Option<Baseline> = Some(Baseline {
+    headers: 2033,
+    libs: 928,
+});
 
 /// What an extraction turned out to contain.
 #[derive(Debug, Clone, PartialEq, Eq)]

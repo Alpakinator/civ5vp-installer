@@ -305,9 +305,24 @@ mod tests {
                 println!("  MSI ABSENT");
                 continue;
             }
-            let bytes = iso.read_file(member.msi_path).unwrap();
+            // Report and carry on rather than stopping: an image that is truncated or
+            // damaged usually is so in one place, and "here is everything, and here is the
+            // one thing that failed" is the whole point of this test.
+            let bytes = match iso.read_file(member.msi_path) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    println!("  MSI UNREADABLE: {}", error.detail());
+                    continue;
+                }
+            };
             println!("  MSI is {} bytes", bytes.len());
-            let layout = msi_layout::read(Cursor::new(bytes), member.label).unwrap();
+            let layout = match msi_layout::read(Cursor::new(bytes), member.label) {
+                Ok(layout) => layout,
+                Err(error) => {
+                    println!("  MSI UNPARSEABLE: {}", error.detail());
+                    continue;
+                }
+            };
             println!("  cabinets named by Media: {:?}", layout.cabinets);
             println!("  files: {}", layout.files.len());
             for file in layout.files.iter().take(4) {
@@ -329,8 +344,12 @@ mod tests {
                 }
                 let staged = staging.join("inspect.cab");
                 let mut out = BufWriter::new(File::create(&staged).unwrap());
-                iso.copy_file_to(cab_path, &mut out).unwrap();
+                let copied = iso.copy_file_to(cab_path, &mut out);
                 drop(out);
+                if let Err(error) = copied {
+                    println!("  {cab_path}: UNREADABLE: {}", error.detail());
+                    continue;
+                }
 
                 let mut reference =
                     cab::Cabinet::new(std::io::BufReader::new(File::open(&staged).unwrap()))
