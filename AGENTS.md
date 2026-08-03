@@ -26,7 +26,34 @@ UPDATE_SNAPSHOTS=true cargo test  # accept changed egui_kittest snapshot baselin
 
 `--screenshot` takes `--size <WxH>` and `--scale <factor>`, each repeatable; every screen is rendered at every combination. `cargo run -- --help` lists them.
 
-The `#[ignore]`d tests today are ticket 03's `detection_finds_the_game_on_this_machine`, which asks the real Steam install on the developer's machine to be found — the one check the fixture trees cannot make — and ticket 04's `real_upstream.rs`, which clones the actual upstream repository (see below). The real-toolchain ones arrive with tickets 05 and 06.
+The `#[ignore]`d tests today are ticket 03's `detection_finds_the_game_on_this_machine`, which asks the real Steam install on the developer's machine to be found — the one check the fixture trees cannot make — ticket 04's `real_upstream.rs`, which clones the actual upstream repository, and ticket 05's `real_bootstrap.rs`, which downloads and extracts the real Windows SDK image. Both are described below. The real-compile ones arrive with ticket 06.
+
+### The real Toolchain Bootstrap (ticket 05)
+
+`crates/toolchain/tests/real_bootstrap.rs` is the one `#[ignore]`d test that exists so far. It
+downloads the real pinned artifacts (~1.6 GB: the Windows SDK 7.0 ISO from archive.org and the
+portable LLVM 18.1.8 from GitHub), extracts the four ISO members in process, applies the six
+Linux fix-ups, and checks that every name in `docs/pinned-artifacts.md` §4 resolves.
+
+```bash
+# Keep the 1.6 GB somewhere that survives `cargo clean`, or it downloads again next time.
+CIV5VP_TOOLCHAIN_CACHE=~/.cache/civ5vp-toolchain \
+  cargo test -p civ5vp-toolchain -- --ignored --nocapture
+```
+
+Without `CIV5VP_TOOLCHAIN_CACHE` it uses `target/tmp/toolchain-bootstrap`. The archive.org
+download runs at a few MB/s and the image is 1.45 GiB, so budget well over an hour; it
+resumes, and verified downloads are reused, so an interrupted run is cheap to repeat.
+`--nocapture` is what makes the progress visible. Use `--release` — the LZX decompression is
+many times slower in a debug build.
+
+To look at an image you already have without extracting it — which members are present, what
+each MSI's layout says, how the cabinets are structured:
+
+```bash
+CIV5VP_SDK_ISO=/path/to/GRMSDK_EN_DVD.iso \
+  cargo test -p civ5vp-toolchain --lib -- --ignored --nocapture inspect_a_real_disc_image
+```
 
 Run clippy and the fast suite regularly; the full suite once before handing work back.
 
