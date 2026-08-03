@@ -20,12 +20,16 @@ pub struct Baseline {
     pub libs: usize,
 }
 
-/// The committed comparison baseline, or `None` while there is not one.
+/// The committed comparison baseline — `None` because there is not one yet.
 ///
-/// **Measured by us**, by running the `#[ignore]`d integration test against the pinned ISO —
-/// not read off a docker image. `docs/pinned-artifacts.md` §4 asks for the docker figures;
-/// until someone runs the reference container these are what exists, and mislabelling them as
-/// verified would be worse than having none.
+/// `docs/pinned-artifacts.md` §4 asks for the counts from a real docker build. Nobody here has
+/// run that container, so there are no figures to commit, and inventing some from our own
+/// extraction and calling them the reference would make the comparison meaningless.
+///
+/// `real_bootstrap.rs` prints the counts it measures. Filling them in here turns the
+/// `#[ignore]`d test into a regression guard against *this* extraction; only figures from the
+/// container make it the comparison the document is asking for. Say which one it is when
+/// setting it.
 pub const REFERENCE_BASELINE: Option<Baseline> = None;
 
 /// What an extraction turned out to contain.
