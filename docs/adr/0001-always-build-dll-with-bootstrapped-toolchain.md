@@ -11,3 +11,19 @@ The upstream repository's checked-in `CvGameCore_Expansion2.dll` is stale except
 ## Consequences
 
 First-ever build costs a ~700 MB one-time download (SDK ISO + LLVM); all later installs build in 1–2 minutes offline. Redundant rebuilds are avoided via the Build Fingerprint (see CONTEXT.md).
+
+## Correction (ticket 05)
+
+This ADR said the SDK image would be read with an **ISO9660** parser and put first-bootstrap
+traffic at **~700 MB**. Both are wrong, measured against the real artifact:
+
+* the image is a **UDF** bridge disc — its ISO9660 side contains one `README.TXT` and none of
+  the members the bootstrap needs, so an ISO9660-only reader cannot extract the toolchain at
+  all;
+* the image alone is **1.45 GiB**, and with the portable LLVM a first bootstrap moves about
+  **2.4 GB**.
+
+Neither changes the decision — the DLL is still always built locally from a bootstrapped,
+pinned toolchain, and extraction still happens in-process with no external programs. What
+changes is the cost the UI has to be honest about, and one line of the implementation contract.
+`docs/pinned-artifacts.md` carries the evidence and a two-command way to re-check it.

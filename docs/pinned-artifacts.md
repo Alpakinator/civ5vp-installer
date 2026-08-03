@@ -11,7 +11,8 @@ Everything the installer downloads from the internet, with the exact URLs and th
 | | |
 | --- | --- |
 | **URL** | `https://web.archive.org/web/20161230154527/http://download.microsoft.com/download/2/E/9/2E911956-F90F-4BFB-8231-E292A7B6F287/GRMSDK_EN_DVD.iso` |
-| **Size** | ~580 MB |
+| **Size** | **1.45 GiB** (1,552,508,928 bytes) |
+| **Filesystem** | **UDF**, not ISO9660 — see below |
 | **SHA-256** | `65739fb0874cc17ea6962d8ce7915364c7161fa106ed1bf1c917924c18ac63ca` |
 | **Provides** | Windows SDK 7.0 headers + import libs **and** the VC9 CRT |
 
@@ -26,7 +27,43 @@ Setup/WinSDKWin32Tools/WinSDKWin32Tools_x86.msi + cab1.cab
 Setup/vc_stdx86/vc_stdx86.msi                   + vc_stdx86.cab          (VC9 CRT)
 ```
 
-Each MSI carries the mapping from CAB-internal names to real file paths — that mapping must be honoured, not guessed. The reference implementation shells out to `7z` and `msiextract`; **ours parses ISO9660, MSI, and CAB in-process** (ADR-0001), so this list is the extraction contract to verify against.
+Each MSI carries the mapping from CAB-internal names to real file paths — that mapping must be honoured, not guessed. The reference implementation shells out to `7z` and `msiextract`; **ours parses UDF, MSI, and CAB in-process** (ADR-0001), so this list is the extraction contract to verify against.
+
+### Corrections, measured against the real download (ticket 05)
+
+Three things this document originally said were wrong. All three were found by pointing code at
+the actual artifact, and two are independently checkable with a single ranged request.
+
+**1. The image is UDF, not ISO9660.** Its volume recognition sequence reads:
+
+| sector | descriptor |
+| --- | --- |
+| 16 | `CD001` — the ISO9660 primary volume descriptor |
+| 17 | `CD001`, type 255 — terminator |
+| 18 | `BEA01` — beginning of the extended area |
+| 19 | `NSR02` — ISO 13346 / UDF |
+
+It is a *bridge* disc: the ISO9660 side exists but holds a single `README.TXT` saying the
+content is in the UDF filesystem. An ISO9660-only reader — which is what ADR-0001 and the spec
+originally specified — cannot read a single one of the members listed above. The installer
+therefore carries a UDF reader and probes for the anchor to decide which to use.
+
+**2. It is 1.45 GiB, not ~580 MB.** `Content-Length` from the pinned URL is 1,552,508,928 bytes.
+With the portable LLVM alongside it, a first bootstrap moves roughly 2.4 GB, not the "~700 MB"
+ADR-0001 estimated. This is a user-visible number — it belongs in the progress UI and in
+whatever the storage panel says about the ~5 GB footprint.
+
+**3. The MSIs do not extract to a flat `Include/` and `Lib/`.** The real paths are nested under
+`Program Files/Microsoft SDKs/Windows/v7.0/`. Extraction locates the roots rather than assuming
+them, and hands them to the build as explicit include and lib directories.
+
+To re-check the first two without downloading the whole image:
+
+```sh
+URL='https://web.archive.org/web/20161230154527/http://download.microsoft.com/download/2/E/9/2E911956-F90F-4BFB-8231-E292A7B6F287/GRMSDK_EN_DVD.iso'
+curl -sIL "$URL" | grep -i content-length          # 1552508928
+curl -s -r 32768-40959 -L "$URL" | xxd | grep -E 'CD001|BEA01|NSR0'
+```
 
 ## 2. Compiler
 

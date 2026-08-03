@@ -26,7 +26,7 @@ _Spec: "development and routine verification happen on EndeavourOS (Arch) only�
 
 **5. No external process except what the installer itself brings.**
 Assume the user's machine has **nothing**: no git, no Python, no Docker, no wine, no 7-Zip, no msitools, no compiler, no Rust. The executable is a lone file that works on a fresh machine with no admin rights (user story 34). Any `Command::new` naming a tool the user would have to install is a defect. ISO/MSI/CAB extraction and build orchestration happen in-process. The permitted exception is invoking the bootstrapped clang/lld from the Toolchain Cache, and that goes through the toolchain-runner boundary.
-_ADR-0001; spec: "no Visual Studio, no Docker, no Python on the user's machine… ISO9660 + MSI + CAB parsing inside the installer."_
+_ADR-0001; spec: "no Visual Studio, no Docker, no Python on the user's machine… UDF + MSI + CAB parsing inside the installer."_
 
 Git is the one open question the spec leaves deliberately open: the preference is an embedded library doing a blobless partial clone, but the spec names "shipping a static git" as an accepted fallback if library support proves unreliable. If that fallback is taken, the binary the installer executes must be one it ships or bootstraps itself — never the user's `git` — and the decision needs an ADR.
 _Spec, Further Notes: "blobless partial clone support in embeddable git libraries (fallbacks: full clone, or shipping a static git)."_
@@ -67,8 +67,8 @@ Given a fixture repository and temporary MODS/DLC/Text directories, run an Insta
 _Spec: "No test reaches into Core internals; the egui shell is not unit-tested."_
 
 **13. The two boundaries are faked in the fast suite.**
-A fake source provider serves fixture trees; a fake toolchain runner emits a marker artifact as the Built DLL. The per-commit suite never downloads the 580 MB SDK and never invokes a real compiler.
-_Spec: "This keeps the suite free of the 580 MB SDK download and multi-minute compiles."_
+A fake source provider serves fixture trees; a fake toolchain runner emits a marker artifact as the Built DLL. The per-commit suite never downloads the 1.45 GiB SDK image and never invokes a real compiler.
+_Spec: "This keeps the suite free of the 1.45 GiB SDK download and multi-minute compiles."_
 
 **14. Real-toolchain and real-clone integration tests are `#[ignore]`d, not deleted.**
 They run on demand. "The tests pass" means the fast suite passed — say so explicitly, and never claim the real toolchain path works on the strength of fakes alone.
