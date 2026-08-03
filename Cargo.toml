@@ -1,9 +1,9 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/installer"]
-# Both, so a bare `cargo test` at the root really is the whole suite. `cargo run` still
-# resolves without `-p` because the installer holds the workspace's only binary.
-default-members = ["crates/core", "crates/installer"]
+members = ["crates/core", "crates/installer", "crates/sources"]
+# All of them, so a bare `cargo test` at the root really is the whole suite. `cargo run`
+# still resolves without `-p` because the installer holds the workspace's only binary.
+default-members = ["crates/core", "crates/installer", "crates/sources"]
 
 [workspace.package]
 version = "0.1.0"

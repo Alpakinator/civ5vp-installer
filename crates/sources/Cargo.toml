@@ -1,0 +1,23 @@
+[package]
+name = "civ5vp-sources"
+description = "Installation Sources for the Civ 5 VP Installer: the Upstream Cache and the Local Repo."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+civ5vp-core = { path = "../core" }
+gix = { version = "0.74", default-features = false, features = [
+    "blocking-http-transport-reqwest-rust-tls",
+    "max-performance-safe",
+    "zlib-rs",
+    "worktree-mutation",
+    "revision",
+] }
+
+[dev-dependencies]
+tempfile = "3.27"
+# The fixture repositories the fast suite fetches from are built with the same library the
+# installer uses, so no test needs the `git` CLI to author a commit, a tag, or a branch.
+gix = { version = "0.74", default-features = false }

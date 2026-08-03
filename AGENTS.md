@@ -59,3 +59,27 @@ The five canonical roles, unchanged, recorded as a `**Status:**` line in each ti
 ### Domain docs
 
 Single-context — one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+## Real-clone integration tests (ticket 04)
+
+`crates/sources` holds the Installation Sources — the Upstream Cache and the Local Repo. Its
+fast tests fetch from fixture repositories built in a temp directory, so they never touch the
+network. The tests that talk to the real `LoneGazebo/Community-Patch-DLL` are `#[ignore]`d:
+
+```bash
+# ~80s once built; ~600 MB downloaded, ~1.8 GB left under target/tmp. Prints the transfer figures.
+cargo test --release -p civ5vp-sources --test real_upstream -- --ignored --nocapture --test-threads 1
+```
+
+`--nocapture` is the point of running them: the printed byte counts are the evidence behind
+the transfer budget in ticket 04, and re-running is how that budget is re-checked. They write
+into `target/tmp/`, not `/tmp`, because a snapshot of the repository is larger than a RAM disk
+should hold.
+
+Two things about them worth knowing before changing either:
+
+- The fixture repositories are built with `gix`, but `gix`'s `file://` transport spawns
+  `git-upload-pack`, so **the fast suite needs `git` on the machine running it**. The installer
+  itself never uses `file://` — it speaks `https` to GitHub in-process — so this is a property
+  of the fixtures, not a runtime dependency (rule 5).
+- The clone strategy and the numbers behind it are ADR-0004.
