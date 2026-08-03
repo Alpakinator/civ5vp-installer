@@ -1,0 +1,66 @@
+# Pinned Artifacts
+
+Everything the installer downloads from the internet, with the exact URLs and the checks that prove the download is the right one. Nothing else may be fetched at runtime.
+
+**Source of truth:** the `docker` branch of **`Alpakinator/Community-Patch-DLL`** — <https://github.com/Alpakinator/Community-Patch-DLL/tree/docker>.
+
+> **Do not take build settings from upstream `master` or any other branch.** Only the `docker` branch's clang configuration produces a DLL the game accepts; the Release configuration on other branches is wrong and yields a broken DLL. Upstream `LoneGazebo/Community-Patch-DLL` has no `docker` branch at all — `build_vp_clang.py` and `build_vp_clang_sdk.py` exist on its `master`, but the Linux build (`build_vp_clang_linux.py`, `Dockerfile`, `setup_sdk.sh`, `fix_lib_case.sh`, `docker-build.sh`, `scripts/deploy_ingame.py`) exists only on the fork's `docker` branch. This is what ADR-0001 and the spec mean by "the docker-branch build".
+
+## 1. Windows SDK 7.0 ISO — the only mandatory download
+
+| | |
+| --- | --- |
+| **URL** | `https://web.archive.org/web/20161230154527/http://download.microsoft.com/download/2/E/9/2E911956-F90F-4BFB-8231-E292A7B6F287/GRMSDK_EN_DVD.iso` |
+| **Size** | ~580 MB |
+| **SHA-256** | `65739fb0874cc17ea6962d8ce7915364c7161fa106ed1bf1c917924c18ac63ca` |
+| **Provides** | Windows SDK 7.0 headers + import libs **and** the VC9 CRT |
+
+**This single ISO covers both halves of the toolchain.** The VC9 CRT is not a separate download — it lives inside the ISO at `Setup/vc_stdx86/`. Earlier prose describing the CRT as coming from a Visual Studio ISO is wrong for the Linux path.
+
+Only these members are needed (everything else in the ISO is ignored):
+
+```
+Setup/WinSDK/WinSDK_x86.msi                     + cab1.cab
+Setup/WinSDKBuild/WinSDKBuild_x86.msi           + cab1.cab .. cab4.cab   (headers + import libs)
+Setup/WinSDKWin32Tools/WinSDKWin32Tools_x86.msi + cab1.cab
+Setup/vc_stdx86/vc_stdx86.msi                   + vc_stdx86.cab          (VC9 CRT)
+```
+
+Each MSI carries the mapping from CAB-internal names to real file paths — that mapping must be honoured, not guessed. The reference implementation shells out to `7z` and `msiextract`; **ours parses ISO9660, MSI, and CAB in-process** (ADR-0001), so this list is the extraction contract to verify against.
+
+## 2. Compiler
+
+The reference build uses **clang 18 with lld**, from Ubuntu 24.04's default repositories, targeting **`i386-pc-windows-msvc`** (Win32 x86). `clang-cl` is a symlink to `clang`.
+
+The installer cannot apt-install anything, so Toolchain Bootstrap must fetch an equivalent **portable LLVM 18.x** and pin it. The proven configuration is clang 18 — treat the major version as part of the pinned toolchain identity, not an incidental detail, and record it in the Build Fingerprint.
+
+## 3. Post-extraction fix-ups (Linux)
+
+The extracted SDK does not work as-is on a case-sensitive filesystem. All of these are part of a correct Toolchain Bootstrap:
+
+1. **Lowercase every filename under `Include/`**, leaving a symlink from the original mixed-case name to the lowercase one.
+2. **Resolve case-mismatched `#include "X"` directives** — where a header includes a name that differs only in case from the file on disk, add a symlink.
+3. **Symlink `Include/` and `Lib/`** to their lowercase forms if the extraction produced lowercase directories; the build expects the capitalised names.
+4. **Rewrite backslashes to forward slashes** in `#include` directives inside SDK headers — the SDK uses Windows path separators that Linux reads literally.
+5. **Case symlinks for every `.lib`** — the SDK and CRT mix `GDI32.lib`, `Kernel32.Lib`, etc., and the linker may reference either case.
+6. **Stub the WDK-only headers** referenced by the SDK but shipped only with the Driver Kit: `DriverSpecs.h` and `SpecStrings.h` (plus lowercase variants). Empty files satisfy the `#include` chain for user-mode code.
+
+## 4. Extraction verification
+
+A bootstrap is only complete when all of these resolve under the toolchain root:
+
+`windows.h` · `stdio.h` · `iostream` · `kernel32.lib` · `msvcrt.lib` · `DriverSpecs.h`
+
+Ticket 05's "layout equivalent to the docker image's known-good extraction" means: same header count, same lib count, and every name above resolving. Capture the reference counts from a real docker build once and commit them as the comparison baseline.
+
+## 5. Not downloaded by the Linux build
+
+These appear in the reference repo's documentation for the **Windows / Visual Studio** path. The installer does not fetch them, and they should not be added without an ADR:
+
+- `VS2008ExpressWithSP1ENUX1504728.iso` (VC9 via Visual Studio)
+- `VS2010Express1.iso`
+- `VS10SP1-KB2736182.exe` (VS2010 SP1 compiler update)
+
+## 6. Mod sources
+
+The Community Patch / Vox Populi sources come from the Upstream Cache — an incremental clone of `LoneGazebo/Community-Patch-DLL` (~4.5 GB of history; see ticket 04 for the transfer budget) — or from a Local Repo. No other network source exists.
