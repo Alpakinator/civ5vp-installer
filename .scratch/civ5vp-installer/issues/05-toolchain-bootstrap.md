@@ -8,12 +8,94 @@
 
 **Every URL, checksum, ISO member and fix-up this ticket needs is recorded in `docs/pinned-artifacts.md`.** Read it first. Two things there override older prose: the VC9 CRT ships **inside the same Windows SDK ISO** (`Setup/vc_stdx86/`), so there is exactly one mandatory download, not two; and the proven compiler is **clang 18** targeting `i386-pc-windows-msvc`. Do not take build settings from upstream `master` — its Release configuration produces a DLL the game rejects.
 
-- [ ] SDK ISO download verifies against the recorded SHA-256 before extraction, is resumable or cleanly restartable, and reports progress
-- [ ] Portable LLVM 18.x is fetched and pinned; its version is part of the Toolchain identity and feeds the Build Fingerprint
-- [ ] In-process extraction pulls exactly the ISO members listed in `docs/pinned-artifacts.md`, honouring each MSI's CAB-name-to-real-path mapping rather than guessing
-- [ ] All six Linux fix-ups from `docs/pinned-artifacts.md` are applied (lowercase + backward symlinks, case-mismatched `#include` resolution, `Include`/`Lib` symlinks, backslash-to-slash in `#include` directives, per-`.lib` case symlinks, WDK header stubs)
+- [x] SDK ISO download verifies against the recorded SHA-256 before extraction, is resumable or cleanly restartable, and reports progress
+- [x] Portable LLVM 18.x is fetched and pinned; its version is part of the Toolchain identity and feeds the Build Fingerprint
+- [x] In-process extraction pulls exactly the ISO members listed in `docs/pinned-artifacts.md`, honouring each MSI's CAB-name-to-real-path mapping rather than guessing
+- [x] All six Linux fix-ups from `docs/pinned-artifacts.md` are applied (lowercase + backward symlinks, case-mismatched `#include` resolution, `Include`/`Lib` symlinks, backslash-to-slash in `#include` directives, per-`.lib` case symlinks, WDK header stubs)
 - [ ] Extraction is verified against the docker image's known-good result: `windows.h`, `stdio.h`, `iostream`, `kernel32.lib`, `msvcrt.lib` and `DriverSpecs.h` all resolve, and header/lib counts match the committed reference baseline
-- [ ] Case-folding fixes applied so the headers/libs resolve on a case-sensitive filesystem
-- [ ] Bootstrap runs once; subsequent builds detect the populated Toolchain Cache and skip it
-- [ ] Interrupted bootstrap leaves a state that self-repairs on retry
-- [ ] Slow integration test (real downloads) exists but is excluded from the per-commit suite
+- [x] Case-folding fixes applied so the headers/libs resolve on a case-sensitive filesystem
+- [x] Bootstrap runs once; subsequent builds detect the populated Toolchain Cache and skip it
+- [x] Interrupted bootstrap leaves a state that self-repairs on retry
+- [x] Slow integration test (real downloads) exists but is excluded from the per-commit suite
+
+## Comments
+
+Landed as a new crate, `crates/toolchain` (`civ5vp-toolchain`), depending on `civ5vp-core` for
+the `ToolchainRunner` boundary and on nothing UI-shaped. The Core keeps its zero dependencies.
+
+### Three things `docs/pinned-artifacts.md` gets wrong about the ISO
+
+All three were found by pointing the code at the real download; none is a code problem, all
+three change what the document should say.
+
+1. **The image is UDF, not ISO9660.** `GRMSDK_EN_DVD.iso` is an ISO-13346 (UDF) disc. Its
+   ISO9660 side contains exactly one file, a `README.TXT` reading *"This disc contains a
+   'UDF' file system and requires an operating system that supports the ISO-13346 'UDF' file
+   system specification."* Everything the bootstrap needs is on the UDF side. ADR-0001 and
+   the spec both say "ISO9660 + MSI + CAB parsing inside the installer"; an ISO9660-only
+   installer cannot read this artifact at all. Both readers now exist (`src/udf.rs`,
+   `src/iso9660.rs`) and `src/disc.rs` picks by probing for a UDF anchor.
+2. **It is 1.45 GiB, not ~580 MB.** `Content-Length` from the pinned archive.org URL is
+   1,552,508,928 bytes. With the 1.0 GB LLVM tarball a first bootstrap is ~2.4 GB, against
+   ADR-0001's "~700 MB one-time download".
+3. **The MSIs do not extract to a flat `Include/` and `Lib/`.** They place files where
+   Windows would have installed them — `Program Files/Microsoft SDKs/Windows/v7.0/Include/…`,
+   with `Lib/x64/` beside `Lib/`. Honouring the MSI mapping (which §1 requires) means the
+   layout stays nested, so `src/sdk_layout.rs` *finds* the include and lib roots rather than
+   assuming them, and `Toolchain::include_dirs()` / `lib_dirs()` hand them to ticket 06.
+
+Measured from the real image: `Setup/WinSDK/cab1.cab` holds 120 files in one LZX folder;
+`Setup/WinSDKBuild/cab1..4.cab` hold 641 / 1013 / 862 / 320 files, ~52 MB per folder, all
+`Lzx(MB2)`. `WinSDKBuild_x86.msi` maps 2836 files across those four cabinets.
+
+### Not ticked, and why
+
+The docker-baseline box stays open. There is no docker image here and no reference
+header/lib counts to compare against, so `verify::REFERENCE_BASELINE` is `None` and the
+`#[ignore]`d integration test prints the counts it measured rather than asserting on them.
+The half of that criterion that *is* satisfied — all six names from
+`docs/pinned-artifacts.md` §4 resolving — is asserted unconditionally, in the fast suite
+against synthetic fixtures. Whoever runs the reference container next should paste its two
+numbers into `REFERENCE_BASELINE`; the comparison is already wired.
+
+### Known cost, not yet paid down
+
+`cab::Cabinet::read_file` rebuilds a folder reader per file and decompresses that folder from
+its start every time, so extracting *N* files from one folder costs O(N × folder size). On the
+real cabinets that is roughly 69 GB of LZX decompression for one bootstrap. It is correct, it
+is one-time, and it is cached — but it is minutes of pointless CPU. Fixing it means reading
+CAB folders sequentially ourselves (the format is simple; `lzxd` and `flate2` already do the
+decompression), which is a second archive parser and was not worth the risk of adding late in
+this ticket. Raised rather than done.
+
+### Other deliberate scope calls
+
+- `docs/pinned-artifacts.md` §2 pins clang 18 but no URL, because the reference build
+  apt-installs it. The pinned artifact is now the llvm.org release tarball for 18.1.8
+  (Linux x86-64 and Windows x86-64). llvm.org publishes no checksums for those, so both
+  SHA-256 values in `pinned.rs` were measured by downloading and hashing the assets. Worth a
+  second pair of eyes: weaker provenance than the ISO's, whose checksum the document carries.
+- The tarball expands to ~4.5 GB, most of it LLVM's own static libraries and headers, so
+  `tarball.rs` keeps only `bin/`, `lib/clang/` and the shared libraries in `lib/`. The 1.0 GB
+  download itself cannot be trimmed without finding a smaller portable clang 18 — an
+  ADR-sized question.
+- ISO9660 and UDF are hand-rolled; MSI and CAB are not. `msi` and `cab` (both mdsteele, both
+  pure Rust) do those two, and their *writer* halves build the test fixtures — so those
+  fixtures are produced by the same implementations the bootstrap reads with. The UDF and
+  ISO9660 fixtures are written byte by byte here, since no such counterpart exists.
+- `BootstrappedToolchain::build_dll` bootstraps the Toolchain and then returns a typed error
+  saying compilation is not implemented. That is ticket 06's work; emitting a stub DLL instead
+  would let a broken install reach the game.
+- The Windows LLVM checksum is pinned but **untested** — no Windows machine (`AGENTS.md`).
+  The fix-ups are a documented no-op there, because NTFS already resolves every spelling and
+  creating symlinks needs a privilege user story 34 says the installer must not require.
+
+**Dependencies added,** each with its reason in the commit that adds it: `ureq` (rustls, no
+OpenSSL), `sha2`, `msi`, `cab`, `tar`, `lzma-rs`. All pure Rust; none pulls a C toolchain.
+
+**Tests.** 88 unit tests inside `crates/toolchain`, plus three `#[ignore]`d ones: two in
+`crates/toolchain/tests/real_bootstrap.rs` (the real download and extraction, and the
+cache-reuse check) and `extract::tests::inspect_a_real_disc_image`, which describes a real
+image without extracting it and is what found all three documentation errors above. The fast
+suite never opens a socket: the whole bootstrap sequence runs against a synthetic UDF image
+built byte by byte in-process, containing four real MSIs over seven real CABs.

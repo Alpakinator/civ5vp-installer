@@ -14,7 +14,7 @@ A single-file desktop installer (Windows + Linux) for the Community Patch / Vox 
 
 ## Commands
 
-The workspace is `crates/core` (the headless Core, a library) and `crates/installer` (the egui shell and the binary). Both are default workspace members, so a bare `cargo test` is the whole suite and `cargo run` means the installer.
+The workspace is `crates/core` (the headless Core, a library), `crates/installer` (the egui shell and the binary) and `crates/toolchain` (Toolchain Bootstrap: pinned downloads and in-process ISO/MSI/CAB extraction). All are default workspace members, so a bare `cargo test` is the whole suite and `cargo run` means the installer.
 
 Standard `cargo` commands apply. Only the non-obvious ones are listed:
 
@@ -26,7 +26,32 @@ UPDATE_SNAPSHOTS=true cargo test  # accept changed egui_kittest snapshot baselin
 
 `--screenshot` takes `--size <WxH>` and `--scale <factor>`, each repeatable; every screen is rendered at every combination. `cargo run -- --help` lists them.
 
-There are no `#[ignore]`d tests yet — tickets 04, 05 and 06 add the first real-clone and real-toolchain ones. The command runs and reports nothing until then.
+### The real Toolchain Bootstrap (ticket 05)
+
+`crates/toolchain/tests/real_bootstrap.rs` is the one `#[ignore]`d test that exists so far. It
+downloads the real pinned artifacts (~1.6 GB: the Windows SDK 7.0 ISO from archive.org and the
+portable LLVM 18.1.8 from GitHub), extracts the four ISO members in process, applies the six
+Linux fix-ups, and checks that every name in `docs/pinned-artifacts.md` §4 resolves.
+
+```bash
+# Keep the 1.6 GB somewhere that survives `cargo clean`, or it downloads again next time.
+CIV5VP_TOOLCHAIN_CACHE=~/.cache/civ5vp-toolchain \
+  cargo test -p civ5vp-toolchain -- --ignored --nocapture
+```
+
+Without `CIV5VP_TOOLCHAIN_CACHE` it uses `target/tmp/toolchain-bootstrap`. The archive.org
+download runs at a few MB/s and the image is 1.45 GiB, so budget well over an hour; it
+resumes, and verified downloads are reused, so an interrupted run is cheap to repeat.
+`--nocapture` is what makes the progress visible. Use `--release` — the LZX decompression is
+many times slower in a debug build.
+
+To look at an image you already have without extracting it — which members are present, what
+each MSI's layout says, how the cabinets are structured:
+
+```bash
+CIV5VP_SDK_ISO=/path/to/GRMSDK_EN_DVD.iso \
+  cargo test -p civ5vp-toolchain --lib -- --ignored --nocapture inspect_a_real_disc_image
+```
 
 Run clippy and the fast suite regularly; the full suite once before handing work back.
 
