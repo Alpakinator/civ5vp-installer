@@ -17,7 +17,7 @@ use civ5vp_core::{
     ProgressReporter, SearchLocations, Settings, resolve_game_folders, start_up,
 };
 
-use crate::placeholder;
+use crate::{deco, placeholder, theme};
 
 /// What the shell is currently showing. Presentation state, not domain state, and
 /// deliberately not public: nothing outside this crate should be reading the shell's mind.
@@ -88,6 +88,9 @@ pub struct InstallerApp {
     activity: Vec<String>,
     status: Status,
     running: Option<RunningInstall>,
+    /// Whether the art-deco theme has been installed on the context yet. Fonts and style
+    /// are set once per context, not per frame — rebuilding the font atlas is not free.
+    skinned: bool,
 }
 
 /// The Flavor choices, as the player reads them.
@@ -162,6 +165,7 @@ impl InstallerApp {
             activity: Vec::new(),
             status: Status::Ready,
             running: None,
+            skinned: false,
         };
         // Detected folders are worth remembering too: the next launch then starts from them
         // without searching (user story 26).
@@ -198,6 +202,7 @@ impl InstallerApp {
             activity: Vec::new(),
             status: Status::Ready,
             running: None,
+            skinned: false,
         };
         match screen {
             Screen::Ready => {}
@@ -265,9 +270,15 @@ impl InstallerApp {
     /// so all three show the same pixels — which is what makes a snapshot baseline mean
     /// anything about the shipped window (rule 15).
     pub fn show(&mut self, ui: &mut egui::Ui) {
+        if !self.skinned {
+            // Takes effect from the next frame, which every caller — the window, the
+            // screenshot renderer, the kittest harness — runs plenty of before anyone looks.
+            theme::apply(ui.ctx());
+            self.skinned = true;
+        }
         self.poll();
-        egui::Frame::central_panel(ui.style()).show(ui, |ui| {
-            // Fill the window rather than shrink-wrapping the widgets, so the panel
+        deco::page(ui.style()).show(ui, |ui| {
+            // Fill the window rather than shrink-wrapping the widgets, so the page
             // background covers the whole surface.
             ui.set_min_size(ui.available_size());
             self.contents(ui);
@@ -275,55 +286,65 @@ impl InstallerApp {
     }
 
     fn contents(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Civ 5 VP Installer");
+        deco::header(ui, "Civ 5 VP Installer");
         ui.label(
-            "Sources come from a local checkout of Community-Patch-DLL; the installer \
-             compiles the mod's DLL itself with its own downloaded build tools.",
+            egui::RichText::new(
+                "Sources come from a local checkout of Community-Patch-DLL; the installer \
+                 compiles the mod's DLL itself with its own downloaded build tools.",
+            )
+            .small()
+            .color(theme::PARCHMENT_DIM),
         );
-        ui.add_space(8.0);
+        ui.add_space(6.0);
 
         let mut edited = false;
-        egui::Grid::new("folders")
-            .num_columns(2)
-            .spacing([12.0, 6.0])
-            .show(ui, |ui| {
-                folder_field(ui, "Community-Patch-DLL folder", &mut self.source_folder);
-                // The two folders the installer detects and the player can correct. The three
-                // Deployment targets are not editable, because they are not separate choices:
-                // the Core derives them from these two.
-                edited |= folder_field(ui, "Civilization V game folder", &mut self.game_folder);
-                edited |= folder_field(
-                    ui,
-                    "Civilization 5 Documents folder",
-                    &mut self.documents_folder,
-                );
-            });
+        deco::panel(ui, Some("Game folders"), |ui| {
+            egui::Grid::new("folders")
+                .num_columns(2)
+                .spacing([12.0, 4.0])
+                .show(ui, |ui| {
+                    folder_field(ui, "Community-Patch-DLL folder", &mut self.source_folder);
+                    // The two folders the installer detects and the player can correct. The
+                    // three Deployment targets are not editable, because they are not separate
+                    // choices: the Core derives them from these two.
+                    edited |= folder_field(ui, "Civilization V game folder", &mut self.game_folder);
+                    edited |= folder_field(
+                        ui,
+                        "Civilization 5 Documents folder",
+                        &mut self.documents_folder,
+                    );
+                });
+
+            ui.add_space(6.0);
+            if let Ok(folders) = &self.resolved {
+                deco::hairline(ui);
+                for (label, path) in [
+                    ("MODS folder", &folders.mods),
+                    ("DLC folder", &folders.dlc),
+                    ("Text folder", &folders.text),
+                ] {
+                    ui.label(
+                        egui::RichText::new(format!("{label}: {}", path.display()))
+                            .small()
+                            .color(theme::PARCHMENT_DIM),
+                    );
+                }
+            }
+        });
         if edited {
             self.folders_changed();
         }
 
-        ui.add_space(8.0);
-        match &self.resolved {
-            Ok(folders) => {
-                ui.group(|ui| {
-                    for (label, path) in [
-                        ("MODS folder", &folders.mods),
-                        ("DLC folder", &folders.dlc),
-                        ("Text folder", &folders.text),
-                    ] {
-                        ui.label(format!("{label}: {}", path.display()));
-                    }
-                });
-            }
-            Err(explanation) => {
+        if let Err(explanation) = &self.resolved {
+            ui.add_space(6.0);
+            deco::notice(ui, theme::EMBER, |ui| {
                 ui.label(explanation);
-            }
+            });
         }
 
-        ui.add_space(8.0);
+        ui.add_space(6.0);
         let mut chosen = false;
-        ui.group(|ui| {
-            ui.label("What to install");
+        deco::panel(ui, Some("What to install"), |ui| {
             for (choice, label) in flavor_choices() {
                 chosen |= ui.radio_value(&mut self.flavor, choice, label).changed();
             }
@@ -351,22 +372,63 @@ impl InstallerApp {
 
         ui.add_space(8.0);
         let busy = self.status == Status::Installing;
-        if ui
-            .add_enabled(!busy, egui::Button::new("Install"))
-            .clicked()
-        {
+        let clicked = ui
+            .vertical_centered(|ui| deco::primary_button(ui, !busy, "Install").clicked())
+            .inner;
+        if clicked {
             self.start_install();
         }
 
-        ui.add_space(8.0);
-        ui.label(self.status_line());
+        ui.add_space(6.0);
+        // The status, coloured by outcome — parchment at rest, gold while working, laurel on
+        // success, ember on failure — with the deco progress bar while there is anything to
+        // wait for. What the states mean is the Core's business; this is only their colour.
+        let line = self.status_line();
+        match &self.status {
+            Status::Ready => {
+                ui.label(egui::RichText::new(line).color(theme::PARCHMENT_DIM));
+            }
+            Status::Installing => {
+                deco::progress(ui, None);
+                ui.add_space(2.0);
+                ui.label(egui::RichText::new(line).color(theme::GOLD_BRIGHT));
+            }
+            Status::Installed { .. } => {
+                deco::progress(ui, Some(1.0));
+                ui.add_space(2.0);
+                ui.label(egui::RichText::new(line).color(theme::LAUREL));
+            }
+            Status::Failed { .. } => {
+                deco::notice(ui, theme::EMBER, |ui| {
+                    ui.label(line);
+                });
+            }
+        }
 
         if !self.activity.is_empty() {
-            ui.add_space(8.0);
-            ui.group(|ui| {
-                for line in &self.activity {
-                    ui.label(line);
-                }
+            ui.add_space(6.0);
+            // The log takes whatever height is left and scrolls inside it, pinned to the
+            // newest line, so the tail of the screen never spills past the window. The
+            // subtraction is the panel's own chrome — padding, caption, spacing — and the
+            // minimum keeps one line visible however small the window is forced.
+            let room = (ui.available_height() - 48.0).max(17.0);
+            deco::panel(ui, Some("Activity"), |ui| {
+                egui::ScrollArea::vertical()
+                    .max_height(room)
+                    // The default minimum (64) would override `room` on a short window and
+                    // push the panel's bottom edge past the page.
+                    .min_scrolled_height(room)
+                    .stick_to_bottom(true)
+                    .show(ui, |ui| {
+                        ui.set_min_width(ui.available_width());
+                        for line in &self.activity {
+                            ui.label(
+                                egui::RichText::new(line)
+                                    .small()
+                                    .color(theme::PARCHMENT_DIM),
+                            );
+                        }
+                    });
             });
         }
 
