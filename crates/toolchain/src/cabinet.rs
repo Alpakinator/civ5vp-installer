@@ -342,7 +342,30 @@ impl Cabinet {
         }
 
         let mut extracted = Extracted::default();
+
+        // An empty member occupies no bytes in the folder's stream, so the decompression pass
+        // would never reach it — and one sitting at the end of a folder would look like a
+        // file that runs past the data. Write those here and leave the pass to the rest.
+        let mut empty = Vec::new();
+        for files in by_folder.values_mut() {
+            files.retain(|(index, want)| {
+                let keep = self.members[*index].size > 0;
+                if !keep {
+                    empty.push(want.destination.clone());
+                }
+                keep
+            });
+        }
+        for destination in empty {
+            File::create(&destination)
+                .map_err(|error| io_error("write a toolchain file", &destination, &error))?;
+            extracted.files += 1;
+        }
+
         for (folder, mut files) in by_folder {
+            if files.is_empty() {
+                continue;
+            }
             files.sort_by_key(|(index, _)| self.members[*index].offset);
             extracted = self.extract_folder(folder, &files, extracted)?;
         }
@@ -576,6 +599,56 @@ mod tests {
         assert_eq!(
             extract_one(&mut cabinet, dir.path(), "last.h"),
             b"/* last */\n"
+        );
+    }
+
+    /// An empty member never appears in the decompressed stream, and one at the end of a
+    /// folder would otherwise look like a file running past the folder's data.
+    #[test]
+    fn empty_members_are_written_as_empty_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_cabinet(
+            dir.path(),
+            &[
+                ("first.h", b"content\n"),
+                ("empty.h", b""),
+                ("trailing.h", b""),
+            ],
+        );
+
+        let mut cabinet = Cabinet::open(&path).unwrap();
+        let extracted = cabinet
+            .extract(&[
+                Wanted {
+                    name: "first.h",
+                    destination: dir.path().join("out-first"),
+                },
+                Wanted {
+                    name: "empty.h",
+                    destination: dir.path().join("out-empty"),
+                },
+                Wanted {
+                    name: "trailing.h",
+                    destination: dir.path().join("out-trailing"),
+                },
+            ])
+            .unwrap();
+
+        assert_eq!(extracted.files, 3);
+        assert_eq!(extracted.bytes, 8);
+        assert_eq!(
+            std::fs::read(dir.path().join("out-first")).unwrap(),
+            b"content\n"
+        );
+        assert!(
+            std::fs::read(dir.path().join("out-empty"))
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            std::fs::read(dir.path().join("out-trailing"))
+                .unwrap()
+                .is_empty()
         );
     }
 
