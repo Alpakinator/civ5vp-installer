@@ -8,13 +8,33 @@ The tracer bullet also establishes how the UI is **seen**, not just how it is te
 
 **Status:** ready-for-agent
 
-- [ ] Rust workspace of (at least) two crates — a Core **library** crate and a binary crate holding the egui shell — building one binary. The Core crate's `Cargo.toml` must not list `egui`/`eframe`, so the seam is a compile error to cross, not a convention
-- [ ] The egui shell contains no logic beyond calling the Core and rendering what it returns
-- [ ] Core accepts an Install Configuration + resolved folder paths and executes a plan against injected source-provider and toolchain-runner boundaries
-- [ ] A Core-seam test deploys a CP-only configuration from a fixture repository into temp MODS/DLC/Text dirs and asserts the resulting file tree (marker DLL from the fake toolchain)
-- [ ] Progress/results flow from Core to the shell (visible during the demo install)
-- [ ] House test style established: external behavior only, fixtures + temp dirs, no reaching into Core internals
-- [ ] `egui_kittest` wired up with its `wgpu` + `snapshot` features and a `kittest.toml`; at least one test drives the shell through its AccessKit tree (find the Install button by label, click it, assert the resulting state) and one renders the screen to a committed baseline under `tests/snapshots/`, failing on visual drift
-- [ ] The binary supports a headless render mode — `cargo run -- --screenshot <dir>` with size and DPI-scale options — writing one PNG per screen via `egui::ViewportCommand::Screenshot`, with no user present
-- [ ] `docs/ui-reference/` created with a README stating what belongs there: Civ5 captures used as visual reference only, never shipped (ADR-0003)
-- [ ] `AGENTS.md`'s Commands section is true — every command listed there runs
+- [x] Rust workspace of (at least) two crates — a Core **library** crate and a binary crate holding the egui shell — building one binary. The Core crate's `Cargo.toml` must not list `egui`/`eframe`, so the seam is a compile error to cross, not a convention
+- [x] The egui shell contains no logic beyond calling the Core and rendering what it returns
+- [x] Core accepts an Install Configuration + resolved folder paths and executes a plan against injected source-provider and toolchain-runner boundaries
+- [x] A Core-seam test deploys a CP-only configuration from a fixture repository into temp MODS/DLC/Text dirs and asserts the resulting file tree (marker DLL from the fake toolchain)
+- [x] Progress/results flow from Core to the shell (visible during the demo install)
+- [x] House test style established: external behavior only, fixtures + temp dirs, no reaching into Core internals
+- [x] `egui_kittest` wired up with its `wgpu` + `snapshot` features and a `kittest.toml`; at least one test drives the shell through its AccessKit tree (find the Install button by label, click it, assert the resulting state) and one renders the screen to a committed baseline under `tests/snapshots/`, failing on visual drift
+- [x] The binary supports a headless render mode — `cargo run -- --screenshot <dir>` with size and DPI-scale options — writing one PNG per screen via `egui::ViewportCommand::Screenshot`, with no user present
+- [x] `docs/ui-reference/` created with a README stating what belongs there: Civ5 captures used as visual reference only, never shipped (ADR-0003)
+- [x] `AGENTS.md`'s Commands section is true — every command listed there runs
+
+## Comments
+
+**Implemented.** The workspace is `crates/core` (headless Core, zero dependencies, no egui in its
+`Cargo.toml`) and `crates/installer` (egui shell + binary + the render harness). 15 tests pass:
+7 Core-seam tests over a committed miniature repository fixture, 5 CLI tests, and 3 shell tests
+(two driving the AccessKit tree, one comparing four committed PNG baselines). Clippy is clean
+with `-D warnings`.
+
+Deliberately left for later tickets, and visible rather than hidden:
+
+* `Flavor::VoxPopuli` is rejected at plan time with a plain-language message — ticket 02 replaces
+  that with the real deployment matrix. Everything the walking skeleton *does* deploy is asserted.
+* The binary ships two stand-ins (`crates/installer/src/placeholder.rs`): a source provider that
+  serves a Local Repo folder as-is and refuses the Upstream Cache (ticket 04), and a toolchain
+  runner that writes a marker file instead of compiling (tickets 05/06). The UI says so on screen.
+* Exclusions during Deployment cover checked-in DLLs (ADR-0001) and ModBuddy project files only;
+  the rest come from the InnoSetup script in ticket 02.
+* The Core's work directory is a temp directory; the App Data Store arrives with ticket 03.
+* The game `cache` clear and the Text Folder deployment belong to ticket 02 and are not faked here.

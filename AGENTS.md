@@ -14,7 +14,7 @@ A single-file desktop installer (Windows + Linux) for the Community Patch / Vox 
 
 ## Commands
 
-> The Rust workspace does not exist yet — **ticket 01** creates it. These are the commands it must provide; until then they will not run.
+The workspace is `crates/core` (the headless Core, a library) and `crates/installer` (the egui shell and the binary). Both are default workspace members, so a bare `cargo test` is the whole suite and `cargo run` means the installer.
 
 Standard `cargo` commands apply. Only the non-obvious ones are listed:
 
@@ -23,6 +23,10 @@ cargo test -- --ignored           # real-toolchain / real-clone integration test
 cargo run -- --screenshot <dir>   # render screens headlessly to PNG (see "UI work")
 UPDATE_SNAPSHOTS=true cargo test  # accept changed egui_kittest snapshot baselines — review the diffs first
 ```
+
+`--screenshot` takes `--size <WxH>` and `--scale <factor>`, each repeatable; every screen is rendered at every combination. `cargo run -- --help` lists them.
+
+There are no `#[ignore]`d tests yet — tickets 04, 05 and 06 add the first real-clone and real-toolchain ones. The command runs and reports nothing until then.
 
 Run clippy and the fast suite regularly; the full suite once before handing work back.
 

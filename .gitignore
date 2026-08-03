@@ -6,6 +6,7 @@
 # the failure output next to them is not
 **/*.diff.png
 **/*.new.png
+**/*.old.png
 
 # Local screenshot output from `cargo run -- --screenshot`
 /screenshots/

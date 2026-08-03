@@ -1,0 +1,29 @@
+[package]
+name = "civ5vp-installer"
+description = "Civ 5 VP Installer — the egui shell over the headless Core."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+name = "civ5vp_installer"
+path = "src/lib.rs"
+
+[[bin]]
+name = "civ5vp-installer"
+path = "src/main.rs"
+
+[dependencies]
+civ5vp-core = { path = "../core" }
+# ADR-0002: egui, hand-themed, no webview. Default features give us wgpu + AccessKit, and
+# AccessKit is what egui_kittest drives the shell through.
+eframe = "0.35"
+egui = "0.35"
+# Writing the PNGs that `--screenshot` produces. Pure Rust; `png` only, no other decoders.
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[dev-dependencies]
+# The render harness (ticket 01) and the snapshot baselines every styled screen needs (rule 15).
+egui_kittest = { version = "0.35", features = ["wgpu", "snapshot"] }
+tempfile = "3.27"
