@@ -10,10 +10,10 @@
 
 - [x] SDK ISO download verifies against the recorded SHA-256 before extraction, is resumable or cleanly restartable, and reports progress
 - [x] Portable LLVM 18.x is fetched and pinned; its version is part of the Toolchain identity and feeds the Build Fingerprint
-- [x] In-process extraction pulls exactly the ISO members listed in `docs/pinned-artifacts.md`, honouring each MSI's CAB-name-to-real-path mapping rather than guessing
-- [x] All six Linux fix-ups from `docs/pinned-artifacts.md` are applied (lowercase + backward symlinks, case-mismatched `#include` resolution, `Include`/`Lib` symlinks, backslash-to-slash in `#include` directives, per-`.lib` case symlinks, WDK header stubs)
+- [ ] In-process extraction pulls exactly the ISO members listed in `docs/pinned-artifacts.md`, honouring each MSI's CAB-name-to-real-path mapping rather than guessing — **readers validated on the real image, end-to-end extraction not yet run**: see "What is and is not proven"
+- [ ] All six Linux fix-ups from `docs/pinned-artifacts.md` are applied (lowercase + backward symlinks, case-mismatched `#include` resolution, `Include`/`Lib` symlinks, backslash-to-slash in `#include` directives, per-`.lib` case symlinks, WDK header stubs) — all six implemented and tested, **against synthetic fixtures only**
 - [ ] Extraction is verified against the docker image's known-good result: `windows.h`, `stdio.h`, `iostream`, `kernel32.lib`, `msvcrt.lib` and `DriverSpecs.h` all resolve, and header/lib counts match the committed reference baseline
-- [x] Case-folding fixes applied so the headers/libs resolve on a case-sensitive filesystem
+- [ ] Case-folding fixes applied so the headers/libs resolve on a case-sensitive filesystem — **against synthetic fixtures only**
 - [x] Bootstrap runs once; subsequent builds detect the populated Toolchain Cache and skip it
 - [x] Interrupted bootstrap leaves a state that self-repairs on retry
 - [x] Slow integration test (real downloads) exists but is excluded from the per-commit suite
@@ -47,6 +47,33 @@ three change what the document should say.
 Measured from the real image: `Setup/WinSDK/cab1.cab` holds 120 files in one LZX folder;
 `Setup/WinSDKBuild/cab1..4.cab` hold 641 / 1013 / 862 / 320 files, ~52 MB per folder, all
 `Lzx(MB2)`. `WinSDKBuild_x86.msi` maps 2836 files across those four cabinets.
+
+### What is and is not proven
+
+**The extraction-fidelity bet this ticket exists to resolve is not resolved.** The full
+end-to-end run against the real image has never completed: the 1.45 GiB download was still in
+progress when work stopped (archive.org was serving it at roughly 11 MB/min). So the six-name
+verification, the header and lib counts, and the six Linux fix-ups are proven against synthetic
+fixtures, not against the real Windows SDK.
+
+What *is* proven against real data, which is not nothing:
+
+- the UDF reader reads the real image's volume structures and directory tree;
+- the MSI parser reads the real `WinSDK_x86.msi` (120 files) and `WinSDKBuild_x86.msi`
+  (2836 files across four cabinets);
+- the CAB reader agrees with the `cab` crate byte-for-byte on 33 members across five real LZX
+  cabinets.
+
+So the readers are validated on real bytes and the orchestration is not. The remaining work is
+to run `real_bootstrap.rs` to completion — the test exists and is runnable.
+
+**One open risk to check when it runs.** `iostream` and `msvcrt.lib` must come from
+`Setup/vc_stdx86/`, which lies past the bytes downloaded so far. If that MSI ships only the
+redistributable DLLs, the verification list in `docs/pinned-artifacts.md` §4 is not achievable
+from the pinned members and §4 itself needs revisiting.
+
+**LLVM checksum provenance is weaker than the ISO's.** llvm.org publishes no checksums, so both
+were measured by downloading. The Windows one has not been verified on a Windows machine.
 
 ### Not ticked, and why
 
