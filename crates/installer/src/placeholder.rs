@@ -1,11 +1,12 @@
-//! Stand-ins for the Core's two boundaries, so the walking skeleton runs end to end.
+//! Stand-ins for the Core's two boundaries, for the shell tests and screen previews.
 //!
-//! Both are temporary and both are named as such in the UI:
+//! The shipped binary wires [`crate::wiring`] instead. These exist so the `egui_kittest`
+//! suite can drive a whole install offline (rule 13):
 //!
 //! * [`DirectorySourceProvider`] handles the Local Repo case for real — a folder is a folder
-//!   — and refuses the Upstream Cache until ticket 04 implements the incremental clone.
-//! * [`PlaceholderToolchainRunner`] writes a marker file instead of compiling. Ticket 05
-//!   bootstraps the toolchain and ticket 06 drives the real clang build.
+//!   — and refuses the Upstream Cache, which would need the network.
+//! * [`PlaceholderToolchainRunner`] writes a marker file instead of compiling, keeping the
+//!   2.4 GB Toolchain Bootstrap and the multi-minute compile out of the fast suite.
 
 use std::fs;
 use std::path::PathBuf;

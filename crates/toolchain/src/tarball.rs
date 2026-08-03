@@ -204,6 +204,15 @@ pub fn clang_path(llvm_root: &Path) -> PathBuf {
     })
 }
 
+/// Where the bootstrapped `lld-link` ends up under the extraction destination.
+pub fn lld_link_path(llvm_root: &Path) -> PathBuf {
+    llvm_root.join("bin").join(if cfg!(windows) {
+        "lld-link.exe"
+    } else {
+        "lld-link"
+    })
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {

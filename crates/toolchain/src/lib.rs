@@ -32,6 +32,7 @@
 )]
 
 mod bootstrap;
+mod build;
 mod cabinet;
 mod cache;
 mod deb;
@@ -53,6 +54,7 @@ mod udf;
 mod verify;
 
 pub use bootstrap::ToolchainBootstrap;
+pub use build::DllBuild;
 pub use cache::{Toolchain, ToolchainCache};
 pub use error::ToolchainError;
 pub use runner::BootstrappedToolchain;

@@ -16,6 +16,10 @@ path = "src/main.rs"
 
 [dependencies]
 civ5vp-core = { path = "../core" }
+# The two real boundaries, composed in `src/wiring.rs`. The shell itself never touches their
+# internals — the Core sees them only as its two traits (rule 2).
+civ5vp-sources = { path = "../sources" }
+civ5vp-toolchain = { path = "../toolchain" }
 # ADR-0002: egui, hand-themed, no webview. Default features give us wgpu + AccessKit, and
 # AccessKit is what egui_kittest drives the shell through.
 eframe = "0.35"

@@ -67,9 +67,14 @@ impl Toolchain {
         Ok(crate::sdk_layout::find(&self.sdk_root)?.lib)
     }
 
-    /// The compiler driver ticket 06 will invoke.
+    /// The compiler driver the build invokes.
     pub fn clang_path(&self) -> PathBuf {
         crate::tarball::clang_path(&self.llvm_root)
+    }
+
+    /// The linker the build invokes.
+    pub fn lld_link_path(&self) -> PathBuf {
+        crate::tarball::lld_link_path(&self.llvm_root)
     }
 }
 

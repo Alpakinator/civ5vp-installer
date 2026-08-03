@@ -690,6 +690,8 @@ name = "civ5vp-installer"
 version = "0.1.0"
 dependencies = [
  "civ5vp-core",
+ "civ5vp-sources",
+ "civ5vp-toolchain",
  "eframe",
  "egui",
  "egui_kittest",

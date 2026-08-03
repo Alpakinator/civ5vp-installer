@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use civ5vp_core::{AppDataStore, SearchLocations};
 use civ5vp_installer::cli::{self, Command};
-use civ5vp_installer::{InstallerApp, placeholder, screenshot};
+use civ5vp_installer::{InstallerApp, screenshot, wiring};
 
 fn main() -> ExitCode {
     let command = match cli::parse(std::env::args().skip(1)) {
@@ -35,14 +35,14 @@ fn main() -> ExitCode {
 }
 
 fn run_app() -> Result<(), String> {
-    // The App Data Store is the installer's one directory: the Core works in it, the settings
-    // live in it, and the Upstream Cache and Toolchain Cache join them there in later tickets.
-    // The executable itself stores nothing beside itself.
+    // The App Data Store is the installer's one directory: the Core works in it, and the
+    // Upstream Cache, Toolchain Cache and settings all live inside it. The executable itself
+    // stores nothing beside itself.
     let store = AppDataStore::for_this_platform().map_err(|problem| {
         eprintln!("[civ5vp-installer] {}", problem.log_detail());
         problem.user_message()
     })?;
-    let core = Arc::new(placeholder::core(store.root().to_path_buf()));
+    let core = Arc::new(wiring::core(&store));
     let locations = SearchLocations::for_this_platform();
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()

@@ -18,6 +18,7 @@ pub mod app;
 pub mod cli;
 pub mod placeholder;
 pub mod screenshot;
+pub mod wiring;
 
 pub use app::{InstallerApp, Screen};
 

@@ -28,6 +28,17 @@ pub enum FortyThreeCivs {
     Disabled,
 }
 
+/// Which of the two proven compiler configurations the Built DLL is compiled with.
+///
+/// Players always get [`BuildConfiguration::Release`]; the Debug choice arrives with Dev mode
+/// (ticket 08, user story 31). It lives here rather than in the toolchain crate because the
+/// Core decides it and hands it across the boundary in a [`crate::BuildRequest`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuildConfiguration {
+    Release,
+    Debug,
+}
+
 /// The ref of the Community-Patch-DLL repository being installed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Version {
@@ -49,6 +60,23 @@ pub enum InstallationSource {
 }
 
 impl InstallationSource {
+    /// A short name for what is being built: the Release tag, the branch or ref, or `Local`
+    /// for a developer checkout.
+    ///
+    /// The DLL sources compile this into the binary as their version string (upstream
+    /// generates it with `git describe`; the installer runs no git, so the selected Version is
+    /// the honest equivalent). It reaches the toolchain runner via [`crate::BuildRequest`].
+    pub fn version_label(&self) -> String {
+        match self {
+            Self::UpstreamCache { version } => match version {
+                Version::Release(tag) => tag.clone(),
+                Version::LatestDevelopmentVersion => "master".to_owned(),
+                Version::ArbitraryRef(reference) => reference.clone(),
+            },
+            Self::LocalRepo { .. } => "Local".to_owned(),
+        }
+    }
+
     /// The Installation Source of a player who has not named one yet.
     ///
     /// A Local Repo with no path. The Core refuses it with a sentence saying so, which is the

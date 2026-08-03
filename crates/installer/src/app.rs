@@ -219,7 +219,7 @@ impl InstallerApp {
                 app.activity = vec![
                     "Fetching sources: Getting the mod files ready.".to_owned(),
                     "Fetching sources: Mod files ready.".to_owned(),
-                    "Building the DLL: Building the DLL with placeholder-toolchain-0.".to_owned(),
+                    "Building the DLL: Compiling 172 of 172 source files.".to_owned(),
                 ];
             }
             Screen::Installed => {
@@ -277,8 +277,8 @@ impl InstallerApp {
     fn contents(&mut self, ui: &mut egui::Ui) {
         ui.heading("Civ 5 VP Installer");
         ui.label(
-            "Sources come from a local checkout, and the DLL build is a placeholder: the \
-             installed DLL is a marker file, not a compiled one.",
+            "Sources come from a local checkout of Community-Patch-DLL; the installer \
+             compiles the mod's DLL itself with its own downloaded build tools.",
         );
         ui.add_space(8.0);
 

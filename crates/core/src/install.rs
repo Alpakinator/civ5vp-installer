@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use crate::BUILT_DLL_FILE_NAME;
 use crate::boundaries::{BuildRequest, SourceProvider, ToolchainRunner};
 use crate::claimed::{ClaimedFile, ClaimedFolder, GameFolders};
-use crate::configuration::InstallConfiguration;
+use crate::configuration::{BuildConfiguration, InstallConfiguration};
 use crate::error::{InstallError, SourceItem};
 use crate::plan::Plan;
 use crate::progress::{ProgressReporter, Stage};
@@ -169,6 +169,9 @@ impl Core {
         let request = BuildRequest {
             source_root: source_root.to_path_buf(),
             forty_three_civs: plan.configuration.forty_three_civs,
+            // Players always get Release; ticket 08's Dev mode adds the Debug choice.
+            build_configuration: BuildConfiguration::Release,
+            version_label: plan.configuration.source.version_label(),
             output_path: output_path.clone(),
         };
         self.toolchain_runner

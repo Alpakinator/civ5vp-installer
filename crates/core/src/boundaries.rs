@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use crate::configuration::{FortyThreeCivs, InstallationSource};
+use crate::configuration::{BuildConfiguration, FortyThreeCivs, InstallationSource};
 use crate::progress::ProgressReporter;
 
 /// A failure reported by one of the injected boundaries.
@@ -68,6 +68,11 @@ pub struct BuildRequest {
     pub source_root: PathBuf,
     /// Whether to compile with the 43-civ setting.
     pub forty_three_civs: FortyThreeCivs,
+    /// Release or Debug — always Release until Dev mode (ticket 08) offers the choice.
+    pub build_configuration: BuildConfiguration,
+    /// Compiled into the DLL as its version string — see
+    /// [`InstallationSource::version_label`].
+    pub version_label: String,
     /// Exactly where the Built DLL must be written.
     ///
     /// Always inside the Core's own build directory, never in a game folder — rule 7 means

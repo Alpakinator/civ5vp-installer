@@ -35,7 +35,8 @@ mod tree;
 pub use boundaries::{BoundaryError, BuildRequest, SourceProvider, ToolchainRunner};
 pub use claimed::{ClaimedFile, ClaimedFolder, DeploymentTarget, GameFolders};
 pub use configuration::{
-    Eui, Flavor, FortyThreeCivs, InstallConfiguration, InstallationSource, Version,
+    BuildConfiguration, Eui, Flavor, FortyThreeCivs, InstallConfiguration, InstallationSource,
+    Version,
 };
 pub use detect::{
     DetectedGame, Detection, DocumentsFolder, FolderKind, FolderRejected, GameInstallation,
