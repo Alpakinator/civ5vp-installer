@@ -16,22 +16,53 @@ use crate::error::{ToolchainError, io_error, stream_error};
 
 // `PathBuf` is used by `safe_join` and `clang_path`.
 
-/// What the LLVM release contains that the build actually needs.
+/// The tools in `bin/` a `clang-cl` → `lld-link` build of the DLL needs, by exact name.
 ///
-/// The tarball is ~4.5 GB unpacked and most of it is static libraries and headers for
-/// building *against* LLVM. Compiling the DLL needs the driver, the linker, and the compiler
-/// builtin headers — nothing else — so everything else is dropped on the way past. The paths
-/// are relative to the archive's single top-level directory.
-const KEPT_PREFIXES: &[&str] = &["bin/", "lib/clang/"];
+/// An allowlist rather than "keep `bin/`", because these binaries each statically link their
+/// half of LLVM: `bin/` unpacks to **4.9 GB** while this set is **338 MB**. Keeping the lot
+/// would put the Toolchain Cache past the ~5 GB the spec surfaces for the *whole* App Data
+/// Store, on its own.
+///
+/// Symlinks count as entries, so each tool's real binary is listed next to the names that
+/// reach it: `clang-cl` → `clang` → `clang-18`, `lld-link` → `lld`, `llvm-lib` → `llvm-ar`.
+/// Ticket 06 owns the build and may find it needs another tool; adding one here is a line.
+const KEPT_TOOLS: &[&str] = &[
+    // The compiler driver, under every name it is invoked by.
+    "clang",
+    "clang++",
+    "clang-18",
+    "clang-cl",
+    "clang-cpp",
+    // The linker.
+    "ld.lld",
+    "lld",
+    "lld-link",
+    // Static/import library handling, which `llvm-lib` fronts.
+    "llvm-ar",
+    "llvm-dlltool",
+    "llvm-lib",
+    "llvm-ranlib",
+    // Resource compilation and manifests, for the DLL's `.rc`.
+    "llvm-mt",
+    "llvm-rc",
+    "llvm-windres",
+];
 
-/// Shared libraries that live directly in `lib/` and that the binaries in `bin/` load at
-/// runtime (`libclang-cpp.so.18.1` and friends).
+/// Whether one archive member belongs in the Toolchain Cache.
+///
+/// Three things do: a tool from [`KEPT_TOOLS`], the compiler's builtin headers under
+/// `lib/clang/`, and the shared libraries directly in `lib/` that those tools load at runtime.
+/// Everything else — LLVM's own static libraries, its headers, cmake files, docs, and the
+/// three quarters of `bin/` that is lldb, mlir, flang and the analysis tools — is dropped as
+/// it goes past.
 fn is_kept(relative: &str) -> bool {
-    if KEPT_PREFIXES
-        .iter()
-        .any(|prefix| relative.starts_with(prefix))
-    {
+    if relative.starts_with("lib/clang/") {
         return true;
+    }
+    if let Some(tool) = relative.strip_prefix("bin/") {
+        // Windows spells the same tools with `.exe`.
+        let tool = tool.strip_suffix(".exe").unwrap_or(tool);
+        return !tool.contains('/') && KEPT_TOOLS.contains(&tool);
     }
     match relative.strip_prefix("lib/") {
         // Only files directly in `lib/`, and only dynamic libraries.
@@ -178,19 +209,120 @@ pub fn clang_path(llvm_root: &Path) -> PathBuf {
 mod tests {
     use super::*;
 
+    /// Unpack a real LLVM release tarball, without the 1.45 GiB disc image alongside it.
+    ///
+    /// `#[ignore]`d and driven by an environment variable. It exists because the fixture in
+    /// this file is a few kilobytes compressed by `lzma-rs` itself, and the pinned artifact is
+    /// a gigabyte compressed by whatever `xz` llvm.org runs — a stream with many blocks, and
+    /// the one place a pure-Rust xz decoder is most likely to disagree with the encoder that
+    /// produced it.
+    ///
+    /// ```bash
+    /// CIV5VP_LLVM_ARCHIVE=/path/to/clang+llvm-18.1.8-....tar.xz \
+    ///   cargo test --release -p civ5vp-toolchain --lib -- --ignored --nocapture unpacks_a_real
+    /// ```
+    #[test]
+    #[ignore = "needs a real LLVM release tarball in CIV5VP_LLVM_ARCHIVE"]
+    fn unpacks_a_real_llvm_release() {
+        let Some(archive) = std::env::var_os("CIV5VP_LLVM_ARCHIVE") else {
+            panic!("set CIV5VP_LLVM_ARCHIVE to a clang+llvm release tarball");
+        };
+        let archive = PathBuf::from(archive);
+        let Some(pinned) = crate::pinned::llvm_for_host() else {
+            panic!("no pinned LLVM for this host to compare against");
+        };
+
+        let dir = tempfile::tempdir().unwrap();
+        let started = std::time::Instant::now();
+        let kept = extract_llvm(
+            &archive,
+            pinned.archive_root,
+            dir.path(),
+            &civ5vp_core::ProgressReporter::silent(),
+        )
+        .unwrap_or_else(|error| panic!("{}\n  detail: {}", error.message(), error.detail()));
+
+        println!("kept {kept} files in {:?}", started.elapsed());
+        let bytes: u64 = walkdir_size(dir.path());
+        println!("unpacked {:.0} MB", bytes as f64 / (1024.0 * 1024.0));
+        let clang = clang_path(dir.path());
+        assert!(clang.is_file(), "{} should exist", clang.display());
+        assert!(dir.path().join("bin/lld-link").exists());
+        assert!(dir.path().join("lib/clang/18/include/stddef.h").exists());
+        // The filter did its job: none of LLVM's own static libraries came through.
+        assert!(!dir.path().join("lib/libLLVMCore.a").exists());
+    }
+
+    /// Total size of the real files under `root`, following nothing.
+    fn walkdir_size(root: &Path) -> u64 {
+        let mut total = 0;
+        let mut queue = vec![root.to_path_buf()];
+        while let Some(directory) = queue.pop() {
+            let Ok(entries) = fs::read_dir(&directory) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let Ok(metadata) = fs::symlink_metadata(&path) else {
+                    continue;
+                };
+                if metadata.is_dir() {
+                    queue.push(path);
+                } else if metadata.is_file() {
+                    total += metadata.len();
+                }
+            }
+        }
+        total
+    }
+
     #[test]
     fn only_the_compiler_driver_linker_and_builtin_headers_are_kept() {
+        // The driver and everything the symlink chain to it passes through.
         assert!(is_kept("bin/clang-cl"));
+        assert!(is_kept("bin/clang"));
+        assert!(is_kept("bin/clang-18"));
         assert!(is_kept("bin/lld-link"));
+        assert!(is_kept("bin/lld"));
+        assert!(is_kept("bin/llvm-lib"));
+        assert!(is_kept("bin/llvm-ar"));
+        assert!(is_kept("bin/clang-cl.exe"));
         assert!(is_kept("lib/clang/18/include/stddef.h"));
         assert!(is_kept("lib/libclang-cpp.so.18.1"));
         assert!(is_kept("lib/LLVM-C.dll"));
 
-        // 3 GB of static libraries and LLVM's own headers are not part of the Toolchain.
+        // The rest of `bin/` is 4.6 of its 4.9 GB, and none of it compiles anything here.
+        assert!(!is_kept("bin/clang-tidy"));
+        assert!(!is_kept("bin/clang-scan-deps"));
+        assert!(!is_kept("bin/lldb"));
+        assert!(!is_kept("bin/flang-new"));
+        assert!(!is_kept("bin/mlir-opt"));
+        assert!(!is_kept("bin/opt"));
+
+        // Nor are LLVM's static libraries, its own headers, or its build system.
         assert!(!is_kept("lib/libLLVMCore.a"));
         assert!(!is_kept("include/llvm/ADT/APInt.h"));
         assert!(!is_kept("lib/cmake/llvm/LLVMConfig.cmake"));
         assert!(!is_kept("share/man/man1/clang.1"));
+    }
+
+    /// Every name the build reaches the driver and linker by has to resolve, which means the
+    /// targets of those symlinks are in the list too.
+    #[test]
+    fn the_tool_list_is_closed_under_the_symlinks_that_reach_it() {
+        for (name, target) in [
+            ("clang-cl", "clang"),
+            ("clang", "clang-18"),
+            ("lld-link", "lld"),
+            ("llvm-lib", "llvm-ar"),
+            ("llvm-windres", "llvm-rc"),
+        ] {
+            assert!(KEPT_TOOLS.contains(&name), "{name}");
+            assert!(
+                KEPT_TOOLS.contains(&target),
+                "{target}, the target of {name}"
+            );
+        }
     }
 
     #[test]

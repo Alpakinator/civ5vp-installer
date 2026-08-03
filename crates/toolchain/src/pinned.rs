@@ -47,6 +47,29 @@ pub struct PinnedDownload {
 /// installer cannot. These are the llvm.org release tarballs for that exact version — the
 /// closest self-contained equivalent. Their checksums are not published by llvm.org; both
 /// were measured by downloading the asset and hashing it (2026-08-03).
+///
+/// # The Linux tarball does not run on a current distribution
+///
+/// `clang+llvm-18.1.8-x86_64-linux-gnu-ubuntu-18.04` is linked against `libtinfo.so.5`, which
+/// no current distribution ships — Arch, Fedora and Ubuntu 22.04 onwards all have
+/// `libtinfo.so.6`. The dynamic loader refuses to start the binary before it runs a line:
+///
+/// ```text
+/// ./clang-18: error while loading shared libraries: libtinfo.so.5: cannot open shared
+/// object file: No such file or directory
+/// ```
+///
+/// Pointing `LD_LIBRARY_PATH` at a `libtinfo.so.5 -> libtinfo.so.6` symlink does not help;
+/// the binary wants ncurses 5's versioned symbols (`NCURSES_TINFO_5.0.19991023`). And it is
+/// the only x86-64 Linux build llvm.org publishes for LLVM 18 — 18.1.3, the version Ubuntu
+/// 24.04 ships and the one the reference build actually uses, has no x86-64 Linux asset at
+/// all.
+///
+/// So this pin downloads and unpacks correctly and then cannot compile anything. Everything
+/// around it — download, checksum, xz, tar, the filter, the Toolchain identity — is verified
+/// against this artifact and is unaffected by swapping it; the pin is one constant and one
+/// checksum. Deciding *what* to swap it for is ADR-sized, and the ticket's Comments section
+/// lists the candidates. Until then, ticket 06 cannot build a DLL on Linux.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PinnedLlvm {
     pub download: PinnedDownload,

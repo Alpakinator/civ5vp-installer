@@ -75,6 +75,36 @@ from the pinned members and §4 itself needs revisiting.
 **LLVM checksum provenance is weaker than the ISO's.** llvm.org publishes no checksums, so both
 were measured by downloading. The Windows one has not been verified on a Windows machine.
 
+### Blocker for ticket 06: the pinned Linux LLVM does not run
+
+Found by running it. `clang+llvm-18.1.8-x86_64-linux-gnu-ubuntu-18.04` links against
+`libtinfo.so.5`; no current distribution ships that (Arch, Fedora and Ubuntu 22.04+ all have
+`libtinfo.so.6`), so the dynamic loader refuses to start `clang-18` and `lld` at all:
+
+```text
+./clang-18: error while loading shared libraries: libtinfo.so.5: cannot open shared object
+file: No such file or directory
+```
+
+An `LD_LIBRARY_PATH` shim pointing `libtinfo.so.5` at `libtinfo.so.6` does not work — the
+binaries want ncurses 5's versioned symbols. And this is the **only** x86-64 Linux build
+llvm.org publishes for LLVM 18: 18.1.3, the version Ubuntu 24.04 ships and the one the
+reference build actually uses, has no x86-64 Linux asset at all.
+
+Everything around the pin is verified against this artifact and unaffected by changing it —
+download, checksum, xz decode, tar, the keep-filter, the Toolchain identity. Swapping it is
+one constant and one checksum in `pinned.rs`. Choosing what to swap it *for* is ADR-sized:
+
+- **Ubuntu 24.04's own `.deb` packages** (`clang-18`, `lld-18`, `libclang-cpp18`, `libllvm18`
+  and their dependencies). Closest to the proven configuration — §2 says the reference build
+  takes clang 18 from exactly there — and `.deb` is `ar` + `tar.zst`, both reachable in pure
+  Rust. The cost is resolving a small dependency web and pinning each package.
+- **A third-party portable LLVM** built against a current glibc/ncurses.
+- **Shipping a `libtinfo.so.5`** beside the toolchain. Smallest change, but it means pinning
+  an ncurses 5 binary from somewhere and carrying its licence.
+
+Until this is settled, ticket 06 cannot compile on Linux however good the SDK extraction is.
+
 ### Not ticked, and why
 
 The docker-baseline box stays open. There is no docker image here and no reference

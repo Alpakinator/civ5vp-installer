@@ -55,6 +55,13 @@ CIV5VP_SDK_ISO=/path/to/GRMSDK_EN_DVD.iso \
   cargo test -p civ5vp-toolchain --lib -- --ignored --nocapture inspect_a_real_disc_image
 ```
 
+And to unpack a real LLVM release tarball on its own, without the disc image alongside it:
+
+```bash
+CIV5VP_LLVM_ARCHIVE=/path/to/clang+llvm-18.1.8-....tar.xz \
+  cargo test --release -p civ5vp-toolchain --lib -- --ignored --nocapture unpacks_a_real
+```
+
 Run clippy and the fast suite regularly; the full suite once before handing work back.
 
 ## How this project is verified
