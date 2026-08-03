@@ -152,16 +152,21 @@ impl ToolchainBootstrap {
         require_complete(&report, &sdk_root)?;
 
         // Rule 11: the numbers a maintainer would want are in the log whether or not anything
-        // went wrong, because the interesting failures are the ones that do not error.
+        // went wrong, because the interesting failures are the ones that do not error. The
+        // include and lib paths are in there because they are the surprising part — the MSIs
+        // bury them under the path Windows would have installed to, and a build that cannot
+        // find a header is otherwise a guessing game.
         progress.report(
             Stage::Build,
             format!(
                 "Build tools ready — {} files unpacked ({} MB), {} headers, {} libraries, \
-                 fix-ups: {fixups:?}.",
+                 fix-ups: {fixups:?}, include: {:?}, lib: {:?}.",
                 counts.files_written,
                 counts.bytes_written / (1024 * 1024),
                 report.headers,
-                report.libs
+                report.libs,
+                roots.include,
+                roots.lib
             ),
         );
 
