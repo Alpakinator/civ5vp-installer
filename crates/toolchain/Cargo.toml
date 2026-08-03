@@ -41,9 +41,10 @@ lzxd = "0.2"
 tar = { version = "0.4", default-features = false }
 lzma-rs = "0.3"
 
-# ISO9660 is *not* a dependency. The format is 16-sector offset + volume descriptors +
-# directory records, we need four known paths out of it, and every candidate crate on
-# crates.io is either incomplete or unmaintained. See `src/iso9660.rs`.
+# Neither ISO9660 nor UDF is a dependency. Both are volume descriptors at a fixed sector plus
+# fixed-layout directory records, we need four known paths out of them, and every candidate
+# crate on crates.io is incomplete, bootloader-shaped, or unmaintained. See `src/iso9660.rs`
+# and `src/udf.rs` — the SDK image is UDF, whatever `docs/pinned-artifacts.md` says.
 
 [dev-dependencies]
 # Temporary Toolchain Cache roots and staging directories for the tests.
