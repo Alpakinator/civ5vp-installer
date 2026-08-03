@@ -15,15 +15,11 @@ use std::path::{Component, Path, PathBuf};
 
 use civ5vp_core::{ProgressReporter, Stage};
 
-use crate::cabinet::Cabinet;
+use crate::cabinet::{Cabinet, Wanted};
 use crate::disc::{self, Disc};
 use crate::error::{ToolchainError, io_error, missing_member};
 use crate::msi_layout::{self, PlannedFile};
 use crate::pinned::{ISO_MEMBERS, IsoMember};
-
-/// How many files may pass between progress lines. The SDK member alone is tens of thousands
-/// of headers, and a line per file would be noise.
-const PROGRESS_EVERY: usize = 2_000;
 
 /// What one run of the extractor produced.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -188,37 +184,37 @@ fn extract_from_cabinet(
     progress: &ProgressReporter,
 ) -> Result<ExtractionCounts, ToolchainError> {
     let mut cabinet = Cabinet::open(staged)?;
-    let mut counts = ExtractionCounts::default();
 
+    // Every destination directory first, then one extraction pass. The cabinet is read
+    // folder by folder in a single sweep, so the whole member's worth of files is asked for
+    // at once rather than one at a time (see `cabinet`).
+    let mut wanted = Vec::with_capacity(files.len());
     for file in files {
         let destination = safe_destination(sdk_root, &file.relative_path)?;
         if let Some(parent) = destination.parent() {
             fs::create_dir_all(parent)
                 .map_err(|error| io_error("create a toolchain folder", parent, &error))?;
         }
-        if !cabinet.contains(&file.cab_name) {
-            return Err(missing_member(
-                &file.cab_name,
-                &format!("{} (needed for {})", staged.display(), file.relative_path),
-            ));
-        }
-        let handle = File::create(&destination)
-            .map_err(|error| io_error("write a toolchain file", &destination, &error))?;
-        let mut writer = BufWriter::new(handle);
-        counts.bytes_written += cabinet.extract(&file.cab_name, &mut writer)?;
-        counts.files_written += 1;
-
-        if counts.files_written.is_multiple_of(PROGRESS_EVERY) {
-            progress.report(
-                Stage::Build,
-                format!(
-                    "Unpacking the {} — {} files.",
-                    member.label, counts.files_written
-                ),
-            );
-        }
+        wanted.push(Wanted {
+            name: &file.cab_name,
+            destination,
+        });
     }
-    Ok(counts)
+
+    progress.report(
+        Stage::Build,
+        format!(
+            "Unpacking the {} — {} files from {}.",
+            member.label,
+            wanted.len(),
+            staged.file_name().unwrap_or_default().display()
+        ),
+    );
+    let extracted = cabinet.extract(&wanted)?;
+    Ok(ExtractionCounts {
+        files_written: extracted.files,
+        bytes_written: extracted.bytes,
+    })
 }
 
 /// Turn an MSI-supplied relative path into an absolute one that is definitely inside
@@ -321,21 +317,25 @@ mod tests {
                 );
             }
 
-            // Folder sizes are the number that matters: `cab::Cabinet::read_file`
-            // decompresses a folder from its start for every file it is asked for, so a
-            // cabinet with one enormous folder makes extraction quadratic.
+            // Folder sizes say whether extraction is one sweep or a quadratic one, and the
+            // cross-check is what makes our sequential reader trustworthy on LZX: the fast
+            // suite can only build MSZIP fixtures, so the real cabinets are where `cab`'s
+            // reader gets to be the oracle for the compression these actually use.
+            let staging = std::env::temp_dir().join("civ5vp-inspect");
+            let _ = fs::create_dir_all(&staging);
             for cab_path in member.cab_paths {
                 if !iso.contains(cab_path) {
                     continue;
                 }
-                let staged = std::env::temp_dir().join("civ5vp-inspect.cab");
+                let staged = staging.join("inspect.cab");
                 let mut out = BufWriter::new(File::create(&staged).unwrap());
                 iso.copy_file_to(cab_path, &mut out).unwrap();
                 drop(out);
-                let cabinet =
+
+                let mut reference =
                     cab::Cabinet::new(std::io::BufReader::new(File::open(&staged).unwrap()))
                         .unwrap();
-                let folders: Vec<(usize, u64, String)> = cabinet
+                let folders: Vec<(usize, u64, String)> = reference
                     .folder_entries()
                     .map(|folder| {
                         (
@@ -352,8 +352,45 @@ mod tests {
                 for folder in &folders {
                     println!("    {} files, {} bytes, {}", folder.0, folder.1, folder.2);
                 }
-                let _ = fs::remove_file(&staged);
+
+                // A handful spread through the folder — including the last, which is the one
+                // a block-boundary mistake shifts.
+                let names: Vec<String> = reference
+                    .folder_entries()
+                    .flat_map(|folder| folder.file_entries())
+                    .map(|file| file.name().to_string())
+                    .collect();
+                let sampled: Vec<&String> = names
+                    .iter()
+                    .step_by((names.len() / 5).max(1))
+                    .chain(names.last())
+                    .collect();
+
+                let mut mine = Cabinet::open(&staged).unwrap();
+                for name in &sampled {
+                    let destination = staging.join("member.out");
+                    mine.extract(&[Wanted {
+                        name,
+                        destination: destination.clone(),
+                    }])
+                    .unwrap();
+                    let mut expected = Vec::new();
+                    reference
+                        .read_file(name)
+                        .unwrap()
+                        .read_to_end(&mut expected)
+                        .unwrap();
+                    assert_eq!(
+                        fs::read(&destination).unwrap(),
+                        expected,
+                        "{name} in {cab_path}"
+                    );
+                }
+                println!("    {} members agree with the cab crate", sampled.len());
+                let _ = fs::remove_dir_all(&staging);
+                let _ = fs::create_dir_all(&staging);
             }
+            let _ = fs::remove_dir_all(&staging);
         }
     }
 

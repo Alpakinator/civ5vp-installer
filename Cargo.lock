@@ -672,7 +672,9 @@ version = "0.1.0"
 dependencies = [
  "cab",
  "civ5vp-core",
+ "flate2",
  "lzma-rs",
+ "lzxd",
  "msi",
  "sha2",
  "tar",

@@ -28,9 +28,12 @@ sha2 = "0.10"
 # `docs/pinned-artifacts.md` says must be honoured rather than guessed. Pure Rust (mdsteele).
 msi = "0.10"
 
-# CAB decompression (MSZIP via flate2, LZX via the pure-Rust `lzxd`). Same author, same
-# reason: the alternative is shelling out to a tool the user does not have (rule 5).
-cab = "0.6"
+# CAB decompression. The container is parsed in `src/cabinet.rs` — see the note there: the
+# `cab` crate's reader is O(files x folder size) and the SDK cabinets hold ~1000 files in one
+# folder each. These two do the actual decompression, which is what `cab` delegates to as
+# well: `flate2` for MSZIP's deflate, `lzxd` for LZX. Both pure Rust.
+flate2 = "1"
+lzxd = "0.2"
 
 # The portable LLVM release is a .tar.xz. `tar` reads the archive, `lzma-rs` does the xz
 # decode — both pure Rust. `xattr` is off: extended attributes are not wanted here and the
@@ -45,3 +48,9 @@ lzma-rs = "0.3"
 [dev-dependencies]
 # Temporary Toolchain Cache roots and staging directories for the tests.
 tempfile = "3.27"
+
+# The reference CAB implementation (mdsteele, pure Rust). It writes the test fixtures — so
+# they are produced by an implementation independent of the one under test — and the tests
+# compare its reader's output against ours member for member. A dev-dependency only: the
+# shipped installer does not contain it.
+cab = "0.6"

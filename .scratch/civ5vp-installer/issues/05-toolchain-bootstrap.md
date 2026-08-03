@@ -58,15 +58,19 @@ The half of that criterion that *is* satisfied — all six names from
 against synthetic fixtures. Whoever runs the reference container next should paste its two
 numbers into `REFERENCE_BASELINE`; the comparison is already wired.
 
-### Known cost, not yet paid down
+### Why the CAB reader is hand-rolled
 
-`cab::Cabinet::read_file` rebuilds a folder reader per file and decompresses that folder from
-its start every time, so extracting *N* files from one folder costs O(N × folder size). On the
-real cabinets that is roughly 69 GB of LZX decompression for one bootstrap. It is correct, it
-is one-time, and it is cached — but it is minutes of pointless CPU. Fixing it means reading
-CAB folders sequentially ourselves (the format is simple; `lzxd` and `flate2` already do the
-decompression), which is a second archive parser and was not worth the risk of adding late in
-this ticket. Raised rather than done.
+`cab::Cabinet::read_file` rebuilds a folder reader per call and decompresses that folder from
+its start every time, so extracting *N* files out of one folder costs O(N × folder size). Each
+real cabinet is a single ~52 MB LZX folder holding hundreds of files, which works out at about
+69 GB of decompression to extract 168 MB. `src/cabinet.rs` reads each folder once instead and
+writes files as their bytes go past.
+
+The decompression itself is still `flate2` (MSZIP) and `lzxd` (LZX) — the same crates `cab`
+delegates to — and the reader is cross-checked rather than trusted: the fast suite round-trips
+MSZIP cabinets written by `cab`'s own builder and compares both readers member for member, and
+`inspect_a_real_disc_image` does the same on the real LZX cabinets. **33 members across five
+real cabinets agree byte for byte**, and the whole cross-check runs in about four seconds.
 
 ### Other deliberate scope calls
 
@@ -79,10 +83,10 @@ this ticket. Raised rather than done.
   `tarball.rs` keeps only `bin/`, `lib/clang/` and the shared libraries in `lib/`. The 1.0 GB
   download itself cannot be trimmed without finding a smaller portable clang 18 — an
   ADR-sized question.
-- ISO9660 and UDF are hand-rolled; MSI and CAB are not. `msi` and `cab` (both mdsteele, both
-  pure Rust) do those two, and their *writer* halves build the test fixtures — so those
-  fixtures are produced by the same implementations the bootstrap reads with. The UDF and
-  ISO9660 fixtures are written byte by byte here, since no such counterpart exists.
+- ISO9660, UDF and the CAB container are hand-rolled; MSI is not, and neither is any
+  compression. `msi` (mdsteele, pure Rust) reads the installer databases and its *writer* half
+  builds those fixtures, so they come from an implementation independent of the one under
+  test. `cab` is now a dev-dependency only, for the same reason plus the cross-check.
 - `BootstrappedToolchain::build_dll` bootstraps the Toolchain and then returns a typed error
   saying compilation is not implemented. That is ticket 06's work; emitting a stub DLL instead
   would let a broken install reach the game.
@@ -91,9 +95,10 @@ this ticket. Raised rather than done.
   creating symlinks needs a privilege user story 34 says the installer must not require.
 
 **Dependencies added,** each with its reason in the commit that adds it: `ureq` (rustls, no
-OpenSSL), `sha2`, `msi`, `cab`, `tar`, `lzma-rs`. All pure Rust; none pulls a C toolchain.
+OpenSSL), `sha2`, `msi`, `flate2`, `lzxd`, `tar`, `lzma-rs`, and `cab` as a dev-dependency.
+All pure Rust; none pulls a C toolchain.
 
-**Tests.** 88 unit tests inside `crates/toolchain`, plus three `#[ignore]`d ones: two in
+**Tests.** 91 unit tests inside `crates/toolchain`, plus three `#[ignore]`d ones: two in
 `crates/toolchain/tests/real_bootstrap.rs` (the real download and extraction, and the
 cache-reuse check) and `extract::tests::inspect_a_real_disc_image`, which describes a real
 image without extracting it and is what found all three documentation errors above. The fast
