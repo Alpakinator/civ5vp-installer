@@ -67,7 +67,7 @@ fn a_release_from_the_upstream_cache_installs_end_to_end() {
     let game = GameFixture::new(app_data.join("game"));
 
     let core = Core::new(
-        Box::new(InstallationSources::new(UpstreamCache::with_url(
+        Box::new(InstallationSources::new(UpstreamCache::new(
             fixture.cache_root(),
             fixture.url(),
         ))),
@@ -108,7 +108,7 @@ fn switching_version_between_installs_removes_what_the_new_version_dropped() {
     let game = GameFixture::new(app_data.join("game"));
 
     let core = Core::new(
-        Box::new(InstallationSources::new(UpstreamCache::with_url(
+        Box::new(InstallationSources::new(UpstreamCache::new(
             fixture.cache_root(),
             fixture.url(),
         ))),

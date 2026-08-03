@@ -24,19 +24,26 @@ use civ5vp_core::{
     BoundaryError, BuildRequest, Core, Eui, Flavor, FortyThreeCivs, GameFolders,
     InstallConfiguration, InstallationSource, ProgressReporter, Stage, ToolchainRunner, Version,
 };
-use civ5vp_sources::{InstallationSources, UpstreamCache};
+use civ5vp_sources::{InstallationSources, UPSTREAM_URL, UpstreamCache};
 
 /// Ticket 04's ceiling for a first materialization.
 ///
-/// Measured on 2026-08-03: 147.7 MiB. The headroom is for upstream growing — the figure is a
-/// snapshot of the repository, so it rises as the mod gains files, not as history gets longer.
-const FIRST_FETCH_CEILING: u64 = 250 * 1024 * 1024;
+/// Measured on 2026-08-03: 147.7 MiB. A shallow fetch transfers a *snapshot*, so this figure
+/// tracks how big the mod is, not how long its history is — it creeps up as files are added.
+/// 200 MiB is roughly a third above today's figure: enough that ordinary growth does not fail
+/// the test, tight enough that a change of strategy back towards full history would.
+const FIRST_FETCH_CEILING: u64 = 200 * 1024 * 1024;
 
 /// Ticket 04's ceiling for switching to another Version.
 ///
-/// Measured on 2026-08-03: 32.7 MiB for `master` → `Release-4.15`, roughly a year apart. Two
-/// Versions further apart than that cost more, hence the margin.
-const VERSION_SWITCH_CEILING: u64 = 75 * 1024 * 1024;
+/// Measured on 2026-08-03: 32.7 MiB for `master` → `Release-4.15`, roughly a year apart.
+///
+/// The margin is *not* for Versions further apart: ADR-0004's own measurements show the
+/// opposite, with the furthest switch measured (`Release-3.0`) costing 9.0 MiB, because an
+/// older Release is a smaller snapshot. What a switch actually costs is how much of the target
+/// snapshot the cache does not already hold, so the worst case is a switch to a *newer,
+/// larger* Version — which is what 50 MiB leaves room for.
+const VERSION_SWITCH_CEILING: u64 = 50 * 1024 * 1024;
 
 /// A Release far enough back that switching to it is a real switch, not a no-op.
 const OLDER_RELEASE: &str = "Release-4.15";
@@ -75,7 +82,7 @@ fn mib(bytes: u64) -> String {
 #[test]
 #[ignore = "clones the real upstream repository"]
 fn the_version_picker_lists_the_real_releases_and_master() {
-    let cache = UpstreamCache::new(scratch("real-list"));
+    let cache = UpstreamCache::new(scratch("real-list"), UPSTREAM_URL);
 
     let catalog = cache.list_versions(&ProgressReporter::silent()).unwrap();
 
@@ -112,7 +119,7 @@ fn the_version_picker_lists_the_real_releases_and_master() {
 #[ignore = "clones the real upstream repository"]
 fn a_first_materialization_and_a_version_switch_stay_within_budget() {
     let root = scratch("real-budget");
-    let cache = UpstreamCache::new(&root);
+    let cache = UpstreamCache::new(&root, UPSTREAM_URL);
 
     let started = std::time::Instant::now();
     cache
@@ -166,7 +173,7 @@ fn a_first_materialization_and_a_version_switch_stay_within_budget() {
 #[ignore = "clones the real upstream repository"]
 fn an_arbitrary_ref_can_be_a_commit_id() {
     let root = scratch("real-arbitrary");
-    let cache = UpstreamCache::new(&root);
+    let cache = UpstreamCache::new(&root, UPSTREAM_URL);
     // The commit `Release-5.4.2` peels to.
     let commit = "8e180cfd1cb7fc354abc0d6d7b23e2602dd2d3db";
 
@@ -197,6 +204,7 @@ fn a_real_release_installs_end_to_end() {
     let core = Core::new(
         Box::new(InstallationSources::new(UpstreamCache::new(
             root.join("upstream-cache"),
+            UPSTREAM_URL,
         ))),
         Box::new(MarkerToolchainRunner),
         root.join("work"),

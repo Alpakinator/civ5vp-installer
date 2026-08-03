@@ -20,11 +20,6 @@ impl InstallationSources {
     pub fn new(upstream: UpstreamCache) -> Self {
         Self { upstream }
     }
-
-    /// The Upstream Cache, for the Version picker (which asks it what Releases exist).
-    pub fn upstream_cache(&self) -> &UpstreamCache {
-        &self.upstream
-    }
 }
 
 impl SourceProvider for InstallationSources {

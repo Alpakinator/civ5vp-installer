@@ -12,9 +12,9 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 
 use civ5vp_core::{
-    AppDataStore, Core, Eui, Flavor, FortyThreeCivs, GameFolders, InstallConfiguration,
-    InstallError, InstallOutcome, InstallationSource, ProgressEvent, ProgressReporter,
-    SearchLocations, Settings, resolve_game_folders, start_up,
+    AppDataStore, Core, Eui, Flavor, FolderRejected, FortyThreeCivs, GameFolders,
+    InstallConfiguration, InstallError, InstallOutcome, InstallationSource, ProgressEvent,
+    ProgressReporter, SearchLocations, Settings, resolve_game_folders, start_up,
 };
 
 use crate::placeholder;
@@ -76,6 +76,13 @@ pub struct InstallerApp {
     /// out from them, or the sentence explaining why there are none. Recomputed whenever a
     /// folder is edited. The shell holds the answer; it never reaches one.
     resolved: Result<GameFolders, String>,
+    /// The Installation Source that was remembered, kept as-is until the player names a folder
+    /// of their own.
+    ///
+    /// This build has no Version picker, so the shell cannot draw an Upstream Cache selection
+    /// — but it must not destroy one either. Synthesising a Local Repo from an empty text field
+    /// and saving that would throw away a remembered Version the next release could still show.
+    remembered_source: InstallationSource,
     flavor: Flavor,
     forty_three_civs: FortyThreeCivs,
     activity: Vec<String>,
@@ -119,13 +126,10 @@ impl InstallerApp {
             }) => display_path(path),
             _ => String::new(),
         };
-        // The remembered Flavor and toggles, or the configuration most players want.
+        // The remembered Flavor and toggles, or what the Core suggests to a new player.
         let (flavor, forty_three_civs) = match &startup.configuration {
             Some(configuration) => (configuration.flavor.clone(), configuration.forty_three_civs),
-            None => (
-                Flavor::VoxPopuli { eui: Eui::Enabled },
-                FortyThreeCivs::Disabled,
-            ),
+            None => (Flavor::suggested(), FortyThreeCivs::Disabled),
         };
         let game_folder = startup
             .game_installation
@@ -136,24 +140,19 @@ impl InstallerApp {
             .as_deref()
             .map_or_else(String::new, display_path);
 
-        let resolved = match resolve_game_folders(
-            Path::new(game_folder.trim()),
-            Path::new(documents_folder.trim()),
-        ) {
-            Ok(folders) => Ok(folders),
-            Err(rejected) => {
-                crate::log_detail(&rejected.log_detail());
-                // What start-up has to say is about this machine — that the game is the
-                // native Aspyr port, or that nothing was found. A field-by-field rejection
-                // ("choose your Documents folder") is the weaker of the two, so it only shows
-                // when start-up had nothing to say.
-                Err(startup.note.unwrap_or_else(|| rejected.user_message()))
-            }
-        };
+        // Start-up may have something more specific to say than a field-by-field rejection —
+        // that the game is the native Aspyr port, say. Which of the two a player sees is the
+        // Core's judgement, made by `Startup::explanation`, not the shell's.
+        let resolved = resolve(&game_folder, &documents_folder)
+            .map_err(|rejected| startup.explanation(&rejected));
 
         let app = Self {
             core,
             store,
+            remembered_source: startup
+                .configuration
+                .as_ref()
+                .map_or_else(InstallationSource::unchosen, |c| c.source.clone()),
             source_folder,
             game_folder,
             documents_folder,
@@ -182,6 +181,7 @@ impl InstallerApp {
         let mut app = Self {
             core,
             store,
+            remembered_source: InstallationSource::unchosen(),
             source_folder: "/home/player/src/Community-Patch-DLL".to_owned(),
             game_folder: game.to_owned(),
             documents_folder: documents.to_owned(),
@@ -193,7 +193,7 @@ impl InstallerApp {
                 dlc: PathBuf::from(format!("{game}/Assets/DLC")),
                 text: PathBuf::from(format!("{documents}/Text")),
             }),
-            flavor: Flavor::VoxPopuli { eui: Eui::Enabled },
+            flavor: Flavor::suggested(),
             forty_three_civs: FortyThreeCivs::Disabled,
             activity: Vec::new(),
             status: Status::Ready,
@@ -380,16 +380,8 @@ impl InstallerApp {
 
     /// Ask the Core what the two folders mean, now that one of them has been edited.
     fn folders_changed(&mut self) {
-        self.resolved = match resolve_game_folders(
-            Path::new(self.game_folder.trim()),
-            Path::new(self.documents_folder.trim()),
-        ) {
-            Ok(folders) => Ok(folders),
-            Err(rejected) => {
-                crate::log_detail(&rejected.log_detail());
-                Err(rejected.user_message())
-            }
-        };
+        self.resolved =
+            resolve(&self.game_folder, &self.documents_folder).map_err(|r| r.user_message());
         if self.resolved.is_ok() {
             self.remember();
         }
@@ -411,10 +403,15 @@ impl InstallerApp {
 
     /// What the player has chosen, as the Core wants it.
     fn configuration(&self) -> InstallConfiguration {
-        InstallConfiguration {
-            source: InstallationSource::LocalRepo {
+        let source = if self.source_folder.trim().is_empty() {
+            self.remembered_source.clone()
+        } else {
+            InstallationSource::LocalRepo {
                 path: PathBuf::from(self.source_folder.trim()),
-            },
+            }
+        };
+        InstallConfiguration {
+            source,
             flavor: self.flavor.clone(),
             forty_three_civs: self.forty_three_civs,
         }
@@ -530,6 +527,19 @@ fn folder_field(ui: &mut egui::Ui, caption: &str, value: &mut String) -> bool {
         .labelled_by(caption.id);
     ui.end_row();
     field.changed()
+}
+
+/// Ask the Core what a pair of typed-in folders means, logging the detail either way (rule 11).
+///
+/// The rejection is handed back rather than turned into a sentence here, because the two
+/// callers show different ones: a launch may have something more specific to say about this
+/// machine than an edited field does.
+fn resolve(game_folder: &str, documents_folder: &str) -> Result<GameFolders, FolderRejected> {
+    resolve_game_folders(
+        Path::new(game_folder.trim()),
+        Path::new(documents_folder.trim()),
+    )
+    .inspect_err(|rejected| crate::log_detail(&rejected.log_detail()))
 }
 
 fn display_path(path: &Path) -> String {

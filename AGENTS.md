@@ -14,7 +14,7 @@ A single-file desktop installer (Windows + Linux) for the Community Patch / Vox 
 
 ## Commands
 
-The workspace is `crates/core` (the headless Core, a library) and `crates/installer` (the egui shell and the binary). Both are default workspace members, so a bare `cargo test` is the whole suite and `cargo run` means the installer.
+The workspace is `crates/core` (the headless Core, a library with no dependencies at all), `crates/sources` and `crates/toolchain` (the two injected boundaries — each depends on the Core and may have dependencies of its own, which is why they are separate crates), and `crates/installer` (the egui shell and the binary). All are default workspace members, so a bare `cargo test` is the whole suite and `cargo run` means the installer.
 
 Standard `cargo` commands apply. Only the non-obvious ones are listed:
 
@@ -26,7 +26,7 @@ UPDATE_SNAPSHOTS=true cargo test  # accept changed egui_kittest snapshot baselin
 
 `--screenshot` takes `--size <WxH>` and `--scale <factor>`, each repeatable; every screen is rendered at every combination. `cargo run -- --help` lists them.
 
-The only `#[ignore]`d test today is ticket 03's `detection_finds_the_game_on_this_machine`, which asks the real Steam install on the developer's machine to be found — the one check the fixture trees cannot make. The real-clone and real-toolchain ones arrive with tickets 04, 05 and 06.
+The `#[ignore]`d tests today are ticket 03's `detection_finds_the_game_on_this_machine`, which asks the real Steam install on the developer's machine to be found — the one check the fixture trees cannot make — and ticket 04's `real_upstream.rs`, which clones the actual upstream repository (see below). The real-toolchain ones arrive with tickets 05 and 06.
 
 Run clippy and the fast suite regularly; the full suite once before handing work back.
 

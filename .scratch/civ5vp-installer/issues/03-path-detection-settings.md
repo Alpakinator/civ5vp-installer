@@ -25,7 +25,7 @@ Note the Documents folder says "Civilization 5" while the game folder says "Civi
 
 - [x] Linux detection resolves game and Proton-prefix Documents paths from fixture Steam library layouts (multi-library `libraryfolders.vdf` included)
 - [x] Native Linux port fixture is detected and refused with the explanation; no Deployment possible against it
-- [x] Windows detection lives behind a thin platform adapter; its logic is exercised via the Core seam with fixture inputs (real-Windows verification deferred per the spec's platform constraint)
+- [ ] Windows detection lives behind a thin platform adapter; its logic is exercised via the Core seam with fixture inputs (real-Windows verification deferred per the spec's platform constraint) — **partial**: the adapter exists and is the workspace's only `#[cfg]` site, and the platform-agnostic half is fixture-tested, but it reads `%ProgramFiles(x86)%` / `%USERPROFILE%` rather than the Steam registry and the known-folder API the spec names. The mechanism is deferred, not just its verification. A player who moved Steam or redirected Documents falls back to picking by hand
 - [x] Manual picker validates a chosen folder against the markers below and rejects a wrong folder before anything is written, naming which marker was missing
 - [x] Paths and last configuration persist in the App Data Store and pre-fill the next launch
 

@@ -28,6 +28,8 @@ Glossary for the Vox Populi installer for Civilization V. Terms only — no impl
 
 **Upstream Cache** — the installer-managed clone of the upstream repository, fetched incrementally so no file content is ever downloaded twice. Checking out a Version happens here.
 
+**Documents Folder** — the `…/Documents/My Games/Sid Meier's Civilization 5/` folder holding the MODS Folder, the Text Folder, `ModUserData`, `UserSettings.ini` and the game's `cache`. On Linux it lives inside the Proton prefix. Note that it says "Civilization 5" where the Game Installation says "Civilization V" — one is never derived from the other by substitution.
+
 **Text Folder** — `…/Documents/My Games/Sid Meier's Civilization 5/Text/`. Receives `VPUI_tips_en_us.xml` (loading-screen tips) for every Vox Populi configuration. The third deployment target alongside the MODS and DLC Folders.
 
 **MODS Folder** — the game's mod directory (`…/Documents/My Games/Sid Meier's Civilization 5/MODS`). Deployment target for mod folders `(1)`, `(2)`, `(3a)`, `(3b)`, `(4a)`.

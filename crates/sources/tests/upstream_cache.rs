@@ -18,7 +18,7 @@ fn read(root: &std::path::Path, relative: &str) -> String {
 #[test]
 fn version_picker_lists_releases_newest_first() {
     let fixture = UpstreamFixture::new();
-    let cache = UpstreamCache::with_url(fixture.cache_root(), fixture.url());
+    let cache = UpstreamCache::new(fixture.cache_root(), fixture.url());
 
     let catalog = cache.list_versions(&ProgressReporter::silent()).unwrap();
 
@@ -32,7 +32,7 @@ fn version_picker_lists_releases_newest_first() {
 #[test]
 fn version_picker_reports_the_latest_development_version() {
     let fixture = UpstreamFixture::new();
-    let cache = UpstreamCache::with_url(fixture.cache_root(), fixture.url());
+    let cache = UpstreamCache::new(fixture.cache_root(), fixture.url());
 
     let catalog = cache.list_versions(&ProgressReporter::silent()).unwrap();
 
@@ -42,7 +42,7 @@ fn version_picker_reports_the_latest_development_version() {
 #[test]
 fn materializing_a_release_checks_out_that_releases_files() {
     let fixture = UpstreamFixture::new();
-    let cache = UpstreamCache::with_url(fixture.cache_root(), fixture.url());
+    let cache = UpstreamCache::new(fixture.cache_root(), fixture.url());
 
     let root = cache
         .materialize(
@@ -68,7 +68,7 @@ fn materializing_a_release_checks_out_that_releases_files() {
 #[test]
 fn a_release_can_be_named_without_its_prefix() {
     let fixture = UpstreamFixture::new();
-    let cache = UpstreamCache::with_url(fixture.cache_root(), fixture.url());
+    let cache = UpstreamCache::new(fixture.cache_root(), fixture.url());
 
     let root = cache
         .materialize(
@@ -86,7 +86,7 @@ fn a_release_can_be_named_without_its_prefix() {
 #[test]
 fn materializing_the_latest_development_version_checks_out_master_head() {
     let fixture = UpstreamFixture::new();
-    let cache = UpstreamCache::with_url(fixture.cache_root(), fixture.url());
+    let cache = UpstreamCache::new(fixture.cache_root(), fixture.url());
 
     let root = cache
         .materialize(
@@ -104,7 +104,7 @@ fn materializing_the_latest_development_version_checks_out_master_head() {
 #[test]
 fn an_arbitrary_ref_accepts_a_branch_name() {
     let fixture = UpstreamFixture::new();
-    let cache = UpstreamCache::with_url(fixture.cache_root(), fixture.url());
+    let cache = UpstreamCache::new(fixture.cache_root(), fixture.url());
 
     let root = cache
         .materialize(
@@ -122,7 +122,7 @@ fn an_arbitrary_ref_accepts_a_branch_name() {
 #[test]
 fn an_arbitrary_ref_accepts_a_tag_name_that_is_not_a_release() {
     let fixture = UpstreamFixture::new();
-    let cache = UpstreamCache::with_url(fixture.cache_root(), fixture.url());
+    let cache = UpstreamCache::new(fixture.cache_root(), fixture.url());
 
     let root = cache
         .materialize(
@@ -140,7 +140,7 @@ fn an_arbitrary_ref_accepts_a_tag_name_that_is_not_a_release() {
 #[test]
 fn switching_version_leaves_no_file_from_the_previous_version() {
     let fixture = UpstreamFixture::new();
-    let cache = UpstreamCache::with_url(fixture.cache_root(), fixture.url());
+    let cache = UpstreamCache::new(fixture.cache_root(), fixture.url());
 
     cache
         .materialize(
@@ -169,20 +169,20 @@ fn switching_version_leaves_no_file_from_the_previous_version() {
 #[test]
 fn switching_back_to_an_earlier_version_restores_its_files() {
     let fixture = UpstreamFixture::new();
-    let cache = UpstreamCache::with_url(fixture.cache_root(), fixture.url());
+    let cache = UpstreamCache::new(fixture.cache_root(), fixture.url());
 
+    let mut root = std::path::PathBuf::new();
     for version in ["Release-1.0", "Release-2.0", "Release-1.0"] {
-        cache
+        root = cache
             .materialize(
                 &Version::Release(version.to_owned()),
                 &ProgressReporter::silent(),
             )
             .unwrap();
     }
-    let root = cache.root();
 
     assert_eq!(
-        materialized_files(root),
+        materialized_files(&root),
         [
             "(1) Community Patch/(1) Community Patch.modinfo",
             "(1) Community Patch/Kit/ReadMe.txt",
@@ -194,7 +194,7 @@ fn switching_back_to_an_earlier_version_restores_its_files() {
 #[test]
 fn materializing_the_same_version_twice_is_idempotent() {
     let fixture = UpstreamFixture::new();
-    let cache = UpstreamCache::with_url(fixture.cache_root(), fixture.url());
+    let cache = UpstreamCache::new(fixture.cache_root(), fixture.url());
     let version = Version::Release("Release-2.0".to_owned());
 
     let first = cache
@@ -212,7 +212,7 @@ fn materializing_the_same_version_twice_is_idempotent() {
 #[test]
 fn an_unknown_version_is_reported_as_such_and_the_cache_still_works() {
     let fixture = UpstreamFixture::new();
-    let cache = UpstreamCache::with_url(fixture.cache_root(), fixture.url());
+    let cache = UpstreamCache::new(fixture.cache_root(), fixture.url());
     cache
         .materialize(
             &Version::Release("Release-2.0".to_owned()),
@@ -251,7 +251,7 @@ fn a_failed_fetch_leaves_the_cache_consistent_and_a_retry_succeeds() {
     let version = Version::Release("Release-2.0".to_owned());
 
     // The upstream is unreachable — the cache directory may be created, but nothing else.
-    let offline = UpstreamCache::with_url(fixture.cache_root(), fixture.unreachable_url());
+    let offline = UpstreamCache::new(fixture.cache_root(), fixture.unreachable_url());
     let failure = offline
         .materialize(&version, &ProgressReporter::silent())
         .unwrap_err();
@@ -267,7 +267,7 @@ fn a_failed_fetch_leaves_the_cache_consistent_and_a_retry_succeeds() {
 
     // Same cache directory, upstream back: the retry has to work rather than trip over
     // whatever the failed attempt left behind.
-    let online = UpstreamCache::with_url(fixture.cache_root(), fixture.url());
+    let online = UpstreamCache::new(fixture.cache_root(), fixture.url());
     let root = online
         .materialize(&version, &ProgressReporter::silent())
         .unwrap();
@@ -280,7 +280,7 @@ fn a_failed_fetch_leaves_the_cache_consistent_and_a_retry_succeeds() {
 #[test]
 fn a_checkout_that_did_not_finish_is_redone_rather_than_trusted() {
     let fixture = UpstreamFixture::new();
-    let cache = UpstreamCache::with_url(fixture.cache_root(), fixture.url());
+    let cache = UpstreamCache::new(fixture.cache_root(), fixture.url());
     let version = Version::Release("Release-2.0".to_owned());
     let root = cache
         .materialize(&version, &ProgressReporter::silent())

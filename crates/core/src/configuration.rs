@@ -48,6 +48,30 @@ pub enum InstallationSource {
     LocalRepo { path: PathBuf },
 }
 
+impl InstallationSource {
+    /// The Installation Source of a player who has not named one yet.
+    ///
+    /// A Local Repo with no path. The Core refuses it with a sentence saying so, which is the
+    /// right answer — "you have not said where the sources come from" is a thing to be told,
+    /// not a state to be represented separately.
+    pub fn unchosen() -> Self {
+        Self::LocalRepo {
+            path: PathBuf::new(),
+        }
+    }
+}
+
+impl Flavor {
+    /// What to offer a player who has never run the installer.
+    ///
+    /// Vox Populi with EUI. Vox Populi is the mod people mean when they say "Vox Populi", and
+    /// EUI is part of the standard experience — Community Patch alone is the smaller, more
+    /// deliberate choice. Deciding this is the Core's job, not the shell's (rule 3).
+    pub fn suggested() -> Self {
+        Self::VoxPopuli { eui: Eui::Enabled }
+    }
+}
+
 /// The complete user selection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstallConfiguration {

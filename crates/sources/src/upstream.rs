@@ -23,7 +23,7 @@
 
 use std::fs;
 use std::num::NonZeroU32;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 use civ5vp_core::{ProgressReporter, Stage, Version};
@@ -35,6 +35,17 @@ use crate::version::{RefTarget, VersionCatalog};
 
 /// The one network source the installer has for mod files (`docs/pinned-artifacts.md` §6).
 pub const UPSTREAM_URL: &str = "https://github.com/LoneGazebo/Community-Patch-DLL.git";
+
+/// Written inside the cache's own `.git` when this code creates it, and checked before the
+/// working tree is emptied. Its only job is to make "is this directory ours?" answerable.
+///
+/// It lives under `.git` rather than beside the mod folders for two reasons: the working tree
+/// is what gets deployed, so nothing of the installer's belongs in it, and `.git` is the one
+/// thing `empty_working_tree` already preserves.
+const CACHE_MARKER: &str = ".git/civ5vp-upstream-cache";
+
+const CACHE_MARKER_CONTENTS: &str = "This folder is the Civ 5 VP Installer's Upstream Cache. It is safe to delete when the \
+     installer is not running; the installer will fetch what it needs again.\n";
 
 /// Records which commit the working tree beside it was written from. Kept inside `.git` so it
 /// never shows up in the tree the Core walks.
@@ -53,28 +64,16 @@ pub struct UpstreamCache {
 }
 
 impl UpstreamCache {
-    /// `root` is the cache directory inside the App Data Store. It is created on first use.
-    pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self {
-            root: root.into(),
-            url: UPSTREAM_URL.to_owned(),
-        }
-    }
-
-    /// Point the cache at a different repository.
+    /// `root` is the cache directory inside the App Data Store, created on first use; `url`
+    /// is the repository to fetch from, which is [`UPSTREAM_URL`] everywhere except in tests.
     ///
-    /// Only tests use this, against a fixture repository on disk — but it is public because
-    /// the alternative is a `#[cfg(test)]` seam, and a fixture URL is not a secret.
-    pub fn with_url(root: impl Into<PathBuf>, url: impl Into<String>) -> Self {
+    /// The URL is an ordinary parameter rather than a second `with_url` constructor so that
+    /// nothing here exists only so a test can reach it (rule 12).
+    pub fn new(root: impl Into<PathBuf>, url: impl Into<String>) -> Self {
         Self {
             root: root.into(),
             url: url.into(),
         }
-    }
-
-    /// Where the materialized working tree lives.
-    pub fn root(&self) -> &Path {
-        &self.root
     }
 
     /// What the Version picker lists: every Release upstream offers, and `master`'s HEAD.
@@ -174,11 +173,24 @@ impl UpstreamCache {
             path: self.root.clone(),
             detail: chain(err),
         };
-        if self.root.join(".git").exists() {
+        let repository = if self.root.join(".git").exists() {
             gix::open(&self.root).map_err(|err| unusable(&err))
         } else {
             gix::init(&self.root).map_err(|err| unusable(&err))
+        }?;
+
+        // Written as soon as the repository exists, so any cache this code has opened once
+        // carries it. `empty_working_tree` checks it before deleting anything.
+        let marker = self.root.join(CACHE_MARKER);
+        if !marker.is_file() {
+            fs::write(&marker, CACHE_MARKER_CONTENTS).map_err(|err| {
+                SourceError::CacheUnusable {
+                    path: self.root.clone(),
+                    detail: err.to_string(),
+                }
+            })?;
         }
+        Ok(repository)
     }
 
     /// Fetch exactly one commit for `target`, keeping every previously fetched Version.
@@ -295,7 +307,19 @@ impl UpstreamCache {
     }
 
     /// Remove everything in the cache directory except the repository itself.
+    ///
+    /// This deletes a whole directory tree, so it first checks the directory is one this code
+    /// made. `new` accepts any path, and a caller that passed a wrong one — the user's home
+    /// directory, say — would otherwise have it emptied. The Core has the same rule about the
+    /// game folders (rule 6); the cache deserves it too, and the check costs one `exists`.
     fn empty_working_tree(&self) -> Result<(), String> {
+        if !self.root.join(CACHE_MARKER).is_file() {
+            return Err(format!(
+                "{} is not an Upstream Cache this installer created ({CACHE_MARKER} is missing), \
+                 so it will not be emptied",
+                self.root.display()
+            ));
+        }
         let entries = match fs::read_dir(&self.root) {
             Ok(entries) => entries,
             Err(err) => return Err(err.to_string()),

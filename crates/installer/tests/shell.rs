@@ -163,6 +163,13 @@ fn field_value(harness: &mut Harness<'_, InstallerApp>, label: &str) -> String {
     harness.get_by_label(label).value().unwrap_or_default()
 }
 
+/// Whether a radio button or checkbox is on, read the way a screen reader reads it.
+#[track_caller]
+fn is_ticked(harness: &mut Harness<'_, InstallerApp>, label: &str) -> bool {
+    use egui_kittest::kittest::NodeT as _;
+    harness.get_by_label(label).accesskit_node().toggled() == Some(egui::accesskit::Toggled::True)
+}
+
 #[track_caller]
 fn set_text(harness: &mut Harness<'_, InstallerApp>, label: &str, value: &str) {
     let field = harness.get_by_label(label);
@@ -379,6 +386,37 @@ fn what_one_launch_settles_the_next_launch_starts_from() {
         field_value(&mut next, "Community-Patch-DLL folder"),
         miniature_repo().display().to_string(),
         "the remembered Install Configuration should have pre-filled the next launch",
+    );
+}
+
+/// A Flavor picked before anything has been installed is still there next launch.
+///
+/// This is the shell half of the same rule the Core tests cover: on a first run nobody has
+/// pointed the installer at any sources yet, and the Flavor they did choose has to survive
+/// that. It used to be dropped — the configuration was remembered whole or not at all, and an
+/// unnamed Installation Source made the whole of it unreadable.
+#[test]
+fn a_flavor_chosen_before_anything_else_is_remembered() {
+    let game = TempGame::new();
+    let mut harness = harness_over(game.launch(&game.locations()));
+    harness.step();
+
+    // No source folder typed — only the Flavor and the toggle are touched.
+    harness.get_by_label("Community Patch only").click();
+    harness
+        .get_by_label("43 Civs — room for 43 civilizations on a map")
+        .click();
+    harness.step();
+
+    let mut next = harness_over(game.launch(&game.nowhere()));
+    next.step();
+    assert!(
+        is_ticked(&mut next, "Community Patch only"),
+        "the Flavor should have been remembered",
+    );
+    assert!(
+        is_ticked(&mut next, "43 Civs — room for 43 civilizations on a map"),
+        "and so should the toggle",
     );
 }
 

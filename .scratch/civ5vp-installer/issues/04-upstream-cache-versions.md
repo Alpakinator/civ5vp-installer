@@ -6,10 +6,10 @@
 
 **Status:** ready-for-agent
 
-- [x] Version picker lists real Releases and latest master from the upstream repository; arbitrary ref accepted via advanced input
-- [x] First materialization transfers under 250 MB on the wire, against ~4.5 GB of full history; a subsequent Version switch transfers under 75 MB. Both are measured, not estimated. Measured 2026-08-03: **147.7 MiB** first materialization, **32.7 MiB** for `master` → `Release-4.15`
+- [ ] Version picker lists real Releases and latest master from the upstream repository; arbitrary ref accepted via advanced input — **the Core half is done and proven against the real upstream (194 Releases listed, arbitrary ref by commit id), but there is no picker in the UI**: the shell cannot depend on `civ5vp-sources` yet and still hardcodes a Local Repo. The user-facing half of this criterion is not met
+- [x] First materialization transfers under 200 MB on the wire, against ~4.5 GB of full history; a subsequent Version switch transfers under 50 MB. Both are measured, not estimated. Measured 2026-08-03: **147.7 MiB** first materialization, **32.7 MiB** for `master` → `Release-4.15`
 - [x] Checkout of the selected Version feeds the Core's source-provider boundary; a real Release installs end-to-end (fake toolchain still supplying the DLL)
-- [x] Network failure mid-fetch leaves the cache consistent and the game untouched; retry succeeds
+- [ ] Network failure mid-fetch leaves the cache consistent and the game untouched; retry succeeds — **partial**: an unreachable host and an unknown ref are tested, and both retry cleanly, but that is a failure *before* the transfer. A connection severed part-way through a pack — the case that could leave a half-written pack behind — needs a fault-injecting transport and is untested
 - [x] Works without git installed on the machine
 - [x] Clone-strategy decision (blobless / fallback) verified against the real upstream and recorded
 
@@ -38,7 +38,7 @@ so a number below the ceiling proves the wire traffic was below it too. The inde
 CLI figure for the same shallow clone (147.66 MiB "Receiving objects") matches to within a
 tenth of a MiB, which is the cross-check that the bound is tight.
 
-**Ceilings.** Tightened from 1.5 GB / 250 MB to 250 MB / 75 MB, per this ticket's instruction.
+**Ceilings.** Tightened from 1.5 GB / 250 MB to 200 MB / 50 MB, per this ticket's instruction to set them just above what the chosen strategy actually costs (147.7 MiB and 32.7 MiB measured). The switch margin is sized for a switch to a newer, *larger* snapshot — not for Versions further apart, which ADR-0004's measurements show are cheaper, not dearer.
 The margin is deliberate rather than a round number: the first-fetch figure is a *snapshot* of
 the repository, so it grows as the mod gains files (not as history gets longer), and a switch
 between two Versions further apart than the year between `master` and `Release-4.15` costs

@@ -10,7 +10,7 @@ use support::UpstreamFixture;
 
 /// A provider whose Upstream Cache is never reached — these tests only use the Local Repo arm.
 fn sources(fixture: &UpstreamFixture) -> InstallationSources {
-    InstallationSources::new(UpstreamCache::with_url(
+    InstallationSources::new(UpstreamCache::new(
         fixture.cache_root(),
         fixture.unreachable_url(),
     ))

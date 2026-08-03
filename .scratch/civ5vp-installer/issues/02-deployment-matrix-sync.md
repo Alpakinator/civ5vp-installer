@@ -117,3 +117,17 @@ which is what `ClaimedFile`'s public surface is for.
 
 Not acted on, deliberately: the `"*.modinfo"` wildcard was flagged as Primitive Obsession, but a
 type for one wildcard used in one place buys less than the comment explaining it costs.
+
+## Follow-up, after tickets 03 and 04 landed
+
+The Flavor / EUI / 43-Civs pickers were added to the shell (commit `1c5371f`). They belong to no
+ticket's acceptance criteria — ticket 02's are Core-seam only and ticket 09 styles screens it
+assumes already exist — but without them the matrix this ticket built was unreachable from the
+UI, which made the whole ticket undemonstrable. Recorded here rather than left as untracked work.
+
+Three radio buttons rather than two-plus-a-checkbox, so the shell offers exactly the six legal
+configurations and needs no rule of its own to exclude the seventh (rule 3).
+
+Still missing from the UI, and belonging to ticket 04: the Version picker. The shell can only
+express a Local Repo, so a remembered Upstream Cache Version cannot be drawn — it is preserved
+untouched rather than overwritten, but nobody can see or change it until that picker exists.

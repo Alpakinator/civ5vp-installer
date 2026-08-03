@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use crate::configuration::{
     Eui, Flavor, FortyThreeCivs, InstallConfiguration, InstallationSource, Version,
 };
-use crate::detect::{self, Detection, SearchLocations};
+use crate::detect::{self, Detection, FolderRejected, SearchLocations};
 
 /// The settings file's name inside the App Data Store.
 const SETTINGS_FILE_NAME: &str = "settings.txt";
@@ -183,6 +183,10 @@ impl Settings {
             return text;
         };
         match &configuration.source {
+            // A Local Repo with no path is "not chosen yet", not a choice. Writing it would
+            // produce a `local-repo = ` line that reads back as nothing useful; leaving the
+            // source out entirely says the same thing and reads back the same way.
+            InstallationSource::LocalRepo { path } if path.as_os_str().is_empty() => {}
             InstallationSource::LocalRepo { path } => {
                 write_line(&mut text, "source", "local-repo");
                 write_path(&mut text, "local-repo", Some(path));
@@ -231,6 +235,18 @@ pub struct Startup {
     pub note: Option<String>,
     /// Lines for the log file (rule 11).
     pub log: Vec<String>,
+}
+
+impl Startup {
+    /// The sentence to show when the game folders could not be settled.
+    ///
+    /// Two explanations can apply at once, and the more specific one wins. `note` is about this
+    /// machine — that the game found is the native Aspyr port, or that nothing was found at all
+    /// — while `rejected` is about one field being wrong. "This is the Linux port and Vox Populi
+    /// cannot use it" tells a player far more than "choose your Documents folder".
+    pub fn explanation(&self, rejected: &FolderRejected) -> String {
+        self.note.clone().unwrap_or_else(|| rejected.user_message())
+    }
 }
 
 /// Work out what the installer knows at launch.
@@ -335,15 +351,24 @@ fn read_version(value: &str) -> Option<Version> {
 
 /// An Install Configuration is remembered whole or not at all: half of one restored from a
 /// file written by a different version would be a configuration the player never chose.
+///
+/// The Installation Source is the exception, and deliberately. A player who has not yet said
+/// where the sources come from has still said which Flavor they want, and dropping the whole
+/// configuration for the sake of the one part they have not filled in would mean their Flavor
+/// silently never persisted. An unset source reads back as a Local Repo with no path — which
+/// is exactly what it is, and which the Core already refuses with a sentence saying so.
 fn read_configuration(values: &Values) -> Option<InstallConfiguration> {
-    let source = match values.get("source")? {
-        "local-repo" => InstallationSource::LocalRepo {
-            path: values.path("local-repo")?,
+    let source = match values.get("source") {
+        Some("local-repo") => InstallationSource::LocalRepo {
+            path: values.path("local-repo").unwrap_or_default(),
         },
-        "upstream-cache" => InstallationSource::UpstreamCache {
+        Some("upstream-cache") => InstallationSource::UpstreamCache {
             version: read_version(values.get("version")?)?,
         },
-        _ => return None,
+        None => InstallationSource::LocalRepo {
+            path: PathBuf::new(),
+        },
+        Some(_) => return None,
     };
     let flavor = match values.get("flavor")? {
         "community-patch" => Flavor::CommunityPatch,

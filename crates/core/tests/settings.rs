@@ -272,3 +272,62 @@ fn the_platform_app_data_store_is_the_platform_app_data_location() {
         assert_eq!(store.root(), expected.join("civ5vp-installer"));
     }
 }
+
+/// A Flavor chosen before the sources have been pointed at anything is still remembered.
+///
+/// The Install Configuration is otherwise remembered whole or not at all, which is right for
+/// everything except the Installation Source: on a first run nobody has named one yet, and
+/// dropping the whole configuration over that would mean the Flavor silently never persisted.
+#[test]
+fn a_configuration_with_no_installation_source_still_remembers_its_flavor() {
+    let store = AppDataStore::at(tempfile::tempdir().unwrap().path().join("app-data"));
+
+    store
+        .save(&Settings {
+            game_installation: None,
+            documents_folder: None,
+            configuration: Some(InstallConfiguration {
+                source: InstallationSource::unchosen(),
+                flavor: Flavor::VoxPopuli { eui: Eui::Enabled },
+                forty_three_civs: FortyThreeCivs::Enabled,
+            }),
+        })
+        .unwrap();
+
+    let restored = store
+        .load()
+        .unwrap()
+        .configuration
+        .expect("the Flavor and the toggles should have survived on their own");
+    assert_eq!(restored.flavor, Flavor::VoxPopuli { eui: Eui::Enabled });
+    assert_eq!(restored.forty_three_civs, FortyThreeCivs::Enabled);
+    assert_eq!(restored.source, InstallationSource::unchosen());
+}
+
+/// A remembered Version survives a run that never touches the source, so that a build with no
+/// Version picker cannot quietly throw one away.
+#[test]
+fn a_remembered_upstream_version_survives_a_round_trip() {
+    let store = AppDataStore::at(tempfile::tempdir().unwrap().path().join("app-data"));
+    let chosen = InstallationSource::UpstreamCache {
+        version: Version::Release("Release-5.4.2".to_owned()),
+    };
+
+    store
+        .save(&Settings {
+            game_installation: None,
+            documents_folder: None,
+            configuration: Some(InstallConfiguration {
+                source: chosen.clone(),
+                flavor: Flavor::CommunityPatch,
+                forty_three_civs: FortyThreeCivs::Disabled,
+            }),
+        })
+        .unwrap();
+
+    assert_eq!(
+        store.load().unwrap().configuration.unwrap().source,
+        chosen,
+        "the remembered Version should come back exactly",
+    );
+}
