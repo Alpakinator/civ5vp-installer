@@ -57,6 +57,36 @@ whatever the storage panel says about the ~5 GB footprint.
 `Program Files/Microsoft SDKs/Windows/v7.0/`. Extraction locates the roots rather than assuming
 them, and hands them to the build as explicit include and lib directories.
 
+### Why the download is slow, and the mirror that is *not* a substitute
+
+The pinned URL is a Wayback Machine capture, and Wayback is a replay service rather than a file
+server: it locates the record in WARC storage and streams it back out. Measured on one machine
+within the same minute:
+
+| source | throughput | time to first byte |
+| --- | --- | --- |
+| GitHub (for comparison) | 8.4 MB/s | immediate |
+| `web.archive.org/…/` replay | 0.20 MB/s | 12.3 s |
+| `web.archive.org/…id_/` raw | 0.22 MB/s | 7.4 s |
+
+So a first bootstrap spends a couple of hours on this file, and that is the artifact's fault,
+not the network's or the installer's. A `Range` request into the middle of it returned **zero
+bytes in 20 seconds**, which is why resuming is unreliable — the downloader must tolerate that.
+The original `download.microsoft.com` URL is a hard 404, so there is no first-party source left.
+
+**Do not swap the pin for `archive.org/download/grmsdkx-en-dvd/GRMSDK_EN_DVD.iso`.** It is
+tempting: it is a real archive.org item rather than a Wayback capture, it serves at 7.7 MB/s,
+and it has the same file name. It is a **different product** — the item is "Windows SDK June
+2010 (for Windows 7 & .NET Framework 4)", which is SDK **7.1**, not the 7.0 this project pins.
+Measured: 594,841,600 bytes, SHA-256 `27cb38f76095c0acb9b558109f8693b39cbceb796856c15bd575f9e9d0b316c3`
+— which is not the SHA-256 above, so the checksum gate would catch the swap. Recorded here so
+the next person can see *why* it fails instead of assuming the hash is stale.
+
+(That collision is the likely source of this document's original "~580 MB": SDK 7.1's ISOs are
+about that size, SDK 7.0's is 1.45 GiB.)
+
+Searching archive.org for a faster 7.0 mirror turns up four items, none of which is one.
+
 To re-check the first two without downloading the whole image:
 
 ```sh
