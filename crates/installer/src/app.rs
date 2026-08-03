@@ -2,15 +2,19 @@
 //!
 //! Rule 3: nothing here decides anything. It collects paths, hands them to the Core, and
 //! renders what comes back. Which folders are Claimed, whether a Flavor is legal, what order
-//! things happen in — all of that lives behind [`Core`].
+//! things happen in, whether a folder really is the game, where the MODS Folder lives inside
+//! it, what to tell a player whose game cannot be used — all of that lives behind [`Core`] and
+//! the Core's detection functions. Every sentence this file puts on screen either came out of
+//! the Core or is a fixed label.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 
 use civ5vp_core::{
-    Core, Flavor, FortyThreeCivs, GameFolders, InstallConfiguration, InstallError, InstallOutcome,
-    InstallationSource, ProgressEvent, ProgressReporter,
+    AppDataStore, Core, Flavor, FortyThreeCivs, GameFolders, InstallConfiguration, InstallError,
+    InstallOutcome, InstallationSource, ProgressEvent, ProgressReporter, SearchLocations, Settings,
+    resolve_game_folders, start_up,
 };
 
 use crate::placeholder;
@@ -28,6 +32,7 @@ enum Status {
 /// The screens `--screenshot` renders and ticket 09 will style.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
+    FoldersNeeded,
     Ready,
     Installing,
     Installed,
@@ -35,11 +40,18 @@ pub enum Screen {
 }
 
 impl Screen {
-    pub const ALL: [Self; 4] = [Self::Ready, Self::Installing, Self::Installed, Self::Failed];
+    pub const ALL: [Self; 5] = [
+        Self::FoldersNeeded,
+        Self::Ready,
+        Self::Installing,
+        Self::Installed,
+        Self::Failed,
+    ];
 
     /// Used to name the PNG this screen renders to.
     pub fn file_stem(self) -> &'static str {
         match self {
+            Self::FoldersNeeded => "folders-needed",
             Self::Ready => "ready",
             Self::Installing => "installing",
             Self::Installed => "installed",
@@ -56,56 +68,116 @@ struct RunningInstall {
 /// The whole installer UI.
 pub struct InstallerApp {
     core: Arc<Core>,
+    store: AppDataStore,
     source_folder: String,
-    mods_folder: String,
-    dlc_folder: String,
-    text_folder: String,
+    game_folder: String,
+    documents_folder: String,
+    /// The Core's answer about the two folders above: the three Deployment targets it works
+    /// out from them, or the sentence explaining why there are none. Recomputed whenever a
+    /// folder is edited. The shell holds the answer; it never reaches one.
+    resolved: Result<GameFolders, String>,
     activity: Vec<String>,
     status: Status,
     running: Option<RunningInstall>,
 }
 
 impl InstallerApp {
-    pub fn new(core: Arc<Core>) -> Self {
-        Self {
+    /// A launch: the Core reconciles what was remembered in the App Data Store with what it
+    /// can detect, and the shell renders the answer.
+    pub fn launch(core: Arc<Core>, store: AppDataStore, locations: &SearchLocations) -> Self {
+        let startup = start_up(&store, locations);
+        for line in &startup.log {
+            crate::log_detail(line);
+        }
+
+        let source_folder = match &startup.configuration {
+            Some(InstallConfiguration {
+                source: InstallationSource::LocalRepo { path },
+                ..
+            }) => display_path(path),
+            _ => String::new(),
+        };
+        let game_folder = startup
+            .game_installation
+            .as_deref()
+            .map_or_else(String::new, display_path);
+        let documents_folder = startup
+            .documents_folder
+            .as_deref()
+            .map_or_else(String::new, display_path);
+
+        let resolved = match resolve_game_folders(
+            Path::new(game_folder.trim()),
+            Path::new(documents_folder.trim()),
+        ) {
+            Ok(folders) => Ok(folders),
+            Err(rejected) => {
+                crate::log_detail(&rejected.log_detail());
+                // What start-up has to say is about this machine — that the game is the
+                // native Aspyr port, or that nothing was found. A field-by-field rejection
+                // ("choose your Documents folder") is the weaker of the two, so it only shows
+                // when start-up had nothing to say.
+                Err(startup.note.unwrap_or_else(|| rejected.user_message()))
+            }
+        };
+
+        let app = Self {
             core,
-            source_folder: String::new(),
-            mods_folder: String::new(),
-            dlc_folder: String::new(),
-            text_folder: String::new(),
+            store,
+            source_folder,
+            game_folder,
+            documents_folder,
+            resolved,
             activity: Vec::new(),
             status: Status::Ready,
             running: None,
+        };
+        // Detected folders are worth remembering too: the next launch then starts from them
+        // without searching (user story 26).
+        if app.resolved.is_ok() {
+            app.remember();
         }
+        app
     }
 
-    /// Same, with the four paths already filled in.
-    pub fn with_paths(
-        core: Arc<Core>,
-        source_folder: &std::path::Path,
-        folders: &GameFolders,
-    ) -> Self {
-        Self {
-            source_folder: display_path(source_folder),
-            mods_folder: display_path(&folders.mods),
-            dlc_folder: display_path(&folders.dlc),
-            text_folder: display_path(&folders.text),
-            ..Self::new(core)
-        }
-    }
-
-    /// An app frozen in one screen, for `--screenshot` and for snapshot baselines. Nothing
-    /// is installed from a preview — it only ever gets rendered.
+    /// An app frozen in one screen, for `--screenshot` and for snapshot baselines. Nothing is
+    /// installed from a preview and nothing is remembered — it only ever gets rendered.
     pub fn preview(screen: Screen) -> Self {
-        let mut app = Self::new(Arc::new(placeholder::core(PathBuf::from(
-            "/preview/app-data",
-        ))));
-        app.source_folder = "/home/player/src/Community-Patch-DLL".to_owned();
-        app.mods_folder = "/home/player/…/Sid Meier's Civilization 5/MODS".to_owned();
-        app.dlc_folder = "/home/player/…/Sid Meier's Civilization V/Assets/DLC".to_owned();
-        app.text_folder = "/home/player/…/Sid Meier's Civilization 5/Text".to_owned();
+        let store = AppDataStore::at(PathBuf::from("/preview/app-data"));
+        let core = Arc::new(placeholder::core(store.root().to_path_buf()));
+        let game = "/home/player/…/Sid Meier's Civilization V";
+        let documents = "/home/player/…/Sid Meier's Civilization 5";
+        let mut app = Self {
+            core,
+            store,
+            source_folder: "/home/player/src/Community-Patch-DLL".to_owned(),
+            game_folder: game.to_owned(),
+            documents_folder: documents.to_owned(),
+            // The illustrative paths above are not on this machine, so the Core would reject
+            // them. A preview states what it wants drawn rather than asking: it is a picture,
+            // not a session.
+            resolved: Ok(GameFolders {
+                mods: PathBuf::from(format!("{documents}/MODS")),
+                dlc: PathBuf::from(format!("{game}/Assets/DLC")),
+                text: PathBuf::from(format!("{documents}/Text")),
+            }),
+            activity: Vec::new(),
+            status: Status::Ready,
+            running: None,
+        };
         match screen {
             Screen::Ready => {}
+            // The native Aspyr port: the refusal a player is most likely to meet and least
+            // likely to work out unaided (user story 14). The wording is the Core's, quoted.
+            Screen::FoldersNeeded => {
+                app.documents_folder = String::new();
+                app.resolved = Err(format!(
+                    "{game} is the native Linux version of Civilization V from Aspyr. Vox \
+                     Populi needs the Windows version running under Proton and cannot be \
+                     installed into the native port. In Steam, open the game's properties, set \
+                     a Proton compatibility tool, run the game once, then try again."
+                ));
+            }
             Screen::Installing => {
                 app.status = Status::Installing;
                 // Illustrative sample lines, not asserted against the Core's wording — a
@@ -170,21 +242,43 @@ impl InstallerApp {
         );
         ui.add_space(8.0);
 
+        let mut edited = false;
         egui::Grid::new("folders")
             .num_columns(2)
             .spacing([12.0, 6.0])
             .show(ui, |ui| {
-                for (label, value) in [
-                    ("Community-Patch-DLL folder", &mut self.source_folder),
-                    ("MODS folder", &mut self.mods_folder),
-                    ("DLC folder", &mut self.dlc_folder),
-                    ("Text folder", &mut self.text_folder),
-                ] {
-                    ui.label(label);
-                    ui.add(egui::TextEdit::singleline(value).desired_width(360.0));
-                    ui.end_row();
-                }
+                folder_field(ui, "Community-Patch-DLL folder", &mut self.source_folder);
+                // The two folders the installer detects and the player can correct. The three
+                // Deployment targets are not editable, because they are not separate choices:
+                // the Core derives them from these two.
+                edited |= folder_field(ui, "Civilization V game folder", &mut self.game_folder);
+                edited |= folder_field(
+                    ui,
+                    "Civilization 5 Documents folder",
+                    &mut self.documents_folder,
+                );
             });
+        if edited {
+            self.folders_changed();
+        }
+
+        ui.add_space(8.0);
+        match &self.resolved {
+            Ok(folders) => {
+                ui.group(|ui| {
+                    for (label, path) in [
+                        ("MODS folder", &folders.mods),
+                        ("DLC folder", &folders.dlc),
+                        ("Text folder", &folders.text),
+                    ] {
+                        ui.label(format!("{label}: {}", path.display()));
+                    }
+                });
+            }
+            Err(explanation) => {
+                ui.label(explanation);
+            }
+        }
 
         ui.add_space(8.0);
         let busy = self.status == Status::Installing;
@@ -215,20 +309,64 @@ impl InstallerApp {
         }
     }
 
-    fn start_install(&mut self) {
-        let configuration = InstallConfiguration {
+    /// Ask the Core what the two folders mean, now that one of them has been edited.
+    fn folders_changed(&mut self) {
+        self.resolved = match resolve_game_folders(
+            Path::new(self.game_folder.trim()),
+            Path::new(self.documents_folder.trim()),
+        ) {
+            Ok(folders) => Ok(folders),
+            Err(rejected) => {
+                crate::log_detail(&rejected.log_detail());
+                Err(rejected.user_message())
+            }
+        };
+        if self.resolved.is_ok() {
+            self.remember();
+        }
+    }
+
+    /// Hand the current state to the App Data Store, so the next launch starts here.
+    fn remember(&self) {
+        let settings = Settings {
+            game_installation: Some(PathBuf::from(self.game_folder.trim())),
+            documents_folder: Some(PathBuf::from(self.documents_folder.trim())),
+            configuration: Some(self.configuration()),
+        };
+        if let Err(problem) = self.store.save(&settings) {
+            // Not being able to remember is not worth interrupting anything over: it goes in
+            // the log, and the player finds out next launch (rule 11).
+            crate::log_detail(&problem.log_detail());
+        }
+    }
+
+    /// The walking skeleton's one Install Configuration. Ticket 02 gives the Flavor and the
+    /// toggles controls of their own; until then the only part the player chooses is where the
+    /// sources come from.
+    fn configuration(&self) -> InstallConfiguration {
+        InstallConfiguration {
             source: InstallationSource::LocalRepo {
                 path: PathBuf::from(self.source_folder.trim()),
             },
             flavor: Flavor::CommunityPatch,
             forty_three_civs: FortyThreeCivs::Disabled,
-        };
-        let folders = GameFolders {
-            mods: PathBuf::from(self.mods_folder.trim()),
-            dlc: PathBuf::from(self.dlc_folder.trim()),
-            text: PathBuf::from(self.text_folder.trim()),
+        }
+    }
+
+    fn start_install(&mut self) {
+        // The folders are judged before anything is fetched, built, or written, and the
+        // judgement is the Core's (user story 12).
+        let folders = match &self.resolved {
+            Ok(folders) => folders.clone(),
+            Err(explanation) => {
+                self.status = Status::Failed {
+                    message: explanation.clone(),
+                };
+                return;
+            }
         };
 
+        let configuration = self.configuration();
         let plan = match self.core.plan(&configuration, &folders) {
             Ok(plan) => plan,
             Err(error) => {
@@ -274,6 +412,8 @@ impl InstallerApp {
                 self.status = Status::Installed {
                     summary: format!("Installed {}.", names.join(", ")),
                 };
+                // The configuration that worked is the one worth starting from next time.
+                self.remember();
                 true
             }
             Ok(Err(error)) => {
@@ -311,7 +451,21 @@ impl InstallerApp {
     }
 }
 
-fn display_path(path: &std::path::Path) -> String {
+/// One row of the folder grid: a caption and the box it names. The two are tied together for
+/// AccessKit, so a screen reader announces the box by its caption — which is also how the
+/// shell tests find it, meaning they reach the field the same way a user does.
+///
+/// Returns whether the text changed this frame.
+fn folder_field(ui: &mut egui::Ui, caption: &str, value: &mut String) -> bool {
+    let caption = ui.label(caption);
+    let field = ui
+        .add(egui::TextEdit::singleline(value).desired_width(360.0))
+        .labelled_by(caption.id);
+    ui.end_row();
+    field.changed()
+}
+
+fn display_path(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
