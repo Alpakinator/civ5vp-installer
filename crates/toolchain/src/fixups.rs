@@ -62,8 +62,12 @@ pub fn apply(sdk_root: &Path, progress: &ProgressReporter) -> Result<FixupReport
     for root in &roots.include {
         report.lowercased += lowercase_file_names(root)?;
     }
+    // One question asked once, across every include root: which of these headers does the
+    // SDK actually ship? Asking per-root would stub a name in the CRT's include directory
+    // that the SDK's own directory supplies — and the CRT's is searched first.
+    let shipped = header_names_present(&roots.include)?;
     for root in &roots.include {
-        report.wdk_stubs += stub_wdk_headers(root)?;
+        report.wdk_stubs += stub_wdk_headers(root, &shipped)?;
     }
     for root in &roots.include {
         report.include_case_links += link_case_mismatched_includes(root)?;
@@ -181,14 +185,52 @@ fn include_target_span(line: &str) -> Option<(usize, usize)> {
     Some((start, start + close))
 }
 
-/// **Fix-up 6** — stub the WDK-only headers.
+/// Every header file name present across the include roots, lowercased.
 ///
-/// `windows.h` reaches `DriverSpecs.h` through `specstrings.h`, but that header ships with
-/// the Driver Kit, not the SDK. Empty files satisfy the `#include` chain: everything in them
-/// is SAL annotation macros that only matter to the driver verifier.
-fn stub_wdk_headers(root: &Path) -> Result<usize, ToolchainError> {
+/// Only file names, not paths: the question this answers is "does a header by this name exist
+/// anywhere the compiler will look", which is what decides whether stubbing one is filling a
+/// gap or hiding the real thing.
+fn header_names_present(roots: &[PathBuf]) -> Result<BTreeSet<String>, ToolchainError> {
+    let mut names = BTreeSet::new();
+    for root in roots {
+        for file in walk_files(root)? {
+            if let Some(name) = file.file_name().and_then(|name| name.to_str()) {
+                names.insert(name.to_ascii_lowercase());
+            }
+        }
+    }
+    Ok(names)
+}
+
+/// **Fix-up 6** — stub the headers the SDK references but does not ship.
+///
+/// `windows.h` reaches `DriverSpecs.h` through `winnt.h` and `kernelspecs.h`. Where that
+/// header is genuinely absent an empty file satisfies the `#include` chain, because everything
+/// in it is SAL annotation macros that only matter to the driver verifier.
+///
+/// # Only where it is genuinely absent
+///
+/// `docs/pinned-artifacts.md` used to say `DriverSpecs.h` and `SpecStrings.h` ship only with
+/// the Driver Kit. That is wrong — the SDK ships both, as `driverspecs.h` (31 KB) and
+/// `specstrings.h` (23 KB) — and stubbing them anyway broke every build, for two compounding
+/// reasons:
+///
+/// * `kernelspecs.h` includes `"DriverSpecs.h"` with *quotes*, and a quoted include searches
+///   the including file's own directory first. A stub written beside it therefore wins no
+///   matter what order the include paths are given in.
+/// * Stubs were written into the CRT's include directory too, which is searched before the
+///   SDK's, so `<specstrings.h>` resolved to an empty file everywhere.
+///
+/// With the real header shadowed, `__ANNOTATION` never gets defined and `windows.h` cannot be
+/// included at all. So the rule is: stub a name only when no case-variant of it exists on the
+/// include path. Where one does, fix-up 2 links the spelling the header asked for, which is
+/// the correct answer and runs straight after this.
+fn stub_wdk_headers(root: &Path, shipped: &BTreeSet<String>) -> Result<usize, ToolchainError> {
     let mut created = 0;
     for name in WDK_STUB_HEADERS {
+        if shipped.contains(&name.to_ascii_lowercase()) {
+            continue;
+        }
         let path = root.join(name);
         if path.exists() {
             continue;
@@ -562,22 +604,81 @@ mod tests {
     }
 
     #[test]
-    fn fixup_6_stubs_the_wdk_only_headers() {
+    fn fixup_6_stubs_a_header_the_sdk_does_not_ship() {
         let dir = sdk_tree();
         let root = dir.path();
 
         apply_to(root);
 
-        for name in ["DriverSpecs.h", "SpecStrings.h", "driverspecs.h"] {
-            assert!(
-                root.join("Include").join(name).exists(),
-                "Include/{name} should exist"
+        // Nothing in this tree supplies `DriverSpecs.h` under any spelling, so the stub is
+        // what keeps the `#include` chain intact.
+        let stub = root.join("Include/DriverSpecs.h");
+        assert!(
+            stub.exists(),
+            "Include/DriverSpecs.h should have been stubbed"
+        );
+        assert!(fs::read_to_string(&stub).unwrap().contains("Stubbed"));
+    }
+
+    /// The bug this fix-up used to cause, and the reason a real build could not compile.
+    ///
+    /// `DriverSpecs.h` and `SpecStrings.h` are *shipped by the SDK*, whatever
+    /// `docs/pinned-artifacts.md` used to say. Stubbing them anyway shadows the real headers:
+    /// `kernelspecs.h` includes `"DriverSpecs.h"` with quotes, so the stub sitting beside it
+    /// wins whatever the include order, and `__ANNOTATION` is then never defined — which makes
+    /// `windows.h` impossible to include at all.
+    ///
+    /// So every spelling must resolve to the *real* header's contents, never to a stub.
+    #[test]
+    fn fixup_6_never_shadows_a_header_the_sdk_ships() {
+        let dir = sdk_tree();
+        let root = dir.path();
+
+        // The real SDK's shape: a header that asks for the capitalised spelling, next to the
+        // lowercase file that actually supplies it.
+        fs::write(root.join("Include/driverspecs.h"), "/* the real one */\n").unwrap();
+        fs::write(
+            root.join("Include/kernelspecs.h"),
+            "#include \"DriverSpecs.h\"\n",
+        )
+        .unwrap();
+
+        apply_to(root);
+
+        for name in ["driverspecs.h", "DriverSpecs.h"] {
+            let path = root.join("Include").join(name);
+            assert_eq!(
+                fs::read_to_string(&path).unwrap(),
+                "/* the real one */\n",
+                "Include/{name} must resolve to the SDK's header, not to a stub",
             );
         }
-        // An existing header is never replaced by a stub.
         assert_eq!(
             fs::read_to_string(root.join("Include/specstrings.h")).unwrap(),
-            "/* sal */\n"
+            "/* sal */\n",
+            "and a header the SDK ships is never replaced",
+        );
+    }
+
+    /// A header the SDK really does not ship still gets its stub — the fix above must not
+    /// turn fix-up 6 into a no-op.
+    #[test]
+    fn fixup_6_links_the_spelling_a_header_asks_for_rather_than_stubbing_it() {
+        let dir = sdk_tree();
+        let root = dir.path();
+        // `specstrings.h` is shipped here, so its capitalised spelling must never be a stub.
+        fs::write(
+            root.join("Include/kernelspecs.h"),
+            "#include \"SpecStrings.h\"\n",
+        )
+        .unwrap();
+
+        apply_to(root);
+
+        assert_eq!(
+            fs::read_to_string(root.join("Include/SpecStrings.h")).unwrap(),
+            "/* sal */\n",
+            "the capitalised spelling must reach the shipped header",
         );
     }
 

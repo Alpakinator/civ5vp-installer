@@ -152,7 +152,7 @@ The extracted SDK does not work as-is on a case-sensitive filesystem. All of the
 3. **Symlink `Include/` and `Lib/`** to their lowercase forms if the extraction produced lowercase directories; the build expects the capitalised names.
 4. **Rewrite backslashes to forward slashes** in `#include` directives inside SDK headers — the SDK uses Windows path separators that Linux reads literally.
 5. **Case symlinks for every `.lib`** — the SDK and CRT mix `GDI32.lib`, `Kernel32.Lib`, etc., and the linker may reference either case.
-6. **Stub the WDK-only headers** referenced by the SDK but not shipped with it — `DelayImp.h` and `Warnings.h`. Empty files satisfy the `#include` chain for user-mode code.
+6. **Stub headers the SDK references but does not ship.** Empty files satisfy the `#include` chain for user-mode code. Applied only where *no case-variant of the name exists anywhere on the include path* — see the correction below.
 
    > **Correction.** This item previously named `DriverSpecs.h` and `SpecStrings.h` as WDK-only. **They are not — the SDK ships both**, as `driverspecs.h` (31 KB) and `specstrings.h` (23 KB). Stubbing them is actively harmful: `kernelspecs.h` includes `"DriverSpecs.h"` with *quotes*, so the stub beside it wins regardless of `-I` order, and stubs written into the VC9 include directory shadow the SDK's copies globally. `__ANNOTATION` then never gets defined and `windows.h` cannot be included at all. The rule is: **stub only when no case-variant of the header exists anywhere on the include path**; where one does, fix-up 2's case symlink is the correct answer.
 

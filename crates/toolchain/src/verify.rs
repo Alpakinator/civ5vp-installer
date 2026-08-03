@@ -1,10 +1,15 @@
 //! Proving the extraction produced a usable SDK, before anything tries to compile against it.
 //!
 //! `docs/pinned-artifacts.md` §4: a bootstrap is only complete when `windows.h`, `stdio.h`,
-//! `iostream`, `kernel32.lib`, `msvcrt.lib` and `DriverSpecs.h` all resolve under the
-//! toolchain root — three SDK headers, the CRT's C++ header, one import library from each
-//! half, and the WDK stub. Between them they touch every one of the four ISO members and the
-//! fix-ups, which is why that list and not a longer one.
+//! `iostream`, `kernel32.lib` and `msvcrt.lib` all resolve under the toolchain root — two SDK
+//! headers, the CRT's C and C++ headers, and one import library from each half. Between them
+//! they touch every one of the four ISO members and the fix-ups, which is why that list and
+//! not a longer one.
+//!
+//! §4 used to name `DriverSpecs.h` as a sixth. It was removed because it could not fail: fix-up
+//! 6 wrote a stub by that name into every include root immediately before this check looked for
+//! it, so the check reported success against the very file that was making `windows.h`
+//! impossible to include. A verification that passes *because* of a bug is worse than none.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -32,8 +37,13 @@ pub struct Baseline {
 /// a reader or fix-up change that silently drops files. It is *not* the cross-check against a
 /// known-good build that the document is asking for. When someone runs the reference
 /// container, replace these and say so here — if they differ, ours is the one that is wrong.
+///
+/// The header count was 2033 until fix-up 6 stopped stubbing headers the SDK already ships.
+/// The difference is exactly the six stubs it used to write, and dropping them is what made
+/// `windows.h` includable at all — so the lower number is the correct one. That the guard
+/// noticed, and that the size of the drop matched the cause exactly, is the guard working.
 pub const REFERENCE_BASELINE: Option<Baseline> = Some(Baseline {
-    headers: 2033,
+    headers: 2027,
     libs: 928,
 });
 
@@ -79,7 +89,7 @@ pub fn verify_extraction(sdk_root: &Path) -> Result<ExtractionReport, ToolchainE
     let mut headers = 0usize;
     let mut libs = 0usize;
     let mut found: BTreeMap<String, PathBuf> = BTreeMap::new();
-    let wanted: Vec<&str> = VERIFICATION_NAMES.to_vec();
+    let wanted = VERIFICATION_NAMES;
 
     let mut queue = vec![sdk_root.to_path_buf()];
     while let Some(directory) = queue.pop() {
@@ -228,15 +238,16 @@ mod tests {
     #[test]
     fn a_missing_name_is_named_and_stops_the_bootstrap() {
         let dir = extracted_tree();
-        fs::remove_file(dir.path().join("Include/DriverSpecs.h")).unwrap();
+        fs::remove_file(dir.path().join("Include/windows.h")).unwrap();
 
         let report = verify_extraction(dir.path()).unwrap();
 
         assert!(!report.is_complete());
-        assert_eq!(report.missing, vec!["DriverSpecs.h".to_string()]);
+        assert_eq!(report.missing, vec!["windows.h".to_string()]);
         let error = require_complete(&report, dir.path()).unwrap_err();
-        assert!(error.detail().contains("DriverSpecs.h"));
-        assert!(!error.message().contains("DriverSpecs.h"));
+        // Rule 10: the name goes in the log, and the player gets a sentence instead.
+        assert!(error.detail().contains("windows.h"));
+        assert!(!error.message().contains("windows.h"));
     }
 
     /// The counts are the comparison baseline, so they must mean the same thing every run —

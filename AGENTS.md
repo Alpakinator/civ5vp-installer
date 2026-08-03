@@ -38,8 +38,11 @@ Linux fix-ups, and checks that every name in `docs/pinned-artifacts.md` §4 reso
 ```bash
 # Keep the 1.6 GB somewhere that survives `cargo clean`, or it downloads again next time.
 CIV5VP_TOOLCHAIN_CACHE=~/.cache/civ5vp-toolchain \
-  cargo test -p civ5vp-toolchain -- --ignored --nocapture
+  cargo test --release -p civ5vp-toolchain -- --ignored --nocapture --test-threads 1
 ```
+
+`--test-threads 1` is not optional: these tests share one Toolchain Cache, and run in parallel
+they clobber each other's staging directory part-way through a cabinet.
 
 Without `CIV5VP_TOOLCHAIN_CACHE` it uses `target/tmp/toolchain-bootstrap`. The archive.org
 download runs at a few MB/s and the image is 1.45 GiB, so budget well over an hour; it

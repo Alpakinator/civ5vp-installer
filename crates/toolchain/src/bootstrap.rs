@@ -13,16 +13,18 @@
 //! 8. Only then write the completeness marker.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use civ5vp_core::{ProgressReporter, Stage};
 
 use crate::cache::{Toolchain, ToolchainCache};
 use crate::download::{ByteSource, HttpByteSource, fetch};
 use crate::error::{ToolchainError, io_error};
-use crate::pinned::{PinnedDownload, PinnedLlvm, SDK_ISO, llvm_for_host};
+use crate::pinned::{
+    PinnedDownload, PinnedLibrary, PinnedLlvm, SDK_ISO, libtinfo_for_host, llvm_for_host,
+};
 use crate::verify::{require_complete, verify_extraction};
-use crate::{extract, fixups, sdk_layout, tarball};
+use crate::{deb, extract, fixups, sdk_layout, tarball};
 
 /// Acquires the Toolchain into a [`ToolchainCache`].
 ///
@@ -36,6 +38,7 @@ pub struct ToolchainBootstrap {
     /// re-implementing the sequence in a test helper (rule 13).
     sdk_iso: PinnedDownload,
     llvm: Option<PinnedLlvm>,
+    libtinfo: Option<PinnedLibrary>,
 }
 
 impl ToolchainBootstrap {
@@ -54,15 +57,22 @@ impl ToolchainBootstrap {
             source,
             sdk_iso: SDK_ISO,
             llvm: llvm_for_host(),
+            libtinfo: libtinfo_for_host(),
         }
     }
 
     /// Point the bootstrap at different artifacts. Test-only: in production the answer to
     /// "which artifacts?" is `docs/pinned-artifacts.md` and nothing else.
     #[cfg(test)]
-    fn with_artifacts(mut self, sdk_iso: PinnedDownload, llvm: PinnedLlvm) -> Self {
+    fn with_artifacts(
+        mut self,
+        sdk_iso: PinnedDownload,
+        llvm: PinnedLlvm,
+        libtinfo: Option<PinnedLibrary>,
+    ) -> Self {
         self.sdk_iso = sdk_iso;
         self.llvm = Some(llvm);
+        self.libtinfo = libtinfo;
         self
     }
 
@@ -87,7 +97,10 @@ impl ToolchainBootstrap {
         // number typed into a sentence — a stale figure here is how a 2.5 GB download comes
         // as a surprise (user story 15).
         let total = self.sdk_iso.approximate_bytes
-            + self.llvm.map_or(0, |llvm| llvm.download.approximate_bytes);
+            + self.llvm.map_or(0, |llvm| llvm.download.approximate_bytes)
+            + self
+                .libtinfo
+                .map_or(0, |library| library.download.approximate_bytes);
         progress.report(
             Stage::Build,
             format!(
@@ -129,6 +142,19 @@ impl ToolchainBootstrap {
             &self.cache.llvm_root(),
             progress,
         )?;
+
+        // The compiler will not start without this, so it goes in before anything tries to run
+        // it. Inside the compiler's own `lib/`, which its `RUNPATH: $ORIGIN/../lib` already
+        // searches — no environment has to be arranged around every invocation (ADR-0005).
+        if let Some(library) = self.libtinfo {
+            let package = fetch(
+                self.source.as_ref(),
+                &library.download,
+                &downloads,
+                progress,
+            )?;
+            install_support_library(&package, library, &self.cache.llvm_root())?;
+        }
 
         // Fail here rather than in the compiler: an extraction with no `Include` and no `Lib`
         // anywhere in it produced *something*, so only this check tells the difference
@@ -176,6 +202,42 @@ impl ToolchainBootstrap {
         }
         self.cache.mark_complete()
     }
+}
+
+/// Put a support library where the compiler's own `RUNPATH` will find it.
+///
+/// `$ORIGIN/../lib` is already baked into the llvm.org binaries, so a file dropped in the
+/// compiler's `lib/` is found with no `LD_LIBRARY_PATH` and no wrapper script — which matters,
+/// because the alternative is arranging an environment around every compiler invocation the
+/// toolchain runner ever makes (ADR-0005).
+fn install_support_library(
+    package: &Path,
+    library: PinnedLibrary,
+    llvm_root: &Path,
+) -> Result<(), ToolchainError> {
+    let bytes = deb::extract_from_data_tar(package, library.member)?;
+
+    let lib_dir = llvm_root.join("lib");
+    fs::create_dir_all(&lib_dir)
+        .map_err(|error| io_error("create the compiler's library folder", &lib_dir, &error))?;
+
+    let installed = lib_dir.join(library.install_as);
+    fs::write(&installed, &bytes)
+        .map_err(|error| io_error("write a compiler support library", &installed, &error))?;
+
+    // The compiler asks for the SONAME, which every distribution ships as a symlink to the
+    // versioned file. A copy would work too, but a link is what the loader expects and costs
+    // nothing.
+    let link = lib_dir.join(library.link_as);
+    let _ = fs::remove_file(&link);
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(library.install_as, &link)
+        .map_err(|error| io_error("link a compiler support library", &link, &error))?;
+    #[cfg(not(unix))]
+    fs::write(&link, &bytes)
+        .map_err(|error| io_error("write a compiler support library", &link, &error))?;
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -491,7 +553,12 @@ mod tests {
     /// The pinned constants hold `&'static str` digests, so the fixtures' own digests are
     /// leaked to stand in for them. Everything else — including which URLs are asked for — is
     /// what production does.
-    fn fake_internet() -> (FakeInternet, PinnedDownload, PinnedLlvm) {
+    fn fake_internet() -> (
+        FakeInternet,
+        PinnedDownload,
+        PinnedLlvm,
+        Option<PinnedLibrary>,
+    ) {
         let iso = synthetic_sdk_iso();
         let mut sdk = SDK_ISO;
         sdk.sha256 = leak_digest(&iso);
@@ -508,10 +575,20 @@ mod tests {
         let tarball = synthetic_llvm_tarball(llvm.archive_root);
         llvm.download.sha256 = leak_digest(&tarball);
 
-        let bodies = BTreeMap::from([
+        let mut bodies = BTreeMap::from([
             (sdk.url.to_string(), iso),
             (llvm.download.url.to_string(), tarball),
         ]);
+
+        // The support library is fetched on hosts that need one, so the fixture serves it on
+        // exactly those hosts — a `.deb` built the same way the real one is packaged.
+        let libtinfo = libtinfo_for_host().map(|mut library| {
+            let package = test_fixtures::deb::package(library.member, b"not really ncurses");
+            library.download.sha256 = leak_digest(&package);
+            bodies.insert(library.download.url.to_string(), package);
+            library
+        });
+
         (
             FakeInternet {
                 bodies,
@@ -519,6 +596,7 @@ mod tests {
             },
             sdk,
             llvm,
+            libtinfo,
         )
     }
 
@@ -537,9 +615,10 @@ mod tests {
         internet: &FakeInternet,
         sdk: PinnedDownload,
         llvm: PinnedLlvm,
+        libtinfo: Option<PinnedLibrary>,
     ) -> ToolchainBootstrap {
         ToolchainBootstrap::with_byte_source(root.to_path_buf(), Box::new(internet.clone()))
-            .with_artifacts(sdk, llvm)
+            .with_artifacts(sdk, llvm, libtinfo)
     }
 
     /// The whole sequence, end to end, with no network: download, ISO, MSI, CAB, fix-ups,
@@ -547,9 +626,9 @@ mod tests {
     #[test]
     fn a_bootstrap_produces_a_verified_toolchain() {
         let dir = tempfile::tempdir().unwrap();
-        let (internet, sdk, llvm) = fake_internet();
+        let (internet, sdk, llvm, libtinfo) = fake_internet();
 
-        let toolchain = bootstrap_over(dir.path(), &internet, sdk, llvm)
+        let toolchain = bootstrap_over(dir.path(), &internet, sdk, llvm, libtinfo)
             .ensure(&ProgressReporter::silent())
             .unwrap();
 
@@ -569,9 +648,9 @@ mod tests {
     #[test]
     fn files_land_where_the_msi_says_not_where_the_cab_names_them() {
         let dir = tempfile::tempdir().unwrap();
-        let (internet, sdk, llvm) = fake_internet();
+        let (internet, sdk, llvm, libtinfo) = fake_internet();
 
-        let toolchain = bootstrap_over(dir.path(), &internet, sdk, llvm)
+        let toolchain = bootstrap_over(dir.path(), &internet, sdk, llvm, libtinfo)
             .ensure(&ProgressReporter::silent())
             .unwrap();
 
@@ -589,14 +668,17 @@ mod tests {
     #[test]
     fn a_second_bootstrap_does_nothing_at_all() {
         let dir = tempfile::tempdir().unwrap();
-        let (internet, sdk, llvm) = fake_internet();
-        let first = bootstrap_over(dir.path(), &internet, sdk, llvm)
+        let (internet, sdk, llvm, libtinfo) = fake_internet();
+        let first = bootstrap_over(dir.path(), &internet, sdk, llvm, libtinfo)
             .ensure(&ProgressReporter::silent())
             .unwrap();
-        assert_eq!(internet.requests(), 2);
+        // One request per pinned artifact: the SDK image, the compiler, and — where the host
+        // needs it — the library the compiler will not start without.
+        let expected = 2 + usize::from(libtinfo_for_host().is_some());
+        assert_eq!(internet.requests(), expected);
 
-        let (second_internet, sdk, llvm) = fake_internet();
-        let second = bootstrap_over(dir.path(), &second_internet, sdk, llvm)
+        let (second_internet, sdk, llvm, libtinfo) = fake_internet();
+        let second = bootstrap_over(dir.path(), &second_internet, sdk, llvm, libtinfo)
             .ensure(&ProgressReporter::silent())
             .unwrap();
 
@@ -612,8 +694,8 @@ mod tests {
     #[test]
     fn a_bootstrap_interrupted_halfway_repairs_itself() {
         let dir = tempfile::tempdir().unwrap();
-        let (internet, sdk, llvm) = fake_internet();
-        bootstrap_over(dir.path(), &internet, sdk, llvm)
+        let (internet, sdk, llvm, libtinfo) = fake_internet();
+        bootstrap_over(dir.path(), &internet, sdk, llvm, libtinfo)
             .ensure(&ProgressReporter::silent())
             .unwrap();
 
@@ -626,8 +708,8 @@ mod tests {
         fs::write(cache.staging_dir().join("staged-cab1.cab"), b"stale").unwrap();
         assert!(cache.installed().is_none());
 
-        let (retry_internet, sdk, llvm) = fake_internet();
-        let repaired = bootstrap_over(dir.path(), &retry_internet, sdk, llvm)
+        let (retry_internet, sdk, llvm, libtinfo) = fake_internet();
+        let repaired = bootstrap_over(dir.path(), &retry_internet, sdk, llvm, libtinfo)
             .ensure(&ProgressReporter::silent())
             .unwrap();
 
@@ -647,13 +729,13 @@ mod tests {
     #[test]
     fn a_damaged_iso_leaves_no_toolchain_behind() {
         let dir = tempfile::tempdir().unwrap();
-        let (mut internet, sdk, llvm) = fake_internet();
+        let (mut internet, sdk, llvm, libtinfo) = fake_internet();
         if let Some(body) = internet.bodies.get_mut(sdk.url) {
             // Truncate the ISO's payload area, leaving the descriptors intact.
             body.truncate(20 * 2048);
         }
 
-        let error = bootstrap_over(dir.path(), &internet, sdk, llvm)
+        let error = bootstrap_over(dir.path(), &internet, sdk, llvm, libtinfo)
             .ensure(&ProgressReporter::silent())
             .unwrap_err();
 
@@ -669,10 +751,10 @@ mod tests {
     #[test]
     fn progress_reaches_the_user_in_plain_language() {
         let dir = tempfile::tempdir().unwrap();
-        let (internet, sdk, llvm) = fake_internet();
+        let (internet, sdk, llvm, libtinfo) = fake_internet();
         let (sender, receiver) = std::sync::mpsc::channel();
 
-        bootstrap_over(dir.path(), &internet, sdk, llvm)
+        bootstrap_over(dir.path(), &internet, sdk, llvm, libtinfo)
             .ensure(&ProgressReporter::to_channel(sender))
             .unwrap();
 

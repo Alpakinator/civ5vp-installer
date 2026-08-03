@@ -249,3 +249,44 @@ the include path. Where one does exist, fix-up 2's case symlink is the correct a
 
 **This is also why §4's `DriverSpecs.h` check is worse than useless.** It does not merely fail to
 prove anything — it reported success against the very stub that was breaking the build.
+
+## Implemented: the compiler runs, and the toolchain builds a DLL
+
+ADR-0005 and the fix-up 6 correction are in code now, and the result is the thing this ticket
+was for. From a cache the installer bootstrapped itself, with no manual steps and no environment
+variables set:
+
+```
+clang version 18.1.8            lld-link: LLD 18.1.8
+compile → Intel i386 COFF object file, 8 sections
+link    → PE32 executable for MS Windows 6.00 (DLL), Intel i386, 4 sections
+```
+
+A real Windows DLL, from a compiler and an SDK this installer downloaded, verified, extracted
+from a UDF image and fixed up by itself. **Ticket 06 is unblocked.**
+
+Two changes got it there.
+
+**`crates/toolchain/src/deb.rs`** reads one file out of a Debian package: `ar` parsed by hand
+(the format is a magic string and 60-byte text headers — less code than justifying a dependency
+would be), then the existing `lzma-rs` for `data.tar.xz`, then `tar`. The library is written into
+the compiler's own `lib/`, where the llvm.org binaries' existing `RUNPATH: $ORIGIN/../lib` finds
+it — so no `LD_LIBRARY_PATH` has to be arranged around every compiler invocation. No new
+dependency.
+
+**Fix-up 6 now asks whether the SDK ships a header before stubbing it**, across every include
+root rather than per-root — the CRT's directory is searched first, so a stub written there
+shadows the SDK's copy globally. See the header comment on `stub_wdk_headers` for the full
+account.
+
+### The baseline moved, and that is the guard working
+
+The header count went 2033 → 2027. The difference is exactly the six stubs fix-up 6 no longer
+writes, and losing them is what made `windows.h` includable. The `#[ignore]`d test refused the
+run until the committed baseline was updated — which is precisely what a regression guard on our
+own extraction is for.
+
+### Also found
+
+The two `#[ignore]`d tests share one Toolchain Cache and cannot run in parallel; they clobber
+each other's staging directory mid-cabinet. `--test-threads 1` is now in the AGENTS.md command.

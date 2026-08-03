@@ -48,33 +48,66 @@ pub struct PinnedDownload {
 /// closest self-contained equivalent. Their checksums are not published by llvm.org; both
 /// were measured by downloading the asset and hashing it (2026-08-03).
 ///
-/// # The Linux tarball does not run on a current distribution
+/// # The Linux tarball needs one library that no current distribution ships
 ///
-/// `clang+llvm-18.1.8-x86_64-linux-gnu-ubuntu-18.04` is linked against `libtinfo.so.5`, which
-/// no current distribution ships — Arch, Fedora and Ubuntu 22.04 onwards all have
-/// `libtinfo.so.6`. The dynamic loader refuses to start the binary before it runs a line:
+/// `clang+llvm-18.1.8-x86_64-linux-gnu-ubuntu-18.04` links `libtinfo.so.5` — ncurses 5 — and
+/// the loader refuses to start it without one. [`libtinfo_for_host`] pins that library, and
+/// the bootstrap places it inside this tarball's own `lib/`, where the binaries' existing
+/// `RUNPATH: $ORIGIN/../lib` finds it without any environment being set.
 ///
-/// ```text
-/// ./clang-18: error while loading shared libraries: libtinfo.so.5: cannot open shared
-/// object file: No such file or directory
-/// ```
+/// Aliasing `libtinfo.so.5` onto the system's `libtinfo.so.6` does *not* work — the binary
+/// wants ncurses 5's versioned symbols — which is why an actual ncurses 5 library is shipped
+/// rather than a symlink.
 ///
-/// Pointing `LD_LIBRARY_PATH` at a `libtinfo.so.5 -> libtinfo.so.6` symlink does not help;
-/// the binary wants ncurses 5's versioned symbols (`NCURSES_TINFO_5.0.19991023`). And it is
-/// the only x86-64 Linux build llvm.org publishes for LLVM 18 — 18.1.3, the version Ubuntu
-/// 24.04 ships and the one the reference build actually uses, has no x86-64 Linux asset at
-/// all.
-///
-/// So this pin downloads and unpacks correctly and then cannot compile anything. Everything
-/// around it — download, checksum, xz, tar, the filter, the Toolchain identity — is verified
-/// against this artifact and is unaffected by swapping it; the pin is one constant and one
-/// checksum. Deciding *what* to swap it for is ADR-sized, and the ticket's Comments section
-/// lists the candidates. Until then, ticket 06 cannot build a DLL on Linux.
+/// Keeping this build rather than a distribution's clang is deliberate and measured: it needs
+/// only glibc 2.27, where Ubuntu 24.04's package needs ~2.39 and Arch's ~2.41. The installer
+/// ships to players on whatever Linux they run, so that difference matters more than matching
+/// the reference build's point release — which is not on offer anyway, since llvm.org
+/// publishes no x86-64 Linux build of 18.1.3 at all. ADR-0005 has the full reasoning.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PinnedLlvm {
     pub download: PinnedDownload,
     /// The single top-level directory inside the tarball, stripped during extraction.
     pub archive_root: &'static str,
+}
+
+/// A shared library shipped alongside the compiler because the compiler will not start
+/// without it.
+///
+/// One artifact today; see [`libtinfo_for_host`] and ADR-0005.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PinnedLibrary {
+    pub download: PinnedDownload,
+    /// Path inside the package's data tarball, with no leading `./`.
+    pub member: &'static str,
+    /// File name to write inside the compiler's own `lib/` directory.
+    pub install_as: &'static str,
+    /// The `SONAME` the compiler asks for, created as a symlink to [`Self::install_as`].
+    pub link_as: &'static str,
+}
+
+/// The library the pinned compiler needs in order to start, if this host needs one.
+///
+/// `None` on Windows: the Windows LLVM build has no such dependency, so nothing is fetched.
+pub const fn libtinfo_for_host() -> Option<PinnedLibrary> {
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        Some(PinnedLibrary {
+            download: PinnedDownload {
+                file_name: "libtinfo5_6.2+20201114-2+deb11u2_amd64.deb",
+                url: "http://deb.debian.org/debian/pool/main/n/ncurses/libtinfo5_6.2+20201114-2+deb11u2_amd64.deb",
+                sha256: "69e131ce3f790a892ca1b0ae3bfad8659daa2051495397eee1b627d9783a6797",
+                approximate_bytes: 336_728,
+            },
+            member: "lib/x86_64-linux-gnu/libtinfo.so.5.9",
+            install_as: "libtinfo.so.5.9",
+            link_as: "libtinfo.so.5",
+        })
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    {
+        None
+    }
 }
 
 /// The pinned LLVM for the host this binary was built for, or `None` on a platform nobody
@@ -172,11 +205,19 @@ pub const VERIFICATION_NAMES: &[&str] = &[
     "iostream",
     "kernel32.lib",
     "msvcrt.lib",
-    "DriverSpecs.h",
 ];
+
+// `DriverSpecs.h` used to be the sixth name here. It was removed because it could not fail:
+// fix-up 6 wrote a stub by that name into every include root immediately before this check
+// looked for it, so the check reported success against the very file that was making
+// `windows.h` unusable. A verification that passes *because* of a bug is worse than no
+// verification. `docs/pinned-artifacts.md` §4 records the same.
 
 /// The WDK-only headers fix-up 6 stubs out. Empty files satisfy the `#include` chain for the
 /// user-mode code the DLL is made of.
+/// Only stubbed where the SDK ships no case-variant of them — see `fixups::stub_wdk_headers`.
+/// Both names are in fact shipped by the Windows SDK 7.0, so on that artifact this list
+/// produces nothing; it stays because a differently-packaged SDK may not ship them.
 pub const WDK_STUB_HEADERS: &[&str] = &[
     "DriverSpecs.h",
     "SpecStrings.h",

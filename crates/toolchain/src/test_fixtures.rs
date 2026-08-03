@@ -721,3 +721,41 @@ pub mod package {
             .into_inner()
     }
 }
+
+/// A `.deb`-shaped `ar` archive around an xz-compressed tarball holding one member.
+///
+/// Enough of the format for the reader in `src/deb.rs`: the magic, three members in the order
+/// dpkg writes them, 60-byte plain-text headers, and even-offset padding.
+pub mod deb {
+    /// Build a package whose data tarball contains `member` with `contents`.
+    pub fn package(member: &str, contents: &[u8]) -> Vec<u8> {
+        let mut tar_bytes = Vec::new();
+        {
+            let mut builder = tar::Builder::new(&mut tar_bytes);
+            let mut header = tar::Header::new_gnu();
+            header.set_size(contents.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            let _ = builder.append_data(&mut header, format!("./{member}"), contents);
+            let _ = builder.finish();
+        }
+        let mut xz = Vec::new();
+        let _ = lzma_rs::xz_compress(&mut tar_bytes.as_slice(), &mut xz);
+
+        let mut deb = Vec::from(b"!<arch>\n");
+        for (name, body) in [
+            ("debian-binary", b"2.0\n".to_vec()),
+            ("control.tar.xz", Vec::new()),
+            ("data.tar.xz", xz),
+        ] {
+            deb.extend_from_slice(format!("{name:<16}0           0     0     100644  ").as_bytes());
+            deb.extend_from_slice(format!("{:<10}", body.len()).as_bytes());
+            deb.extend_from_slice(b"`\n");
+            deb.extend_from_slice(&body);
+            if body.len() % 2 == 1 {
+                deb.push(b'\n');
+            }
+        }
+        deb
+    }
+}

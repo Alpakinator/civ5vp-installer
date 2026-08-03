@@ -34,6 +34,7 @@
 mod bootstrap;
 mod cabinet;
 mod cache;
+mod deb;
 mod disc;
 mod download;
 mod error;
