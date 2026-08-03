@@ -14,6 +14,7 @@ Everything the installer downloads from the internet, with the exact URLs and th
 | **Size** | **1.45 GiB** (1,552,508,928 bytes) |
 | **Filesystem** | **UDF**, not ISO9660 — see below |
 | **SHA-256** | `65739fb0874cc17ea6962d8ce7915364c7161fa106ed1bf1c917924c18ac63ca` |
+| **Provenance** | URL and hash copied verbatim from the docker branch's `Dockerfile` (`SDK_URL`, and the `sha256sum -c` beside it) — verified identical |
 | **Provides** | Windows SDK 7.0 headers + import libs **and** the VC9 CRT |
 
 **This single ISO covers both halves of the toolchain.** The VC9 CRT is not a separate download — it lives inside the ISO at `Setup/vc_stdx86/`. Earlier prose describing the CRT as coming from a Visual Studio ISO is wrong for the Linux path.
@@ -100,6 +101,27 @@ curl -s -r 32768-40959 -L "$URL" | xxd | grep -E 'CD001|BEA01|NSR0'
 The reference build uses **clang 18 with lld**, from Ubuntu 24.04's default repositories, targeting **`i386-pc-windows-msvc`** (Win32 x86). `clang-cl` is a symlink to `clang`.
 
 The installer cannot apt-install anything, so Toolchain Bootstrap must fetch an equivalent **portable LLVM 18.x** and pin it. The proven configuration is clang 18 — treat the major version as part of the pinned toolchain identity, not an incidental detail, and record it in the Build Fingerprint.
+
+### This is the one pin with no counterpart upstream
+
+Everything else here is copied from the docker branch. This is not, and cannot be: the reference
+build is `FROM ubuntu:24.04` plus `apt-get install clang lld`, so it has **no compiler download
+URL at all**. Whatever we pin is our own substitute for a distribution package, and the
+substitution is where fidelity is lost:
+
+* Ubuntu 24.04 ships **clang 18.1.3**. llvm.org publishes **no x86-64 Linux asset for 18.1.3**,
+  so an exact match to the reference is not available as a portable build.
+* The nearest llvm.org release, **18.1.8 `x86_64-linux-gnu-ubuntu-18.04`**, is currently pinned
+  and **does not run**: it links `libtinfo.so.5`, which no current distribution ships, so the
+  loader refuses to start `clang-18` and `lld`. An `LD_LIBRARY_PATH` shim onto `libtinfo.so.6`
+  fails on ncurses 5's versioned symbols.
+
+So the compiler pin is an open question, and it blocks ticket 06 rather than ticket 05 —
+everything around it (download, checksum, xz decode, tar, keep-filter, Toolchain identity) is
+verified against the artifact and unaffected by changing it. Swapping it is one constant and one
+checksum; choosing the replacement deserves an ADR. The closest-to-proven option is Ubuntu
+24.04's own `clang-18` / `lld-18` `.deb` packages, which are exactly what the reference build
+installs and are reachable with pure-Rust `ar` + `tar.zst`.
 
 ## 3. Post-extraction fix-ups (Linux)
 
