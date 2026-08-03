@@ -123,6 +123,26 @@ checksum; choosing the replacement deserves an ADR. The closest-to-proven option
 24.04's own `clang-18` / `lld-18` `.deb` packages, which are exactly what the reference build
 installs and are reachable with pure-Rust `ar` + `tar.zst`.
 
+## 2b. `libtinfo.so.5` — required for the portable LLVM to start (Linux only)
+
+The llvm.org build links `libtinfo.so.5` (ncurses 5), which no current distribution ships, so
+`clang` and `lld` refuse to start. One shared library is extracted from a pinned Debian package
+into the toolchain's own `lib/`, where the binaries' existing `RUNPATH: $ORIGIN/../lib` finds it
+— no `LD_LIBRARY_PATH`. Reasoning, alternatives and measurements in **ADR-0005**.
+
+| | |
+| --- | --- |
+| **URL** | `http://deb.debian.org/debian/pool/main/n/ncurses/libtinfo5_6.2+20201114-2+deb11u2_amd64.deb` |
+| **Size** | 336,728 bytes |
+| **SHA-256** | `69e131ce3f790a892ca1b0ae3bfad8659daa2051495397eee1b627d9783a6797` |
+| **Wanted member** | `lib/x86_64-linux-gnu/libtinfo.so.5.9` (191,928 bytes) |
+| **Installed as** | `llvm-<version>/lib/libtinfo.so.5.9` + a `libtinfo.so.5` symlink |
+| **Licence** | MIT/X11 (ncurses) |
+
+Debian's package rather than Ubuntu's because its `data.tar.xz` is readable with `lzma-rs`, which
+the toolchain crate already uses; Ubuntu's is `data.tar.zst`. A `.deb` is an `ar` archive, parsed
+in-process like everything else here. Not needed on Windows.
+
 ## 3. Post-extraction fix-ups (Linux)
 
 The extracted SDK does not work as-is on a case-sensitive filesystem. All of these are part of a correct Toolchain Bootstrap:
@@ -132,7 +152,9 @@ The extracted SDK does not work as-is on a case-sensitive filesystem. All of the
 3. **Symlink `Include/` and `Lib/`** to their lowercase forms if the extraction produced lowercase directories; the build expects the capitalised names.
 4. **Rewrite backslashes to forward slashes** in `#include` directives inside SDK headers — the SDK uses Windows path separators that Linux reads literally.
 5. **Case symlinks for every `.lib`** — the SDK and CRT mix `GDI32.lib`, `Kernel32.Lib`, etc., and the linker may reference either case.
-6. **Stub the WDK-only headers** referenced by the SDK but shipped only with the Driver Kit: `DriverSpecs.h` and `SpecStrings.h` (plus lowercase variants). Empty files satisfy the `#include` chain for user-mode code.
+6. **Stub the WDK-only headers** referenced by the SDK but not shipped with it — `DelayImp.h` and `Warnings.h`. Empty files satisfy the `#include` chain for user-mode code.
+
+   > **Correction.** This item previously named `DriverSpecs.h` and `SpecStrings.h` as WDK-only. **They are not — the SDK ships both**, as `driverspecs.h` (31 KB) and `specstrings.h` (23 KB). Stubbing them is actively harmful: `kernelspecs.h` includes `"DriverSpecs.h"` with *quotes*, so the stub beside it wins regardless of `-I` order, and stubs written into the VC9 include directory shadow the SDK's copies globally. `__ANNOTATION` then never gets defined and `windows.h` cannot be included at all. The rule is: **stub only when no case-variant of the header exists anywhere on the include path**; where one does, fix-up 2's case symlink is the correct answer.
 
 ## 4. Extraction verification
 
@@ -149,10 +171,11 @@ toolchain — `windows.h` and `kernel32.lib` from `Microsoft SDKs/Windows/v7.0/`
 `iostream` and `msvcrt.lib` from `Microsoft Visual Studio 9.0/VC/`. These are *our* numbers, not
 a docker image's; treat them as a regression baseline, not as independent confirmation.
 
-**`DriverSpecs.h` is not a real check.** It is a WDK-only header the SDK includes but does not
-ship, so fix-up 6 creates it — meaning verification finds a file this code wrote moments earlier.
-It belongs in the list as a check that the fix-up ran, not as evidence the extraction is
-faithful. The other five names are genuine.
+**`DriverSpecs.h` should be removed from this list.** The SDK ships it; fix-up 6 was wrongly
+stubbing it, and the check then reported success against the very stub that made `windows.h`
+unusable. A verification that passes *because* of a bug is worse than no verification. The other
+five names are genuine. Replace it with the check that actually matters: compiling a translation
+unit that includes `<windows.h>`.
 
 ## 5. Not downloaded by the Linux build
 
