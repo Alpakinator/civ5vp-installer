@@ -9,11 +9,10 @@ use std::path::PathBuf;
 use civ5vp_core::{BoundaryError, BuildRequest, ProgressReporter, Stage, ToolchainRunner};
 
 use crate::bootstrap::ToolchainBootstrap;
-use crate::cache::ToolchainCache;
+use crate::cache::{Toolchain, ToolchainCache};
 
-/// A [`ToolchainRunner`] that bootstraps the Toolchain on first use.
+/// A [`ToolchainRunner`] backed by the Toolchain Cache.
 pub struct BootstrappedToolchain {
-    bootstrap: ToolchainBootstrap,
     cache: ToolchainCache,
 }
 
@@ -21,37 +20,57 @@ impl BootstrappedToolchain {
     /// `cache_root` is the Toolchain Cache's directory inside the App Data Store.
     pub fn new(cache_root: PathBuf) -> Self {
         Self {
-            bootstrap: ToolchainBootstrap::new(cache_root.clone()),
             cache: ToolchainCache::new(cache_root),
         }
+    }
+
+    /// Acquire the Toolchain, downloading and extracting it if the cache is empty.
+    ///
+    /// Separate from [`ToolchainRunner::build_dll`] on purpose — see that method. Ticket 06
+    /// calls this as the first step of a real build, at which point the two fold together.
+    pub fn bootstrap(&self, progress: &ProgressReporter) -> Result<Toolchain, BoundaryError> {
+        Ok(ToolchainBootstrap::new(self.cache.root().to_path_buf()).ensure(progress)?)
     }
 }
 
 impl ToolchainRunner for BootstrappedToolchain {
+    /// Make the Toolchain exist, then report that compiling it into a DLL is ticket 06's job.
+    ///
+    /// A Toolchain that is already cached is reported and nothing happens. A Toolchain that is
+    /// *not* cached is **not** downloaded: making a user wait for 2.4 GB and then telling them
+    /// the compiler is not implemented would be the worst of both. Ticket 06 replaces this
+    /// method body, at which point the bootstrap becomes the first thing a real build does.
     fn build_dll(
         &self,
         _request: &BuildRequest,
         progress: &ProgressReporter,
     ) -> Result<(), BoundaryError> {
-        // The bootstrap is this ticket's whole job, and it is the expensive half: after this
-        // returns the Toolchain is on disk, verified, and every later call is a no-op.
-        let toolchain = self.bootstrap.ensure(progress)?;
-        progress.report(
-            Stage::Build,
-            format!("Build tools ready at {}.", toolchain.sdk_root().display()),
-        );
+        let detail = match self.cache.installed() {
+            Some(toolchain) => {
+                progress.report(
+                    Stage::Build,
+                    format!("Build tools ready at {}.", toolchain.sdk_root().display()),
+                );
+                format!(
+                    "toolchain {} is bootstrapped at {}; compilation is not implemented \
+                     (ticket 06)",
+                    toolchain.identity(),
+                    toolchain.llvm_root().display()
+                )
+            }
+            None => format!(
+                "no toolchain in {}; not downloading 2.4 GB for a build that cannot run yet \
+                 (ticket 06)",
+                self.cache.root().display()
+            ),
+        };
 
-        // Compiling is ticket 06. Returning a typed error rather than a stub DLL is the
-        // honest option: the Core checks that the Built DLL appeared and would otherwise
-        // report a missing file, which tells a user nothing.
+        // A typed error rather than a stub DLL: the Core checks that the Built DLL appeared
+        // and would otherwise report a missing file, which tells a user nothing.
         Err(BoundaryError::new(
             "This version of the installer can set up the build tools but cannot compile the \
              mod's DLL yet.",
-            format!(
-                "toolchain {} is bootstrapped at {}; compilation is not implemented (ticket 06)",
-                toolchain.identity(),
-                toolchain.llvm_root().display()
-            ),
+            detail,
         ))
     }
 
@@ -83,14 +102,11 @@ mod tests {
     }
 
     /// The compile step is not implemented, and says so in a sentence rather than by
-    /// producing something that looks like a DLL.
+    /// producing something that looks like a DLL — and without downloading 2.4 GB first.
     #[test]
     fn building_reports_plainly_that_compilation_is_not_implemented_yet() {
         let dir = tempfile::tempdir().unwrap();
-        // A cache root that cannot be created, so the test never reaches the network.
-        let unusable = dir.path().join("file-not-a-directory");
-        std::fs::write(&unusable, b"x").unwrap();
-        let runner = BootstrappedToolchain::new(unusable.join("toolchain"));
+        let runner = BootstrappedToolchain::new(dir.path().join("toolchain"));
 
         let request = BuildRequest {
             source_root: dir.path().to_path_buf(),
@@ -101,9 +117,10 @@ mod tests {
             .build_dll(&request, &ProgressReporter::silent())
             .unwrap_err();
 
-        // Whatever went wrong, the user gets a sentence and the log gets the path.
-        assert!(!error.message().is_empty());
-        assert!(!error.detail().is_empty());
+        assert!(error.message().contains("cannot compile"));
+        assert!(error.detail().contains("no toolchain in"));
+        // Nothing was downloaded and nothing was created.
+        assert!(!dir.path().join("toolchain").exists());
         assert!(!dir.path().join("CvGameCore_Expansion2.dll").exists());
     }
 }
