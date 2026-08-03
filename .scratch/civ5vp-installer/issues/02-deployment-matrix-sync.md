@@ -6,7 +6,7 @@
 
 **Status:** ready-for-agent
 
-- [x] Core-seam tests cover every legal Flavor/EUI/43-Civs combination and assert file placement matching the official installer's rules (the InnoSetup script is the behavioral reference)
+- [ ] Core-seam tests cover every legal Flavor/EUI/43-Civs combination and assert file placement matching the official installer's rules (the InnoSetup script is the behavioral reference) — **partial, see Comments**: all six combinations are covered with exact-tree assertions and no placement error was found in what is implemented, but three of the script's `[Files]`/`[InstallDelete]` groups are deliberately not implemented, so "matching the official installer's rules" is not yet true
 - [x] Illegal combination (EUI with CP-only) is unrepresentable or rejected by the Core
 - [x] Sync is exact and idempotent: stale files inside Claimed Folders deleted, Claimed Folders not in the configuration removed, second run is a no-op
 - [x] Content outside the Claimed Folders is never touched (test with decoy mods/DLC present)
@@ -50,8 +50,12 @@ folder names (`(2) Community Balance Patch`, `(6a) …`, `(7b) …`, and so on) 
 from older VP versions do not leave a corrupt install. Same rule-6 problem: those names are not
 Claimed Folders. Low risk to add, but it is still a change to the Claimed set.
 
-**3. `(5) Modpack Maker for VP`** exists on `master` and is deployed by every component. It is
-not in `CONTEXT.md`'s Claimed Folders list at all.
+**3. `(5) Modpack Maker for VP`** exists on `master` and is deployed by every component
+(`.iss:53`). It is not in `CONTEXT.md`'s Claimed Folders list at all. There is a wrinkle beyond
+the Claimed-set change: it is absent from the fork's `docker` branch and presumably from older
+`Release-*` tags, so adding it naively would make installing an older Release fail with "the mod
+files are missing the (5) Modpack Maker for VP folder". Deploying it needs a notion of a folder
+that is optional by Version, which is a design decision rather than a line of code.
 
 ### Two smaller deviations, deliberate
 
@@ -79,3 +83,37 @@ is the one write rule 6 permits outside a Claimed Folder.
 The shell still hardcodes `Flavor::CommunityPatch`, so the matrix is not yet reachable from the
 UI — `crates/installer/src/app.rs` is owned by ticket 03 this round. The Flavor/EUI/43-Civs
 pickers are a follow-up once that lands.
+
+## Review
+
+Reviewed on both axes (`/code-review` against `5454f22`). Findings acted on:
+
+**Rule 6 was widened silently — the most important finding.** The Claimed Files concept (for the
+tips XML in the Text Folder) is a second exception to "nothing outside the Claimed Folders is
+ever written", and shipping it while *declining* three other features on rule-6 grounds was
+inconsistent. `CODING_STANDARDS.md` says to amend the rule rather than work around it, so:
+`CONTEXT.md` now defines **Claimed Files** as a term, and rule 6 now names both sets, says both
+are closed, and requires `CONTEXT.md` to be amended in the same commit as any addition. That
+also settles the rule-16 finding that `ClaimedFile` was not a `CONTEXT.md` term.
+
+**A user-facing message was wrong (rule 10).** A `(3b)` whose files had been renamed upstream
+produced `The sources are missing the "*.modinfo, AdvancedSetup.lua" folder` — a glob, shown to
+a non-programmer, described as a folder. `InstallError::MissingInSource` now carries a
+`SourceItem` (Folder / File / Contents) and each reads as a sentence.
+
+**Rule 7 hole.** The "this folder holds none of the files we take from it" check ran *during*
+Sync, after removals had started. It now runs in `fetch`, beside the other source checks, so the
+game is untouched. Covered by a new test asserting the game is byte-identical afterwards.
+
+**A test blind spot.** The top-level anchoring of the EUI Lua strip was asserted only in
+comments — the fixture had no nested `LUA`, so making the exclusion recursive passed everything.
+The fixture now has `(1) Community Patch/Core Files/LUA/CoreHelper.lua`; making the exclusion
+recursive now fails four tests.
+
+Also: `copy_tree` and `copy_selected` were the same loop and are now one function;
+`copy_file` no longer creates parent directories it never needed (it let any destination
+materialise a directory tree); and `InstallOutcome`/`UninstallOutcome` now report Claimed Files,
+which is what `ClaimedFile`'s public surface is for.
+
+Not acted on, deliberately: the `"*.modinfo"` wildcard was flagged as Primitive Obsession, but a
+type for one wildcard used in one place buys less than the comment explaining it costs.

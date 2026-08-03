@@ -65,37 +65,47 @@ pub(crate) fn copy_selected(
 ) -> Result<(), InstallError> {
     create_dir_all(to)?;
 
-    let mut matched = 0usize;
     for source in sorted_entries(from)? {
         let Some(name) = source.file_name().and_then(|name| name.to_str()) else {
+            // A non-UTF-8 name cannot be one of ours; skipping is safer than guessing.
             continue;
         };
         if is_excluded(name) || !selection.admits(name) {
             continue;
         }
-        matched += 1;
         let destination = to.join(name);
         if source.is_dir() {
-            copy_tree(&source, &destination)?;
+            // Below the top level the selection no longer applies, only the standard
+            // exclusions — which is what anchors an entry like `LUA` to the source root.
+            copy_selected(&source, &destination, &SourceSelection::Everything)?;
         } else {
             copy_file(&source, &destination)?;
         }
     }
 
-    // A named-entries selection that matches nothing means the source folder is not shaped the
-    // way this installer expects — a renamed file upstream, most likely. Deploying an empty
-    // mod folder would look like success and produce a game that silently misses a mod, so it
-    // is reported instead.
-    if matched == 0
-        && let SourceSelection::Only(wanted) = selection
-    {
-        return Err(InstallError::MissingInSource {
-            folder_name: wanted.join(", "),
-            path: from.to_path_buf(),
-        });
-    }
-
     Ok(())
+}
+
+/// Does this source folder hold anything `selection` would take?
+///
+/// A named-entries selection matching nothing means the source is not shaped the way this
+/// installer expects — a file renamed upstream, most likely. Deploying the empty folder that
+/// would result looks like success and leaves the player with a mod that silently does
+/// nothing, so it is reported instead. Asked before the Deployment starts, never during it:
+/// rule 7 wants the game untouched when anything is wrong.
+pub(crate) fn holds_anything_selected(
+    from: &Path,
+    selection: &SourceSelection,
+) -> Result<bool, InstallError> {
+    for source in sorted_entries(from)? {
+        let Some(name) = source.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if !is_excluded(name) && selection.admits(name) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Delete `path` and everything under it, if it exists at all.
@@ -172,32 +182,6 @@ pub(crate) fn create_dir_all(path: &Path) -> Result<(), InstallError> {
     })
 }
 
-/// Copy the tree at `from` into `to`, applying [`is_excluded`].
-///
-/// Entries are visited in sorted order so that two runs over the same source do the same
-/// operations in the same sequence (rule 8).
-pub(crate) fn copy_tree(from: &Path, to: &Path) -> Result<(), InstallError> {
-    create_dir_all(to)?;
-
-    for source in sorted_entries(from)? {
-        let Some(name) = source.file_name().and_then(|name| name.to_str()) else {
-            // A non-UTF-8 name cannot be one of ours; skipping is safer than guessing.
-            continue;
-        };
-        if is_excluded(name) {
-            continue;
-        }
-        let destination = to.join(name);
-        if source.is_dir() {
-            copy_tree(&source, &destination)?;
-        } else {
-            copy_file(&source, &destination)?;
-        }
-    }
-
-    Ok(())
-}
-
 /// The entries of `dir`, sorted, so that two runs over the same source do the same operations
 /// in the same sequence (rule 8).
 fn sorted_entries(dir: &Path) -> Result<Vec<std::path::PathBuf>, InstallError> {
@@ -221,9 +205,6 @@ fn sorted_entries(dir: &Path) -> Result<Vec<std::path::PathBuf>, InstallError> {
 }
 
 pub(crate) fn copy_file(from: &Path, to: &Path) -> Result<(), InstallError> {
-    if let Some(parent) = to.parent() {
-        create_dir_all(parent)?;
-    }
     fs::copy(from, to).map_err(|cause| InstallError::Deployment {
         action: "copy into",
         path: to.to_path_buf(),

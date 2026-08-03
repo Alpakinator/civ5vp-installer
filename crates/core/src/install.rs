@@ -6,7 +6,7 @@ use crate::BUILT_DLL_FILE_NAME;
 use crate::boundaries::{BuildRequest, SourceProvider, ToolchainRunner};
 use crate::claimed::{ClaimedFile, ClaimedFolder, GameFolders};
 use crate::configuration::InstallConfiguration;
-use crate::error::InstallError;
+use crate::error::{InstallError, SourceItem};
 use crate::plan::Plan;
 use crate::progress::{ProgressReporter, Stage};
 use crate::tree;
@@ -18,6 +18,8 @@ pub struct InstallOutcome {
     pub deployed: Vec<ClaimedFolder>,
     /// Claimed Folders that were present but do not belong to this configuration.
     pub removed: Vec<ClaimedFolder>,
+    /// Claimed Files deployed, in a fixed order.
+    pub deployed_files: Vec<ClaimedFile>,
     /// Where the Built DLL ended up in the game.
     pub built_dll: PathBuf,
 }
@@ -27,6 +29,8 @@ pub struct InstallOutcome {
 pub struct UninstallOutcome {
     /// Claimed Folders that were present and have been removed, in a fixed order.
     pub removed: Vec<ClaimedFolder>,
+    /// Claimed Files that were present and have been removed, in a fixed order.
+    pub removed_files: Vec<ClaimedFile>,
 }
 
 /// The headless Core.
@@ -85,12 +89,21 @@ impl Core {
             .materialize(&plan.configuration.source, progress)
             .map_err(InstallError::Fetch)?;
 
-        // Check everything the plan needs is actually there before the build burns minutes.
+        // Check everything the plan needs is actually there before the build burns minutes —
+        // and, more importantly, before Sync starts deleting (rule 7).
         for deployment in &plan.deployments {
             let path = source_root.join(&deployment.source_subdir);
             if !path.is_dir() {
                 return Err(InstallError::MissingInSource {
-                    folder_name: deployment.source_subdir.clone(),
+                    item: SourceItem::Folder,
+                    name: deployment.source_subdir.clone(),
+                    path,
+                });
+            }
+            if !tree::holds_anything_selected(&path, &deployment.selection)? {
+                return Err(InstallError::MissingInSource {
+                    item: SourceItem::Contents,
+                    name: deployment.source_subdir.clone(),
                     path,
                 });
             }
@@ -99,7 +112,8 @@ impl Core {
             let path = source_root.join(file.source_path());
             if !path.is_file() {
                 return Err(InstallError::MissingInSource {
-                    folder_name: file.source_path().to_owned(),
+                    item: SourceItem::File,
+                    name: file.source_path().to_owned(),
                     path,
                 });
             }
@@ -230,6 +244,7 @@ impl Core {
         Ok(InstallOutcome {
             deployed,
             removed,
+            deployed_files: plan.files.clone(),
             built_dll: dll_destination,
         })
     }
@@ -257,18 +272,23 @@ impl Core {
             }
         }
 
+        let mut removed_files = Vec::new();
         for file in ClaimedFile::ALL {
             let path = file.path_in(folders);
             if path.exists() {
                 tree::remove_file_if_present(&path)?;
                 progress.report(Stage::Sync, format!("Removed {}.", file.file_name()));
+                removed_files.push(file);
             }
         }
 
         clear_game_cache(folders, progress)?;
         progress.report(Stage::Sync, "Your game is back to how it was.");
 
-        Ok(UninstallOutcome { removed })
+        Ok(UninstallOutcome {
+            removed,
+            removed_files,
+        })
     }
 }
 

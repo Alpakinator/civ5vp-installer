@@ -25,12 +25,19 @@ use support::{
 // The file groups the matrix is composed from. Each is what one Claimed Folder contributes,
 // so a test body reads as its row of the table rather than as a wall of paths.
 
-/// `(1) Community Patch` minus its Lua. Note what is *not* here: the checked-in
+/// `(1) Community Patch` minus its top-level Lua. Note what is *not* here: the checked-in
 /// `CvGameCore_Expansion2.dll` (ADR-0001 — the Built DLL below replaces it), the `.civ5proj`,
 /// and `MANUAL INSTALL.txt`. Note what is: `Kit/`, which the official installer does ship.
+///
+/// `Core Files/LUA/CoreHelper.lua` is here on purpose and in every configuration. The EUI
+/// strip removes the *top-level* `LUA` only — the official installer's exclusion is `\LUA`,
+/// and the leading backslash anchors it to the source root. A nested `LUA` deeper in the tree
+/// is ordinary mod content and must survive. Without this entry, making the exclusion
+/// recursive would pass every test in this file.
 const COMMUNITY_PATCH: &[&str] = &[
     "MODS/(1) Community Patch/(1) Community Patch.modinfo",
     "MODS/(1) Community Patch/Core Files/Core Values/DefinesChanges.sql",
+    "MODS/(1) Community Patch/Core Files/LUA/CoreHelper.lua",
     "MODS/(1) Community Patch/CvGameCore_Expansion2.dll",
     "MODS/(1) Community Patch/Kit/ReadMe.txt",
 ];
@@ -470,6 +477,75 @@ fn a_source_missing_a_needed_folder_is_reported_and_nothing_is_installed() {
         error.user_message(),
     );
     assert_eq!(game.files(), Vec::<String>::new(), "nothing was installed");
+}
+
+/// A source folder that is present but holds none of the files a configuration takes from it
+/// is refused before Sync starts, not part-way through it (rule 7).
+///
+/// This is what upstream renaming `AdvancedSetup.lua` would look like. Deploying the empty
+/// `(3b)` that would otherwise result reads as success and leaves the player with a mod that
+/// silently does nothing.
+#[test]
+fn a_source_folder_with_none_of_the_files_it_should_have_is_refused_before_sync() {
+    let game = GameFixture::new();
+    game.plant(
+        "MODS/(1) Community Patch/(1) Community Patch.modinfo",
+        "mine",
+    );
+    let before = game.files();
+
+    // A source that has everything except any of the two files `(3b)` ships.
+    let source = game.work_dir().join("renamed-upstream");
+    copy_dir(&miniature_repo(), &source);
+    let slim = source.join("(3b) 43 Civs Community Patch");
+    for entry in std::fs::read_dir(&slim).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_file() {
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+
+    let core = Core::new(
+        Box::new(FixtureSourceProvider::new(source)),
+        Box::new(MarkerToolchainRunner),
+        game.work_dir(),
+    );
+    let plan = core
+        .plan(
+            &configuration(Flavor::CommunityPatch, FortyThreeCivs::Enabled),
+            &game.folders(),
+        )
+        .unwrap();
+
+    let error = core
+        .execute(&plan, &ProgressReporter::silent())
+        .expect_err("a (3b) holding neither of its two files cannot be deployed");
+
+    assert!(
+        error
+            .user_message()
+            .contains("does not contain what this installer expects"),
+        "expected a plain-language message, got: {}",
+        error.user_message(),
+    );
+    assert_eq!(
+        game.files(),
+        before,
+        "rule 7: the game must be untouched, including the folder Sync would have replaced",
+    );
+}
+
+fn copy_dir(from: &std::path::Path, to: &std::path::Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for entry in std::fs::read_dir(from).unwrap() {
+        let source = entry.unwrap().path();
+        let destination = to.join(source.file_name().unwrap());
+        if source.is_dir() {
+            copy_dir(&source, &destination);
+        } else {
+            std::fs::copy(&source, &destination).unwrap();
+        }
+    }
 }
 
 /// The DLC folders are read from the source root, not from a `DLC` subdirectory — a mistake

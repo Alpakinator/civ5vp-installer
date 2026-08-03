@@ -34,7 +34,11 @@ Glossary for the Vox Populi installer for Civilization V. Terms only — no impl
 
 **DLC Folder** — the game's DLC directory (`…/Sid Meier's Civilization V/Assets/DLC`). Deployment target for `VPUI` and `UI_bc1`.
 
-**Claimed Folders** — the exact set of folders the installer owns and may create, sync, or delete: `(1) Community Patch`, `(2) Vox Populi`, `(3a) VP - EUI Compatibility Files`, `(3b) 43 Civs Community Patch`, `(4a) Squads for VP` in the MODS Folder; `VPUI` and `UI_bc1` in the DLC Folder. Nothing outside this set is ever touched.
+**Claimed Folders** — the exact set of folders the installer owns and may create, sync, or delete: `(1) Community Patch`, `(2) Vox Populi`, `(3a) VP - EUI Compatibility Files`, `(3b) 43 Civs Community Patch`, `(4a) Squads for VP` in the MODS Folder; `VPUI` and `UI_bc1` in the DLC Folder.
+
+**Claimed Files** — the exact set of individual files the installer owns, in folders it does not own: `VPUI_tips_en_us.xml` in the Text Folder. A Claimed Folder is replaced wholesale, which is what makes Sync exact; that is not available in a folder the game and other mods also write to, so those files are named one by one instead.
+
+Together the Claimed Folders and Claimed Files are everything the installer may write, move, or delete. Nothing outside them is ever touched, with one exception: the game's `cache` folder, which is cleared after every Deployment.
 
 **Sync** — how Deployment treats Claimed Folders: their contents are made to match the Install Configuration exactly (stale files deleted), and Claimed Folders not in the configuration are removed. After every Deployment the game's `cache` folder is cleared; `ModUserData` is preserved.
 

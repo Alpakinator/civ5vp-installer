@@ -33,9 +33,12 @@ _Spec, Further Notes: "blobless partial clone support in embeddable git librarie
 
 ## Safety of the user's game
 
-**6. Nothing outside the Claimed Folders is ever written, moved, or deleted.**
-Every path the installer writes to must be derived from a Claimed Folder root. Code that constructs a destination path any other way is a defect regardless of what it does. The game's `cache` folder is the one additional path the installer may clear; `ModUserData` is never touched.
-_Spec: "never touches anything else"; user stories 22, 23._
+**6. Nothing outside the Claimed Folders and Claimed Files is ever written, moved, or deleted.**
+Every path the installer writes to must be derived from a Claimed Folder root or be a Claimed File. Code that constructs a destination path any other way is a defect regardless of what it does. The game's `cache` folder is the one additional path the installer may clear; `ModUserData` is never touched.
+
+Both sets are closed and both live in `CONTEXT.md`. Adding a member is a change to the safety boundary, not an implementation detail: amend `CONTEXT.md` in the same commit, or the rule silently stops meaning what it says. Claimed Files exist because the Text Folder belongs to the game — the installer deploys one file into it and cannot replace the folder wholesale the way it does its own.
+
+_Spec: "never touches anything else"; user stories 22, 23. `CONTEXT.md`'s Text Folder entry — "Receives `VPUI_tips_en_us.xml`… The third deployment target alongside the MODS and DLC Folders."_
 
 **7. Strict ordering: fetch → build → Sync. Failure before Sync leaves the game untouched.**
 No partial deployment. Nothing may be written into a Claimed Folder until the fetch and the build have both fully succeeded.

@@ -31,6 +31,20 @@ pub enum GameFolderProblem {
     NotBesideTheOthers,
 }
 
+/// What the Installation Source was missing.
+///
+/// The three read very differently to someone who is not a programmer, so they are separated
+/// here rather than papered over with one sentence (rule 10).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SourceItem {
+    /// A whole folder the configuration deploys.
+    Folder,
+    /// A single file the configuration deploys.
+    File,
+    /// A folder that is present, but holds none of the files this configuration takes from it.
+    Contents,
+}
+
 /// Anything that can stop a Deployment.
 ///
 /// Rule 10: `user_message` is what the UI shows — a sentence a non-programmer can act on.
@@ -51,8 +65,13 @@ pub enum InstallError {
         path: PathBuf,
         cause: std::io::Error,
     },
-    /// The Installation Source does not contain a folder the configuration needs.
-    MissingInSource { folder_name: String, path: PathBuf },
+    /// The Installation Source does not contain something the configuration needs.
+    MissingInSource {
+        item: SourceItem,
+        /// The name to show the user — a folder name, or a path relative to the source root.
+        name: String,
+        path: PathBuf,
+    },
     /// A game folder the installer cannot safely write to.
     UnusableGameFolder {
         /// Which one, in the user's words: "MODS", "DLC", "Text".
@@ -82,10 +101,20 @@ impl InstallError {
                 "Could not write to {}. Check that the folder exists and is not read-only.",
                 path.display()
             ),
-            Self::MissingInSource { folder_name, .. } => format!(
-                "The sources are missing the \"{folder_name}\" folder, so there is nothing to \
-                 install. Your game is unchanged."
-            ),
+            Self::MissingInSource { item, name, .. } => match item {
+                SourceItem::Folder => format!(
+                    "The mod files are missing the \"{name}\" folder, so there is nothing to \
+                     install. Your game is unchanged."
+                ),
+                SourceItem::File => format!(
+                    "The mod files are missing \"{name}\", so there is nothing to install. \
+                     Your game is unchanged."
+                ),
+                SourceItem::Contents => format!(
+                    "The \"{name}\" folder in the mod files does not contain what this \
+                     installer expects, so nothing was installed. Your game is unchanged."
+                ),
+            },
             Self::UnusableGameFolder {
                 which,
                 path,
@@ -130,8 +159,8 @@ impl InstallError {
                 path,
                 cause,
             } => format!("deployment: {action} {} failed: {cause}", path.display()),
-            Self::MissingInSource { folder_name, path } => format!(
-                "installation source has no \"{folder_name}\" at {}",
+            Self::MissingInSource { item, name, path } => format!(
+                "installation source: {item:?} \"{name}\" missing or empty at {}",
                 path.display()
             ),
             Self::UnusableGameFolder {
