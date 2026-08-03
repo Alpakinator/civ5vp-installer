@@ -50,11 +50,17 @@ Measured from the real image: `Setup/WinSDK/cab1.cab` holds 120 files in one LZX
 
 ### What is and is not proven
 
-**The extraction-fidelity bet this ticket exists to resolve is not resolved.** The full
-end-to-end run against the real image has never completed: the 1.45 GiB download was still in
-progress when work stopped (archive.org was serving it at roughly 11 MB/min). So the six-name
-verification, the header and lib counts, and the six Linux fix-ups are proven against synthetic
-fixtures, not against the real Windows SDK.
+**The extraction-fidelity bet is resolved.** The end-to-end run against the real image
+completed: SHA-256 matched the pinned `65739fb0…` exactly, 3660 files extracted in 107 s, all six
+fix-ups ran on the real tree, and all six of §4's names resolve. Independently re-checked against
+the extracted tree afterwards — 2033 headers and 928 libraries, reproduced with a `find` using
+the same predicate as `verify.rs`.
+
+One qualifier on the sixth name, which the review caught: **`DriverSpecs.h` cannot fail.**
+Fix-up 6 writes it (a 58-byte stub — it is a WDK-only header the SDK includes but does not ship)
+into every include root immediately before verification runs, so its presence is self-fulfilling
+rather than evidence. Five of the six names are real evidence; that one is a check on our own
+output. Worth remembering if §4 is ever treated as an independent test.
 
 What *is* proven against real data, which is not nothing:
 

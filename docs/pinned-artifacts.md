@@ -142,6 +142,18 @@ A bootstrap is only complete when all of these resolve under the toolchain root:
 
 Ticket 05's "layout equivalent to the docker image's known-good extraction" means: same header count, same lib count, and every name above resolving. Capture the reference counts from a real docker build once and commit them as the comparison baseline.
 
+**Measured by this installer on 2026-08-03**, extracting the real image (SHA-256 verified against
+the value above): **2033 headers, 928 import libraries**, 3660 files in 107 s. All six names
+resolve, and where they come from confirms §1's claim that one ISO covers both halves of the
+toolchain — `windows.h` and `kernel32.lib` from `Microsoft SDKs/Windows/v7.0/`, and `stdio.h`,
+`iostream` and `msvcrt.lib` from `Microsoft Visual Studio 9.0/VC/`. These are *our* numbers, not
+a docker image's; treat them as a regression baseline, not as independent confirmation.
+
+**`DriverSpecs.h` is not a real check.** It is a WDK-only header the SDK includes but does not
+ship, so fix-up 6 creates it — meaning verification finds a file this code wrote moments earlier.
+It belongs in the list as a check that the fix-up ran, not as evidence the extraction is
+faithful. The other five names are genuine.
+
 ## 5. Not downloaded by the Linux build
 
 These appear in the reference repo's documentation for the **Windows / Visual Studio** path. The installer does not fetch them, and they should not be added without an ADR:
