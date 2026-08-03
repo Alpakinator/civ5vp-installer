@@ -115,12 +115,30 @@ impl<'a> DllBuild<'a> {
         let link_args = flags::linker_args(request.build_configuration, source_root);
 
         let variant_dir = variant_dir(request)?;
-        let commit_id = source_root.join("commit_id.inc");
-        state::write_if_changed(&commit_id, &commit_id_contents(&request.version_label))?;
+
+        // Two sources `#include "../commit_id.inc"`. Upstream generates that file at the
+        // repository root with git; the installer must not write into an Installation Source
+        // (a Local Repo is "used as-is" — rule 6's spirit, user story 29), so it generates
+        // the file under the variant directory and adds one include directory whose parent
+        // holds it. MSVC-style quoted includes try the including file's own directory first
+        // — so a `commit_id.inc` a developer's checkout already has still wins, which is
+        // exactly "as-is" — and fall back to each `/I` directory joined with the relative
+        // path, where `<generated>/include/../commit_id.inc` resolves to ours.
+        let generated_dir = variant_dir.join("generated");
+        let generated_include = generated_dir.join("include");
+        let mut cl_args = cl_args;
+        cl_args.push(format!("/I{}", generated_include.display()));
+
+        // The manifest check may discard the whole variant directory, so it runs before
+        // anything is generated into it.
         state::ensure_manifest(
             &variant_dir,
             &manifest_contents(self.toolchain, &cl_args, &link_args, source_root),
         )?;
+        fs::create_dir_all(&generated_include)
+            .map_err(|error| io_error("create the build directory", &generated_include, &error))?;
+        let commit_id = generated_dir.join("commit_id.inc");
+        state::write_if_changed(&commit_id, &commit_id_contents(&request.version_label))?;
         let mut log = BuildLog::create(variant_dir.join("build.log"))?;
 
         let compiled_anything = self.compile(
@@ -858,10 +876,20 @@ mod tests {
         assert!(inputs[5].starts_with('@'));
         assert!(fixture.output_path.is_file());
 
-        // The generated version include exists and carries the Version.
-        let commit_id = fs::read_to_string(fixture.source_root.join("commit_id.inc")).unwrap();
+        // The generated version include exists in the variant directory, carries the
+        // Version, and is reachable through the extra include directory — never written
+        // into the Installation Source (rule 6's spirit; a Local Repo is used as-is).
+        let generated = fixture
+            .output_path
+            .parent()
+            .unwrap()
+            .join("objects/release/generated");
+        let commit_id = fs::read_to_string(generated.join("commit_id.inc")).unwrap();
         assert!(commit_id.contains("CURRENT_GAMECORE_VERSION"));
         assert!(commit_id.contains("Release-9.9"));
+        assert!(!fixture.source_root.join("commit_id.inc").exists());
+        let include_flag = format!("/I{}", generated.join("include").display());
+        assert!(invoker.calls()[0].args.contains(&include_flag));
 
         // The PCH is created once and consumed by the sources.
         let calls = invoker.calls();

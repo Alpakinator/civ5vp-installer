@@ -105,3 +105,22 @@ expected — different compiler binary, different vintage.
   should be exercised for real.
 - Parallelism is `available_parallelism`, bounded workers over an index queue —
   the reference script spawns all 172 clang processes at once, which was not worth copying.
+
+### Post-review correction: `commit_id.inc` no longer touches the Installation Source
+
+`/code-review` (both axes, independently) flagged the original design — writing the generated
+`commit_id.inc` into the source root — as a rule-6 / user-story-29 breach: a Local Repo is
+"used as-is", and a file the installer writes into a developer's checkout is a mutation of it,
+gitignored or not. Now the file is generated under the variant directory and reached through
+one extra `/I` directory: MSVC-style quoted includes try the including file's directory first
+(so a `commit_id.inc` a developer's tree already has still wins — exactly "as-is") and fall
+back to each `/I` entry joined with the relative path, where
+`<variant>/generated/include/../commit_id.inc` resolves to ours. Proven against the real
+compiler: clean 78 s build with the checkout's root verified untouched afterwards.
+
+Two smaller findings fixed in the same pass: `CONTEXT.md` gained the **Build Configuration**
+term the Core now uses (rule 16), and `docs/spec.md`'s "`.civ5proj`" wording was corrected to
+name the real DLL project file, `VoxPopuli.vcxproj` — the `.civ5proj` files are the mods'
+ModBuddy projects and list no C++ sources. Judgement-call smells (the build-context parameter
+clump in `DllBuild::compile`/`link`, the duplicated shim/stub compile shape) are noted and
+left for a quieter refactor.

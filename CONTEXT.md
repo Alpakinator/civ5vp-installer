@@ -20,6 +20,8 @@ Glossary for the Vox Populi installer for Civilization V. Terms only — no impl
 
 **Built DLL** — `CvGameCore_Expansion2.dll` compiled locally by the installer with clang. The installer always builds it; DLLs checked into the repository are never deployed (they are stale outside release commits).
 
+**Build Configuration** — Release or Debug, the two proven compiler configurations for the Built DLL. Players always get Release; Dev mode offers the Debug choice.
+
 **Toolchain** — everything needed to produce the Built DLL: portable clang/lld and the extracted Windows SDK 7.0 + VC9 CRT. Acquired by **Toolchain Bootstrap**: downloaded and unpacked on first build, then kept in the **Toolchain Cache**. Never bundled inside the installer executable.
 
 **App Data Store** — the single installer-owned directory in the platform's app-data location (`%LOCALAPPDATA%` on Windows, XDG data dir on Linux) holding the Upstream Cache, Toolchain Cache, settings, and logs. The executable itself is a lone file that stores nothing beside itself. The UI exposes the store's location and size and a button that clears it (never touching the game).
