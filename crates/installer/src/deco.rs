@@ -109,43 +109,125 @@ fn framed<R>(
 /// The header: the display title centred, the sunburst fan behind it, the diamond rule
 /// below. Rendered once per window.
 pub fn header(ui: &mut egui::Ui, title: &str) {
-    let fan = ui.painter().add(Shape::Noop);
-    let laid_out = ui.vertical_centered(|ui| {
-        ui.add_space(3.0);
-        ui.heading(egui::RichText::new(title).color(theme::PARCHMENT_BRIGHT));
-        ui.add_space(3.0);
-    });
-    ui.painter().set(fan, sunburst(laid_out.response.rect));
-    diamond_rule(ui);
+    let crest = ui.painter().add(Shape::Noop);
+    // Room the crest paints into, above the title.
+    ui.add_space(CREST_HEIGHT);
+    let title_rect = ui
+        .vertical_centered(|ui| {
+            ui.heading(egui::RichText::new(title).color(theme::PARCHMENT_BRIGHT))
+                .rect
+        })
+        .inner;
+    ui.add_space(3.0);
+    let rule_rect = diamond_rule(ui);
+    ui.painter()
+        .set(crest, crowned_portal(title_rect, rule_rect));
     ui.add_space(4.0);
 }
 
-/// The sunburst fan: straight rays fanning symmetrically from a low centre point — 1.5 px
-/// gold at low opacity, one ray every 10° across ≈ 150°, inner radius 14, outer radius 48.
-/// Ornament behind text; it must never fight the lettering.
-fn sunburst(header_rect: Rect) -> Shape {
-    let centre = pos2(header_rect.center().x, header_rect.bottom() - 4.0);
-    let ray = Stroke::new(1.5, theme::GOLD.gamma_multiply(0.22));
-    let mut rays = Vec::new();
-    let mut degrees = 15.0_f32;
-    while degrees <= 165.0 {
-        let direction = vec2(
-            degrees.to_radians().cos(),
-            // Screen y grows downward; the fan opens upward.
-            -degrees.to_radians().sin(),
-        );
-        rays.push(Shape::line_segment(
-            [centre + direction * 14.0, centre + direction * 48.0],
-            ray,
+/// Vertical room reserved above the title for the crest's wings and medallion.
+const CREST_HEIGHT: f32 = 34.0;
+
+/// The crowned portal, after the game's own main menu: an arched-fan medallion at the top
+/// centre, tiered wing lines sweeping outward from its base, their outer ends dropping as
+/// stems that flank the title and land on the rule below — crest, stems and rule as one
+/// connected frame with the title inside. Original line-art in the skin's 1-px pen
+/// (ADR-0003: the game's asset is composition reference, never copied).
+fn crowned_portal(title_rect: Rect, rule_rect: Rect) -> Shape {
+    let mut lines = Vec::new();
+    let centre_x = title_rect.center().x;
+    let rule_y = rule_rect.center().y;
+    let shoulder_y = title_rect.top() - 3.0;
+
+    let bright = Stroke::new(1.2, theme::GOLD);
+    let dim = Stroke::new(1.0, theme::GOLD_DARK);
+
+    // Side stems: from the rule up to the shoulders, a stem's width outside the title.
+    let stem_reach = title_rect.width() / 2.0 + 16.0;
+    for side in [-1.0_f32, 1.0] {
+        let x = centre_x + side * stem_reach;
+        lines.push(Shape::line_segment(
+            [pos2(x, shoulder_y), pos2(x, rule_y)],
+            bright,
         ));
-        degrees += 10.0;
+        // A diamond foot where the stem meets the rule.
+        lines.push(diamond(pos2(x, rule_y), 3.0));
+        // Shoulder: from the stem top inward, stopping short of the wings.
+        lines.push(Shape::line_segment(
+            [
+                pos2(x, shoulder_y),
+                pos2(centre_x + side * (MEDALLION_HALF + 58.0), shoulder_y),
+            ],
+            bright,
+        ));
     }
-    Shape::Vec(rays)
+
+    // Wing tiers: three lines a side, stepping up toward the medallion, the longest at the
+    // bottom — each with a small feather tick at its outer end.
+    for tier in 0..3 {
+        let y = shoulder_y - 5.0 - tier as f32 * 6.0;
+        let inner = MEDALLION_HALF + 6.0 + tier as f32 * 4.0;
+        let outer = stem_reach - 14.0 - tier as f32 * 24.0;
+        let stroke = if tier == 1 { dim } else { bright };
+        for side in [-1.0_f32, 1.0] {
+            let from = pos2(centre_x + side * inner, y);
+            let to = pos2(centre_x + side * outer, y);
+            lines.push(Shape::line_segment([from, to], stroke));
+            lines.push(Shape::line_segment([to, pos2(to.x, y + 3.0)], stroke));
+        }
+    }
+
+    // The medallion: a fan arch on a short-stemmed base, spokes radiating to the arc —
+    // the reference crest's fan window, contained rather than behind the text.
+    let base_y = shoulder_y - 2.0;
+    let arc_centre = pos2(centre_x, base_y);
+    lines.push(Shape::line_segment(
+        [
+            pos2(centre_x - MEDALLION_HALF, base_y),
+            pos2(centre_x + MEDALLION_HALF, base_y),
+        ],
+        bright,
+    ));
+    let mut arc = Vec::new();
+    let mut degrees = 0.0_f32;
+    while degrees <= 180.0 {
+        let direction = vec2(degrees.to_radians().cos(), -degrees.to_radians().sin());
+        arc.push(arc_centre + direction * MEDALLION_HALF);
+        degrees += 11.25;
+    }
+    lines.push(Shape::line(arc, bright));
+    for spoke in [30.0_f32, 60.0, 90.0, 120.0, 150.0] {
+        let direction = vec2(spoke.to_radians().cos(), -spoke.to_radians().sin());
+        lines.push(Shape::line_segment(
+            [
+                arc_centre + direction * 4.0,
+                arc_centre + direction * (MEDALLION_HALF - 2.0),
+            ],
+            dim,
+        ));
+    }
+
+    Shape::Vec(lines)
 }
 
-/// The diamond rule: a gold-dark hairline across the full width, over-struck for its
-/// central stretch by a gold line, with a small solid gold diamond at the exact centre.
-pub fn diamond_rule(ui: &mut egui::Ui) {
+/// Half-width (and radius) of the crest's fan medallion.
+const MEDALLION_HALF: f32 = 18.0;
+
+/// A small filled diamond, the skin's punctuation mark.
+fn diamond(centre: egui::Pos2, half: f32) -> Shape {
+    Shape::convex_polygon(
+        vec![
+            pos2(centre.x, centre.y - half),
+            pos2(centre.x + half, centre.y),
+            pos2(centre.x, centre.y + half),
+            pos2(centre.x - half, centre.y),
+        ],
+        theme::GOLD,
+        Stroke::NONE,
+    )
+}
+
+pub fn diamond_rule(ui: &mut egui::Ui) -> Rect {
     let width = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(vec2(width, 9.0), egui::Sense::hover());
     let painter = ui.painter();
@@ -171,6 +253,7 @@ pub fn diamond_rule(ui: &mut egui::Ui) {
         theme::GOLD,
         Stroke::NONE,
     ));
+    rect
 }
 
 /// The progress bar: a well-navy trough with its own stepped frame. `Some(fraction)` draws
