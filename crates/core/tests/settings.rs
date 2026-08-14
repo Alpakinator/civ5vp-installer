@@ -132,6 +132,7 @@ fn the_remembered_state_survives_the_round_trip() {
             game_installation: Some(PathBuf::from("/games/Sid Meier's Civilization V")),
             documents_folder: Some(PathBuf::from("/prefix/My Games/Sid Meier's Civilization 5")),
             configuration: Some(configuration),
+            dev_checkout: None,
         };
         store.save(&settings).expect("the store is writable");
         assert_eq!(store.load().expect("just written"), settings);
@@ -206,6 +207,7 @@ fn remembered_folders_pre_fill_the_next_launch() {
             game_installation: Some(game.clone()),
             documents_folder: Some(documents.clone()),
             configuration: Some(configuration.clone()),
+            dev_checkout: None,
         })
         .unwrap();
 
@@ -259,6 +261,7 @@ fn remembered_folders_that_are_gone_give_way_to_detection() {
             game_installation: Some(temp.path().join("an-old-drive/Sid Meier's Civilization V")),
             documents_folder: Some(temp.path().join("an-old-drive/Sid Meier's Civilization 5")),
             configuration: None,
+            dev_checkout: None,
         })
         .unwrap();
 
@@ -354,6 +357,7 @@ fn a_configuration_with_no_installation_source_still_remembers_its_flavor() {
                 install_mode: InstallMode::Mods,
                 extra_mods: Vec::new(),
             }),
+            dev_checkout: None,
         })
         .unwrap();
 
@@ -388,6 +392,7 @@ fn a_remembered_upstream_version_survives_a_round_trip() {
                 install_mode: InstallMode::Mods,
                 extra_mods: Vec::new(),
             }),
+            dev_checkout: None,
         })
         .unwrap();
 
@@ -395,5 +400,37 @@ fn a_remembered_upstream_version_survives_a_round_trip() {
         store.load().unwrap().configuration.unwrap().source,
         chosen,
         "the remembered Version should come back exactly",
+    );
+}
+
+/// The Dev-mode checkout is remembered on its own, not inside the configuration: naming it
+/// once, then installing from GitHub, must not cost the player the path.
+#[test]
+fn the_dev_checkout_outlives_a_switch_back_to_github() {
+    let store = AppDataStore::at(tempfile::tempdir().unwrap().path().join("app-data"));
+    store
+        .save(&Settings {
+            game_installation: None,
+            documents_folder: None,
+            // The active source is GitHub — the checkout is not part of the configuration.
+            configuration: Some(InstallConfiguration {
+                source: InstallationSource::UpstreamCache {
+                    version: Version::Release("Release-5.4.3".to_owned()),
+                },
+                flavor: Flavor::VoxPopuli { eui: Eui::Enabled },
+                forty_three_civs: FortyThreeCivs::Disabled,
+                build_configuration: BuildConfiguration::Release,
+                install_mode: InstallMode::Mods,
+                extra_mods: Vec::new(),
+            }),
+            dev_checkout: Some(PathBuf::from("/home/player/src/Community-Patch-DLL")),
+        })
+        .unwrap();
+
+    let startup = start_up(&store, &nowhere());
+
+    assert_eq!(
+        startup.dev_checkout,
+        Some(PathBuf::from("/home/player/src/Community-Patch-DLL")),
     );
 }

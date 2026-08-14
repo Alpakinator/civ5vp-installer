@@ -202,6 +202,10 @@ pub struct Settings {
     pub documents_folder: Option<PathBuf>,
     /// The last Install Configuration.
     pub configuration: Option<InstallConfiguration>,
+    /// The Dev-mode checkout the player last named, kept even while the GitHub source is
+    /// the active choice — the configuration stores only the active source, and switching
+    /// back to Dev mode must not cost the player their path.
+    pub dev_checkout: Option<PathBuf>,
 }
 
 impl Settings {
@@ -217,6 +221,7 @@ impl Settings {
             "documents-folder",
             self.documents_folder.as_ref(),
         );
+        write_path(&mut text, "dev-checkout", self.dev_checkout.as_ref());
 
         let Some(configuration) = &self.configuration else {
             return text;
@@ -271,6 +276,7 @@ impl Settings {
             game_installation: values.path("game-installation"),
             documents_folder: values.path("documents-folder"),
             configuration: read_configuration(&values),
+            dev_checkout: values.path("dev-checkout"),
         }
     }
 }
@@ -289,6 +295,8 @@ pub struct Startup {
     pub note: Option<String>,
     /// Lines for the log file (rule 11).
     pub log: Vec<String>,
+    /// The remembered Dev-mode checkout, whatever the active source is.
+    pub dev_checkout: Option<PathBuf>,
 }
 
 impl Startup {
@@ -320,6 +328,7 @@ pub fn start_up(store: &AppDataStore, locations: &SearchLocations) -> Startup {
         }
     };
 
+    let dev_checkout = settings.dev_checkout.clone();
     let mut remembered_problem = None;
     if let (Some(game), Some(documents)) = (&settings.game_installation, &settings.documents_folder)
     {
@@ -336,6 +345,7 @@ pub fn start_up(store: &AppDataStore, locations: &SearchLocations) -> Startup {
                     configuration: settings.configuration,
                     note: None,
                     log,
+                    dev_checkout: dev_checkout.clone(),
                 };
             }
             Err(rejected) => {
@@ -355,6 +365,7 @@ pub fn start_up(store: &AppDataStore, locations: &SearchLocations) -> Startup {
             configuration: settings.configuration,
             note: None,
             log,
+            dev_checkout: dev_checkout.clone(),
         },
         Detection::DocumentsNotFound {
             ref game_installation,
@@ -365,6 +376,7 @@ pub fn start_up(store: &AppDataStore, locations: &SearchLocations) -> Startup {
             configuration: settings.configuration,
             note: detection.user_message(),
             log,
+            dev_checkout: dev_checkout.clone(),
         },
         Detection::Refused(_) | Detection::NotFound { .. } => Startup {
             // Whatever was remembered is shown even though it did not check out, so that a
@@ -378,6 +390,7 @@ pub fn start_up(store: &AppDataStore, locations: &SearchLocations) -> Startup {
                 .map(|rejected| rejected.user_message())
                 .or_else(|| detection.user_message()),
             log,
+            dev_checkout: dev_checkout.clone(),
         },
     }
 }

@@ -780,3 +780,31 @@ fn every_screen_matches_its_baseline() {
     }
     results.unwrap();
 }
+
+/// A checkout named once is pre-filled forever — even after the player switches back to the
+/// GitHub source and relaunches, Dev mode opens with the remembered path in the field.
+#[test]
+fn the_dev_checkout_survives_a_switch_back_to_github_and_a_relaunch() {
+    let game = TempGame::new();
+    let mut harness = harness_over(game.launch(&game.locations()));
+    harness.step();
+    enter_dev_mode(&mut harness, &miniature_repo().display().to_string());
+
+    // Back to GitHub — the configuration now stores the GitHub source, not the checkout.
+    harness
+        .get_by_label("Download from GitHub — pick a version")
+        .click();
+    harness.step();
+    harness.step();
+
+    // A fresh launch: Dev mode must open with the path still there.
+    let mut next = harness_over(game.launch(&game.nowhere()));
+    next.step();
+    next.get_by_label("My own Community-Patch-DLL checkout — Dev mode")
+        .click();
+    next.step();
+    assert_eq!(
+        field_value(&mut next, "Community-Patch-DLL folder"),
+        miniature_repo().display().to_string(),
+    );
+}

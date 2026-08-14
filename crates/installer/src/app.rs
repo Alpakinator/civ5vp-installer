@@ -175,6 +175,11 @@ impl InstallerApp {
         let mut source_folder = String::new();
         let mut picked_version = PickedVersion::NewestRelease;
         let mut custom_ref = String::new();
+        // A checkout named once is pre-filled forever, even while GitHub is the active
+        // source — the field is only drawn in Dev mode, but it must not come back empty.
+        if let Some(path) = &startup.dev_checkout {
+            source_folder = display_path(path);
+        }
         match startup.configuration.as_ref().map(|c| &c.source) {
             Some(InstallationSource::LocalRepo { path }) if !path.as_os_str().is_empty() => {
                 source_choice = SourceChoice::OwnCheckout;
@@ -666,6 +671,13 @@ impl InstallerApp {
             game_installation: Some(PathBuf::from(self.game_folder.trim())),
             documents_folder: Some(PathBuf::from(self.documents_folder.trim())),
             configuration: Some(self.configuration()),
+            // Kept separately from the configuration, which only stores the *active*
+            // source: a player who names a checkout once must find it pre-filled even
+            // after installing from GitHub in between.
+            dev_checkout: match self.source_folder.trim() {
+                "" => None,
+                path => Some(PathBuf::from(path)),
+            },
         };
         if let Err(problem) = self.store.save(&settings) {
             // Not being able to remember is not worth interrupting anything over: it goes in
