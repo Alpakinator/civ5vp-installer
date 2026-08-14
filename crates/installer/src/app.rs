@@ -959,6 +959,20 @@ impl InstallerApp {
                     "Unofficial versions — every change since the newest release",
                 );
                 if self.show_unofficial
+                    && let UnofficialState::Ready(list) = &self.unofficial
+                    && list.is_empty()
+                {
+                    // Master sitting exactly at the newest Release is normal right after
+                    // one ships — say so, or an empty-looking toggle reads as broken.
+                    ui.label(
+                        egui::RichText::new(
+                            "There are no unofficial versions after the newest release yet.",
+                        )
+                        .small()
+                        .color(theme::PARCHMENT_DIM),
+                    );
+                }
+                if self.show_unofficial
                     && let UnofficialState::Failed(message) = &self.unofficial
                 {
                     let message = message.clone();
