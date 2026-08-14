@@ -135,7 +135,7 @@ pub(crate) fn assemble(
     // snapshot and dumped into the Override folder.
     let mut updates = Vec::new();
     for staged in &staged_mods {
-        collect_database_updates(staged, &mut updates)?;
+        collect_database_updates(staged, &mut updates, progress)?;
     }
     progress.report(
         Stage::Build,
@@ -339,26 +339,36 @@ fn holds_gamedata(path: &Path) -> bool {
 
 /// Every `OnModActivated > UpdateDatabase` file of this staged mod, resolved to real paths,
 /// in the order the modinfo lists them.
+///
+/// An entry naming a file that is not there is skipped with a progress line, not an error:
+/// the game does the same (a database.log line, then on with the next action), and upstream
+/// really ships such entries — `(1) Community Patch (v 151)` references
+/// `CoreGameOptionTextChanges.xml`, renamed to `.sql` with the modinfo action left behind.
+/// Refusing would make every affected Version un-Modpackable for everyone.
 fn collect_database_updates(
     staged_mod: &Path,
     updates: &mut Vec<PathBuf>,
+    progress: &ProgressReporter,
 ) -> Result<(), InstallError> {
     let Some(modinfo) = modinfo::find(staged_mod)? else {
         return Ok(());
     };
     let text = read_file(&modinfo)?;
+    let mod_name = staged_mod
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
     for relative in modinfo::update_database_entries(&text) {
         let Some(path) = modinfo::resolve_case_insensitive(staged_mod, &relative) else {
-            return Err(InstallError::UnsupportedConfiguration {
-                message: format!(
-                    "The mod files reference \"{relative}\", which is not among them — this \
-                     Version cannot be built into a Modpack. Your game is unchanged."
+            progress.report(
+                Stage::Build,
+                format!(
+                    "Skipped a database update of {mod_name}: its modinfo references \
+                     \"{relative}\", which is not among its files — the game skips it the \
+                     same way."
                 ),
-                detail: format!(
-                    "modinfo {} lists missing update file {relative}",
-                    modinfo.display()
-                ),
-            });
+            );
+            continue;
         };
         updates.push(path);
     }

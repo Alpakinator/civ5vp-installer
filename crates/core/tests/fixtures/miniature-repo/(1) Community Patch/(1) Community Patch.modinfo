@@ -12,6 +12,9 @@
   <Actions>
     <OnModActivated>
       <UpdateDatabase>Core Files/Core Values/DefinesChanges.sql</UpdateDatabase>
+      <!-- A dangling reference, exactly as upstream ships one: (1) Community Patch (v 151)
+           renamed CoreGameOptionTextChanges.xml to .sql and left the action behind. -->
+      <UpdateDatabase>Core Files\Text\RenamedLongAgo.xml</UpdateDatabase>
     </OnModActivated>
   </Actions>
 </Mod>

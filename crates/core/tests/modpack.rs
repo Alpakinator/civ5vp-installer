@@ -164,6 +164,32 @@ fn a_modpack_deployment_builds_the_pack_and_leaves_mods_alone() {
     );
 }
 
+/// A modinfo action referencing a file that is not there — which upstream really ships —
+/// is skipped out loud, the way the game skips it, and the Modpack still builds.
+#[test]
+fn a_dangling_database_update_is_skipped_the_way_the_game_skips_it() {
+    let game = modpack_game();
+    let core = core_over(&game, FixtureModpackAssembler::ignored());
+
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let plan = core.plan(&vox_populi_modpack(), &game.folders()).unwrap();
+    core.execute(&plan, &ProgressReporter::to_channel(sender))
+        .expect("a dangling upstream reference must not make a Version un-Modpackable");
+
+    assert!(game.game_root().join("DLC/VP_MODPACK").is_dir());
+    let skipped: Vec<String> = receiver
+        .try_iter()
+        .filter(|event| event.message.contains("Skipped a database update"))
+        .map(|event| event.message)
+        .collect();
+    assert!(
+        skipped
+            .iter()
+            .any(|line| line.contains("RenamedLongAgo.xml") && line.contains("(1) Community Patch")),
+        "the skip should name the mod and the dangling file, got: {skipped:?}"
+    );
+}
+
 /// The other direction of the user's rule: a Mods-mode Deployment removes a Modpack,
 /// because a baked-in Modpack loads at every startup and corrupts a mod-menu install.
 #[test]
