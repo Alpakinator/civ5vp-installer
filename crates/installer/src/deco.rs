@@ -179,11 +179,15 @@ fn crowned_portal(title_rect: Rect, rule_rect: Rect) -> Shape {
             .sqrt();
         let outer = stem_reach - 10.0 - tier as f32 * 18.0;
         let stroke = if tier % 2 == 0 { bright } else { dim };
+        // The outer end drops all the way to the tier below — and the bottom tier all the
+        // way to the lintel — so the wing reads as one connected stepped setback, not four
+        // floating dashes.
+        let step_down = if tier == 0 { height } else { 4.0 };
         for side in [-1.0_f32, 1.0] {
             let from = pos2(centre_x + side * inner, y);
             let to = pos2(centre_x + side * outer, y);
             lines.push(Shape::line_segment([from, to], stroke));
-            lines.push(Shape::line_segment([to, pos2(to.x, y + 3.0)], stroke));
+            lines.push(Shape::line_segment([to, pos2(to.x, y + step_down)], stroke));
         }
     }
 
