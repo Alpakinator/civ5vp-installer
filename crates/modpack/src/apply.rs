@@ -81,8 +81,6 @@ pub(crate) fn apply_update(
     }
 }
 
-/// Rule 10's two halves for a failed update: the message names the file, the detail carries
-/// the SQL or XML error.
 fn file_error(file_name: &str, detail: String) -> BoundaryError {
     BoundaryError::new(
         format!(

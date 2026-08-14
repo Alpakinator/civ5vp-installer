@@ -5,10 +5,10 @@
 //! * behaviour — the AccessKit tree is queried by label and clicked, exactly as a screen
 //!   reader would, and the install that follows is asserted on disk;
 //! * looks — every screen is rendered to a committed PNG baseline, so a later change to the
-//!   theme shows up as a visual diff rather than as nothing at all (rule 15).
+//!   theme shows up as a visual diff rather than as nothing at all.
 //!
 //! Everything is read back out of the accessibility tree. The shell exposes no accessor for
-//! its own state (rule 12), so what these tests assert on is what a user can actually see.
+//! its own state, so what these tests assert on is what a user can actually see.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -20,9 +20,7 @@ use civ5vp_installer::{InstallerApp, Screen, placeholder};
 use egui_kittest::kittest::Queryable as _;
 use egui_kittest::{Harness, SnapshotResults};
 
-/// The size the baselines are rendered at — the window's design minimum. It grew from 640
-/// when ticket 10 added the Version picker and the storage panel, and again when
-/// ticket 11 added the install-mode choice.
+/// The size the baselines are rendered at — the window's design minimum.
 const WINDOW: [f32; 2] = [900.0, 990.0];
 
 /// The same miniature Community-Patch-DLL layout the Core-seam tests use. Shared rather
@@ -163,7 +161,7 @@ fn wait_for_the_install_to_finish(harness: &mut Harness<'_, InstallerApp>) {
 }
 
 /// What a text field currently holds, read out of the accessibility tree the way a screen
-/// reader would — the shell exposes no accessor of its own (rule 12).
+/// reader would — the shell exposes no accessor of its own.
 #[track_caller]
 fn field_value(harness: &mut Harness<'_, InstallerApp>, label: &str) -> String {
     harness.get_by_label(label).value().unwrap_or_default()
@@ -194,7 +192,7 @@ fn set_text(harness: &mut Harness<'_, InstallerApp>, label: &str, value: &str) {
     harness.step();
 }
 
-/// User story 11: the folders are found, and the player never has to know where they are.
+/// The folders are found, and the player never has to know where they are.
 #[test]
 fn a_launch_pre_fills_the_folders_it_detects() {
     let game = TempGame::new();
@@ -323,7 +321,7 @@ fn picking_vox_populi_with_eui_installs_the_whole_thing() {
     );
 }
 
-/// Ticket 11: the Modpack mode radio drives a Modpack Deployment — the pack lands in the
+/// The Modpack mode radio drives a Modpack Deployment — the pack lands in the
 /// game's DLC, MODS is left alone, and the choice survives a relaunch.
 #[test]
 fn picking_the_modpack_mode_builds_a_modpack_and_is_remembered() {
@@ -355,7 +353,7 @@ fn picking_the_modpack_mode_builds_a_modpack_and_is_remembered() {
         "left alone",
     )
     .unwrap();
-    // The player's own mod, offered as an extra pick (ticket 12).
+    // The player's own mod, offered as an extra pick.
     fs::create_dir_all(game.mods_folder().join("My Modmod")).unwrap();
     fs::write(
         game.mods_folder().join("My Modmod/My Modmod.modinfo"),
@@ -409,8 +407,8 @@ fn picking_the_modpack_mode_builds_a_modpack_and_is_remembered() {
     );
     assert!(game.mods_folder().join("My Modmod/tweak.lua").is_file());
 
-    // The mode and the pick are remembered like every other part of the configuration
-    // (user story 26) — but the pick needs the mod to still be there, so this relaunch
+    // The mode and the pick are remembered like every other part of the configuration —
+    // but the pick needs the mod to still be there, so this relaunch
     // detects the same folders.
     let mut next = harness_over(game.launch(&game.locations()));
     next.step();
@@ -460,7 +458,7 @@ fn switching_the_flavor_down_removes_what_no_longer_belongs() {
     );
 }
 
-/// User story 26: what the last run used pre-fills the next one, with nothing to detect.
+/// What the last run used pre-fills the next one, with nothing to detect.
 #[test]
 fn what_one_launch_settles_the_next_launch_starts_from() {
     let game = TempGame::new();
@@ -518,7 +516,7 @@ fn a_flavor_chosen_before_anything_else_is_remembered() {
     );
 }
 
-/// User story 14: the native Aspyr port is refused, in words, and nothing can be installed
+/// The native Aspyr port is refused, in words, and nothing can be installed
 /// into it.
 #[test]
 fn the_native_linux_port_is_refused_with_an_explanation() {
@@ -548,7 +546,7 @@ fn the_native_linux_port_is_refused_with_an_explanation() {
     );
 }
 
-/// User story 12: a wrong folder is caught before anything is written, and the player is told
+/// A wrong folder is caught before anything is written, and the player is told
 /// which marker was missing.
 #[test]
 fn a_wrong_folder_is_rejected_naming_the_marker_that_is_missing() {
@@ -585,7 +583,7 @@ fn a_wrong_folder_is_rejected_naming_the_marker_that_is_missing() {
     );
 }
 
-/// Rule 6, from the outside: a folder that is not a real absolute location is refused, so Sync
+/// A folder that is not a real absolute location is refused, so Sync
 /// never aims its deletes at whatever the working directory happens to be.
 #[test]
 fn a_relative_folder_is_refused_before_anything_is_written() {
@@ -632,7 +630,7 @@ fn a_bad_source_folder_is_explained_and_nothing_is_installed() {
     );
 }
 
-/// Ticket 08: the Debug choice belongs to Dev mode. Naming a Local Repo is what makes the
+/// The Debug choice belongs to Dev mode. Naming a Local Repo is what makes the
 /// checkbox exist; without one it is not drawn at all.
 #[test]
 fn the_debug_choice_appears_only_in_dev_mode() {
@@ -660,7 +658,7 @@ fn the_debug_choice_appears_only_in_dev_mode() {
     );
 }
 
-/// Ticket 10: a new player lands on the GitHub path with the newest Release pre-picked, and
+/// A new player lands on the GitHub path with the newest Release pre-picked, and
 /// the Version they choose instead survives a relaunch.
 #[test]
 fn the_version_picker_defaults_to_the_newest_release_and_the_pick_is_remembered() {
@@ -690,7 +688,7 @@ fn the_version_picker_defaults_to_the_newest_release_and_the_pick_is_remembered(
     wait_for_combo_value(&mut next, "Release-5.1");
 }
 
-/// Ticket 13: the picker offers official Releases only, until the unofficial toggle brings
+/// The picker offers official Releases only, until the unofficial toggle brings
 /// in the changes since the newest one — truncated to fit, newest first — and a picked
 /// build is remembered like any other Version.
 #[test]
@@ -782,7 +780,7 @@ fn wait_for_combo_value(harness: &mut Harness<'_, InstallerApp>, text: &str) {
     panic!("the Version combo never read {text:?}");
 }
 
-/// Ticket 10 / user story 25: the storage panel's clear button empties the App Data Store —
+/// The storage panel's clear button empties the App Data Store —
 /// and only the store; the game folders are not part of it.
 #[test]
 fn clear_stored_data_empties_the_app_data_store() {
@@ -818,7 +816,7 @@ fn clear_stored_data_empties_the_app_data_store() {
     );
 }
 
-/// User story 24: the Uninstall button returns an unmodded game — Claimed Folders gone,
+/// The Uninstall button returns an unmodded game — Claimed Folders gone,
 /// everything else (the game itself, ModUserData) untouched.
 #[test]
 fn clicking_uninstall_restores_an_unmodded_game() {
@@ -848,7 +846,7 @@ fn clicking_uninstall_restores_an_unmodded_game() {
 }
 
 /// Every screen has a baseline. Reviewed before committing — an updated baseline nobody
-/// looked at proves nothing (rule 15).
+/// looked at proves nothing.
 #[test]
 fn every_screen_matches_its_baseline() {
     let mut results = SnapshotResults::new();
@@ -888,7 +886,7 @@ fn the_dev_checkout_survives_a_switch_back_to_github_and_a_relaunch() {
     );
 }
 
-/// User story 15, before the click: the first-run cost is on screen while the toolchain
+/// The first-run cost is on screen before the click, while the toolchain
 /// would still have to be downloaded, and the sentence disappears the moment an install
 /// has made it untrue.
 #[test]

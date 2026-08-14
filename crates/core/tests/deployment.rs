@@ -117,7 +117,7 @@ fn a_second_run_converges_on_the_same_tree() {
     assert_eq!(game.files(), after_first);
 }
 
-/// Rule 6: only the Claimed Folders are ever touched.
+/// Only the Claimed Folders are ever touched.
 #[test]
 fn content_outside_the_claimed_folders_survives() {
     let game = GameFixture::new();
@@ -138,7 +138,7 @@ fn content_outside_the_claimed_folders_survives() {
     );
 }
 
-/// User story 23: the stale-cache corruption the community fixes by hand. The game's `cache`
+/// The stale-cache corruption the community fixes by hand. The game's `cache`
 /// folder is emptied after Deployment, and `ModUserData` — its sibling — is left alone.
 #[test]
 fn the_game_cache_is_cleared_and_mod_user_data_is_preserved() {
@@ -179,7 +179,7 @@ fn the_game_cache_is_cleared_and_mod_user_data_is_preserved() {
     );
 }
 
-/// User story 24: Uninstall returns an unmodded game.
+/// Uninstall returns an unmodded game.
 #[test]
 fn uninstall_removes_every_claimed_folder_and_leaves_everything_else() {
     let game = GameFixture::new();
@@ -232,7 +232,7 @@ fn uninstall_is_idempotent() {
 }
 
 /// Uninstall deletes things, so it runs the same folder checks a Deployment does — otherwise
-/// a relative MODS folder would aim `remove_dir_all` at the working directory (rule 6).
+/// a relative MODS folder would aim `remove_dir_all` at the working directory.
 #[test]
 fn uninstall_refuses_game_folders_it_cannot_trust() {
     let game = GameFixture::new();
@@ -281,7 +281,7 @@ fn game_folders_that_disagree_about_where_the_game_is_are_refused() {
     );
 }
 
-/// Rule 7: a failed fetch aborts before the game is touched.
+/// A failed fetch aborts before the game is touched.
 #[test]
 fn a_failed_fetch_leaves_the_game_untouched() {
     let game = GameFixture::new();
@@ -310,7 +310,7 @@ fn a_failed_fetch_leaves_the_game_untouched() {
     );
 }
 
-/// Rule 7 again, one stage later: a failed build must not touch the game either.
+/// One stage later: a failed build must not touch the game either.
 #[test]
 fn a_failed_build_leaves_the_game_untouched() {
     let game = GameFixture::new();
@@ -332,7 +332,7 @@ fn a_failed_build_leaves_the_game_untouched() {
         .expect_err("the build should fail");
 
     assert_eq!(game.files(), before);
-    // Rule 10: a build failure suggests picking a Release.
+    // A build failure suggests picking a Release.
     assert!(
         error.user_message().contains("Release"),
         "expected the Release suggestion, got: {}",
@@ -340,7 +340,7 @@ fn a_failed_build_leaves_the_game_untouched() {
     );
 }
 
-/// Rule 6: Sync derives every path it writes from a game folder root, so a root that is not
+/// Sync derives every path it writes from a game folder root, so a root that is not
 /// a real absolute location would send its deletes at the working directory. Each such folder
 /// is refused at plan time, before any fetching, building, or writing.
 #[test]

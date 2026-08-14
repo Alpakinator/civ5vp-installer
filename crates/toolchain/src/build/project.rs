@@ -1,10 +1,9 @@
-//! The source list, read from the project file at the selected Version — never hardcoded.
+//! The source list, read from the project file at the selected Version — never hardcoded,
+//! so builds don't break when upstream adds a source file.
 //!
-//! User story 33: "I want the source file list read from the project file at the selected
-//! Version, so that builds don't break when upstream adds a source file." The reference
-//! script carries a frozen copy of this list and is already stale — `stackwalker/
-//! StackWalker.cpp` exists in today's project file but not in the script — which is exactly
-//! the failure mode this module exists to close.
+//! The reference script carries a frozen copy of this list and is already stale —
+//! `stackwalker/StackWalker.cpp` exists in today's project file but not in the script —
+//! which is exactly the failure mode this module exists to close.
 //!
 //! The file parsed is `CvGameCoreDLL_Expansion2/VoxPopuli.vcxproj`, the MSBuild project the
 //! VS2013 solution and both proven clang builds compile (the spec's shorthand for it is "the
@@ -20,7 +19,7 @@
 //!
 //! This is deliberately not an XML parser. The attribute grammar actually used by `.vcxproj`
 //! item elements is fixed enough that scanning for `<ClCompile … Include="…"` is exact on
-//! every Version, and a dependency for it would buy nothing (rule 17).
+//! every Version, and a dependency for it would buy nothing.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -283,8 +282,7 @@ mod tests {
         assert_eq!(project.sources, vec!["CvCity.cpp", "Lua/CvLuaArea.cpp"]);
     }
 
-    /// The acceptance criterion: a file added at a newer Version appears without any change
-    /// to the installer.
+    /// A file added at a newer Version appears without any change to the installer.
     #[test]
     fn a_source_added_to_the_project_file_is_picked_up() {
         let dir = tempfile::tempdir().unwrap();

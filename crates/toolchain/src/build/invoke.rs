@@ -1,10 +1,11 @@
 //! Running the bootstrapped tools — the one place the build touches `std::process`.
 //!
-//! Rule 5 forbids external processes, with exactly one permitted exception: the clang/lld the
-//! installer bootstrapped itself, driven through the toolchain-runner boundary. This module
-//! is that exception's narrow waist. It is a seam rather than a bare `Command::new` so the
-//! fast suite can drive the whole orchestration — staleness, parallelism, logging, failure
-//! surfacing — against a fake that never starts a process (rule 13).
+//! External processes are forbidden throughout the installer, with exactly one permitted
+//! exception: the clang/lld the installer bootstrapped itself, driven through the
+//! toolchain-runner boundary. This module is that exception's narrow waist. It is a seam
+//! rather than a bare `Command::new` so the fast suite can drive the whole orchestration —
+//! staleness, parallelism, logging, failure surfacing — against a fake that never starts a
+//! process.
 
 use std::path::PathBuf;
 use std::process::Command;

@@ -1,4 +1,4 @@
-//! The real [`SourceProvider`] — boundary one of the Core's two (rule 2).
+//! The real [`SourceProvider`].
 
 use civ5vp_core::{
     BoundaryError, InstallationSource, MaterializedSource, ProgressReporter, SourceProvider,

@@ -242,7 +242,7 @@ fn target_half(value: &str) -> &str {
     }
 }
 
-/// `msi::Row` only offers a panicking `Index`, and rule 9 rules that out on a path a
+/// `msi::Row` only offers a panicking `Index`, which is unacceptable on a path a
 /// downloaded file can reach. These three read cells by *name*, bounds-checked — which also
 /// means a package whose columns are ordered unusually still reads correctly.
 fn value(row: &msi::Row, column: &str) -> Option<msi::Value> {

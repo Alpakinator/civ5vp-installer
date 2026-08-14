@@ -1,6 +1,6 @@
 //! Reading a mod's `.modinfo` — the manifest the game itself goes by.
 //!
-//! Shared by the Modpack assembly (ticket 11), which needs the database updates and UI
+//! Shared by the Modpack assembly, which needs the database updates and UI
 //! entry points, and by the Dev-mode manifest validation, which compares a Local Repo's
 //! folders against the file list. A scanning parser, like the toolchain's vcxproj reader:
 //! modinfos are machine-written XML, and these few shapes are all that is needed.
@@ -151,7 +151,7 @@ pub(crate) fn unescape_xml(text: &str) -> String {
 ///
 /// Two mismatches, treated differently because they hurt differently:
 /// - a **listed file that is gone** breaks the mod in the game, so it fails the Deployment
-///   before anything is touched (rule 7);
+///   before anything is touched;
 /// - an **unlisted extra file** is deployed but silently ignored by the game — the classic
 ///   "why does my change do nothing" of mod development — so it is said out loud in the
 ///   activity log and the Deployment continues.

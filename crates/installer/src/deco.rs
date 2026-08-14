@@ -5,7 +5,7 @@
 //! weights, and the chamfered corners. All of it is original artwork painted in code; no
 //! game asset is embedded or traced (ADR-0003).
 //!
-//! Presentation only (rule 3): these functions lay out and paint, and decide nothing.
+//! Presentation only: these functions lay out and paint, and decide nothing.
 
 use egui::{Color32, Pos2, Rect, Shape, Stroke, pos2, vec2};
 
@@ -110,7 +110,6 @@ fn framed<R>(
 /// below. Rendered once per window.
 pub fn header(ui: &mut egui::Ui, title: &str) {
     let crest = ui.painter().add(Shape::Noop);
-    // Room the crest paints into, above the title.
     ui.add_space(CREST_HEIGHT);
     let title_rect = ui
         .vertical_centered(|ui| {

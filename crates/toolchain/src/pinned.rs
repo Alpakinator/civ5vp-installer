@@ -86,18 +86,17 @@ pub struct PinnedLibrary {
     pub link_as: &'static str,
 }
 
-/// The library the pinned compiler needs in order to start, if this host needs one.
-///
-/// `None` on Windows: the Windows LLVM build has no such dependency, so nothing is fetched.
 /// Everything a first Toolchain Bootstrap downloads, in bytes — what the up-front
-/// expectation sentences are computed from, so the figure can never go stale (user
-/// story 15).
+/// expectation sentences are computed from, so the figure can never go stale.
 pub fn approximate_download_total() -> u64 {
     SDK_ISO.approximate_bytes
         + llvm_for_host().map_or(0, |llvm| llvm.download.approximate_bytes)
         + libtinfo_for_host().map_or(0, |library| library.download.approximate_bytes)
 }
 
+/// The library the pinned compiler needs in order to start, if this host needs one.
+///
+/// `None` on Windows: the Windows LLVM build has no such dependency, so nothing is fetched.
 pub const fn libtinfo_for_host() -> Option<PinnedLibrary> {
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
@@ -124,7 +123,7 @@ pub const fn libtinfo_for_host() -> Option<PinnedLibrary> {
 ///
 /// Deliberately a lookup rather than a `cfg` chain in the middle of the bootstrap: a missing
 /// platform is a plain `None` the caller can turn into a sentence, not a compile error in a
-/// file that has nothing to do with platforms (rule 4).
+/// file that has nothing to do with platforms.
 pub const fn llvm_for_host() -> Option<PinnedLlvm> {
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
@@ -216,11 +215,8 @@ pub const VERIFICATION_NAMES: &[&str] = &[
     "msvcrt.lib",
 ];
 
-// `DriverSpecs.h` used to be the sixth name here. It was removed because it could not fail:
-// fix-up 6 wrote a stub by that name into every include root immediately before this check
-// looked for it, so the check reported success against the very file that was making
-// `windows.h` unusable. A verification that passes *because* of a bug is worse than no
-// verification. `docs/pinned-artifacts.md` §4 records the same.
+// `DriverSpecs.h` used to be the sixth name here; it was removed because fix-up 6's own stub
+// made it impossible to fail — see `verify`'s module docs and `docs/pinned-artifacts.md` §4.
 
 /// The WDK-only headers fix-up 6 stubs out. Empty files satisfy the `#include` chain for the
 /// user-mode code the DLL is made of.

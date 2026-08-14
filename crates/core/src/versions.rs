@@ -8,7 +8,6 @@
 
 use crate::configuration::Version;
 
-/// The prefix that makes a tag a Release.
 const RELEASE_PREFIX: &str = "Release-";
 
 /// The branch the Latest Development Version tracks.
@@ -87,8 +86,7 @@ fn release_order(tag: &str) -> (Vec<u64>, String) {
     (numbers, tag.to_owned())
 }
 
-/// One commit after the newest Release, as the unofficial-versions list offers it
-/// (ticket 13).
+/// One commit after the newest Release, as the unofficial-versions list offers it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnofficialVersion {
     /// `5.4.3.07` — the newest Release's numbers plus this commit's position after it.

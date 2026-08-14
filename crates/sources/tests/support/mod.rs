@@ -1,15 +1,15 @@
 //! Fixture repositories for the fast suite.
 //!
-//! Rule 13 keeps the per-commit suite off the network, but the interesting behaviour here —
-//! which refs a Version resolves to, what a fetch brings back, what a checkout leaves on disk
-//! — only exists if there is a real repository at the other end. So these tests build one:
+//! The per-commit suite stays off the network, but the interesting behaviour here — which
+//! refs a Version resolves to, what a fetch brings back, what a checkout leaves on disk —
+//! only exists if there is a real repository at the other end. So these tests build one:
 //! real commits, real annotated and lightweight tags, real branches, written with the same
 //! `gix` the installer uses, and fetched over a `file://` URL.
 //!
 //! One caveat worth stating plainly: `gix`'s `file://` transport spawns `git-upload-pack`, so
 //! **these tests need git on the machine running them**. The installer never uses `file://` —
 //! it only ever talks `https` to GitHub, which `gix` speaks in-process — so this is a
-//! property of the fixtures, not of the shipped code (rule 5 is about the user's machine).
+//! property of the fixtures, not of the shipped code.
 
 #![allow(dead_code)]
 
@@ -26,7 +26,6 @@ pub struct UpstreamFixture {
     second_release_commit: gix::ObjectId,
 }
 
-/// A file the fixture commits, as `path` and `contents`.
 type File<'a> = (&'a str, &'a str);
 
 impl UpstreamFixture {
@@ -37,8 +36,7 @@ impl UpstreamFixture {
         fs::create_dir_all(&path).unwrap();
         gix::init(&path).unwrap();
         // Every ref the fixture writes gets a reflog entry, and a reflog entry needs an
-        // identity. Giving the repository one is less intrusive than setting it in the
-        // environment of the whole test process.
+        // identity.
         fs::write(
             path.join(".git/config"),
             "[user]\n\tname = Fixture\n\temail = fixture@example.invalid\n",

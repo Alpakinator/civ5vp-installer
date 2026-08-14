@@ -1,6 +1,6 @@
 //! The real DLL build, against a real Community-Patch-DLL checkout and the real Toolchain.
 //!
-//! `#[ignore]`d, never deleted (rule 14): the fast suite proves the orchestration against a
+//! `#[ignore]`d, never deleted: the fast suite proves the orchestration against a
 //! fake compiler, and only this proves that the extracted SDK, the pinned clang, the
 //! transcribed flags and the project-file parsing together produce `CvGameCore_Expansion2.dll`.
 //!
@@ -16,7 +16,7 @@
 //!
 //! The result is compared against the DLL checked into the same checkout at
 //! `(1) Community Patch/CvGameCore_Expansion2.dll` — the maintainer-built binary players get
-//! from the official installer. Functional equivalence is judged the way ticket 06 asks:
+//! from the official installer. Functional equivalence means:
 //! same PE machine and DLL bit, identical export list, imported DLLs no wider than the
 //! reference's, and a size in the same ballpark. Byte identity is not expected: the
 //! reference was built by a different compiler binary at a different optimisation vintage.
@@ -225,7 +225,7 @@ fn the_43_civs_variant_builds() {
     );
 }
 
-/// The Debug configuration (tickets 07/08): the other proven flag set really compiles and
+/// The Debug configuration: the other proven flag set really compiles and
 /// links, into its own object directory — a debuggable DLL, visibly larger than Release
 /// because nothing was optimised out.
 #[test]
@@ -250,7 +250,7 @@ fn the_debug_configuration_builds() {
     println!("debug DLL: {} bytes", built.len());
 }
 
-/// Ticket 06's incremental criterion, against the real compiler: touch one source, and the
+/// The incremental criterion, against the real compiler: touch one source, and the
 /// rebuild recompiles exactly one object and relinks.
 ///
 /// Run after (or without) the test above — the first build populates the object cache either
@@ -262,12 +262,10 @@ fn touching_one_source_rebuilds_incrementally() {
     let first = build_into(&output_dir);
     let first_mtime = fs::metadata(&first).unwrap().modified().unwrap();
 
-    // Snapshot every object's mtime.
     let objects_dir = output_dir.join("objects/release");
     let before = object_mtimes(&objects_dir);
     assert!(!before.is_empty(), "the first build must leave objects");
 
-    // Touch one source.
     let touched = source_root().join("CvGameCoreDLL_Expansion2/CvBarbarians.cpp");
     let contents = fs::read(&touched).unwrap();
     std::thread::sleep(std::time::Duration::from_millis(50));

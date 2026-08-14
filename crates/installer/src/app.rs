@@ -1,6 +1,6 @@
 //! The egui shell.
 //!
-//! Rule 3: nothing here decides anything. It collects paths, hands them to the Core, and
+//! Nothing here decides anything. It collects paths, hands them to the Core, and
 //! renders what comes back. Which folders are Claimed, whether a Flavor is legal, what order
 //! things happen in, whether a folder really is the game, where the MODS Folder lives inside
 //! it, what to tell a player whose game cannot be used — all of that lives behind [`Core`] and
@@ -20,8 +20,7 @@ use civ5vp_core::{
 
 use crate::{deco, placeholder, theme};
 
-/// What the shell is currently showing. Presentation state, not domain state, and
-/// deliberately not public: nothing outside this crate should be reading the shell's mind.
+/// Presentation state, not domain state — deliberately not public.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Status {
     Ready,
@@ -30,7 +29,7 @@ enum Status {
     Failed { message: String },
 }
 
-/// The screens `--screenshot` renders and ticket 09 will style.
+/// The screens `--screenshot` renders.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
     FoldersNeeded,
@@ -96,10 +95,10 @@ enum PickedVersion {
     /// The default: whatever the newest Release turns out to be.
     NewestRelease,
     Release(String),
-    /// No longer offered by the picker (ticket 13) — kept so a configuration remembered
+    /// No longer offered by the picker — kept so a configuration remembered
     /// before that still restores and installs.
     Development,
-    /// One commit after the newest Release, from the unofficial list (ticket 13).
+    /// One commit after the newest Release, from the unofficial list.
     Unofficial {
         label: String,
         commit: String,
@@ -108,7 +107,7 @@ enum PickedVersion {
     Custom,
 }
 
-/// The unofficial-versions lookup (ticket 13) — same life cycle as [`VersionsState`], but
+/// The unofficial-versions lookup — same life cycle as [`VersionsState`], but
 /// started only when the toggle is on and the catalog has named the newest Release.
 enum UnofficialState {
     NotAsked,
@@ -131,7 +130,7 @@ pub struct InstallerApp {
     source_choice: SourceChoice,
     versions: VersionsState,
     picked_version: PickedVersion,
-    /// Ticket 13: whether the picker also lists every change since the newest Release.
+    /// Whether the picker also lists every change since the newest Release.
     /// Off by default — official Releases are the offer; this is the opt-in.
     show_unofficial: bool,
     unofficial: UnofficialState,
@@ -140,7 +139,7 @@ pub struct InstallerApp {
     forty_three_civs: FortyThreeCivs,
     build_configuration: BuildConfiguration,
     install_mode: InstallMode,
-    /// The player's own MODS-folder mods a Modpack could bake in (ticket 12): what the
+    /// The player's own MODS-folder mods a Modpack could bake in: what the
     /// Core found, and which of those are ticked. Recomputed when the folders resolve —
     /// listing means reading every modinfo, not a per-frame job.
     extra_mods_available: Vec<String>,
@@ -158,14 +157,14 @@ pub struct InstallerApp {
     /// still bootstrap the toolchain. Refreshed when a Deployment finishes — that is the
     /// moment it can stop being true.
     first_run_note: Option<String>,
-    /// The launch-time update ping's channel and answer (user story 27). Wired only by the
+    /// The launch-time update ping's channel and answer. Wired only by the
     /// real binary — the shell tests and previews never open a socket.
     update_check: Option<Receiver<String>>,
     newer_installer: Option<String>,
 }
 
 /// The first `max` characters of a commit summary, with an ellipsis when it was cut —
-/// dropdown rows are narrow and commit messages are not (ticket 13).
+/// dropdown rows are narrow and commit messages are not.
 fn truncated(summary: &str, max: usize) -> String {
     let mut taken: String = summary.chars().take(max).collect();
     if summary.chars().count() > max {
@@ -178,7 +177,7 @@ fn truncated(summary: &str, max: usize) -> String {
 ///
 /// There are three, not two-plus-a-checkbox, and that is the point: EUI is legal only with Vox
 /// Populi, and listing the legal combinations means the shell cannot offer the illegal one
-/// without a rule of its own to enforce (rule 3). [`Flavor`] makes the same guarantee at the
+/// without a rule of its own to enforce. [`Flavor`] makes the same guarantee at the
 /// type level; this is that guarantee drawn.
 fn flavor_choices() -> [(Flavor, &'static str); 3] {
     [
@@ -240,7 +239,6 @@ impl InstallerApp {
             },
             _ => {}
         }
-        // The remembered Flavor and toggles, or what the Core suggests to a new player.
         let (flavor, forty_three_civs, build_configuration, install_mode, extra_mods_picked) =
             match &startup.configuration {
                 Some(configuration) => (
@@ -303,7 +301,7 @@ impl InstallerApp {
             newer_installer: None,
         };
         // Detected folders are worth remembering too: the next launch then starts from them
-        // without searching (user story 26).
+        // without searching.
         if app.resolved.is_ok() {
             app.remember();
         }
@@ -357,7 +355,7 @@ impl InstallerApp {
         match screen {
             Screen::Ready => {}
             // The native Aspyr port: the refusal a player is most likely to meet and least
-            // likely to work out unaided (user story 14). The wording is the Core's, quoted.
+            // likely to work out unaided. The wording is the Core's, quoted.
             Screen::FoldersNeeded => {
                 app.documents_folder = String::new();
                 app.resolved = Err(format!(
@@ -378,9 +376,7 @@ impl InstallerApp {
                 ];
             }
             Screen::Installed => {
-                // The Flavor above is Vox Populi with EUI, so this says what that installs —
-                // a preview whose result contradicts its own selection is a confusing picture
-                // to review a baseline against.
+                // The Flavor above is Vox Populi with EUI, so this says what that installs.
                 let summary = "Installed (1) Community Patch, (2) Vox Populi, \
                                (3a) VP - EUI Compatibility Files, (4a) Squads for VP, VPUI, \
                                UI_bc1.";
@@ -418,7 +414,7 @@ impl InstallerApp {
 
     /// Draw the whole UI. Shared by the real binary, `--screenshot`, and the kittest harness,
     /// so all three show the same pixels — which is what makes a snapshot baseline mean
-    /// anything about the shipped window (rule 15).
+    /// anything about the shipped window.
     pub fn show(&mut self, ui: &mut egui::Ui) {
         if !self.skinned {
             // Takes effect from the next frame, which every caller — the window, the
@@ -431,7 +427,7 @@ impl InstallerApp {
             // Fill the window rather than shrink-wrapping the widgets, so the page
             // background covers the whole surface.
             ui.set_min_size(ui.available_size());
-            // The whole page scrolls: the extra-mod list (ticket 12) and a long activity
+            // The whole page scrolls: the extra-mod list and a long activity
             // log can outgrow any window, and on small screens even the base layout does.
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
@@ -452,7 +448,7 @@ impl InstallerApp {
             .color(theme::PARCHMENT_DIM),
         );
         if let Some(tag) = &self.newer_installer {
-            // User story 27: one sentence and a link, no auto-update machinery.
+            // One sentence and a link, no auto-update machinery.
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new(format!("A newer installer ({tag}) is available:"))
@@ -536,7 +532,7 @@ impl InstallerApp {
                 chosen = true;
             }
             ui.add_space(4.0);
-            // How the selection reaches the game (ticket 11). Two radios, not a checkbox:
+            // How the selection reaches the game. Two radios, not a checkbox:
             // "as mods" and "as a modpack" are both real things a player asks for by name.
             chosen |= ui
                 .radio_value(
@@ -580,7 +576,7 @@ impl InstallerApp {
             }
             ui.add_space(4.0);
             // Dev mode: pointing the installer at your own checkout is what makes you a mod
-            // developer, and the Debug choice appears only then (user story 31). The Core is
+            // developer, and the Debug choice appears only then. The Core is
             // the one that *refuses* Debug anywhere else — this is just not drawing a
             // checkbox that could only be refused.
             if self.dev_mode() {
@@ -599,13 +595,12 @@ impl InstallerApp {
             }
         });
         if chosen && self.resolved.is_ok() {
-            // Remembered like the folders are, so the next launch starts from the same choice
-            // (user story 26).
+            // Remembered like the folders are, so the next launch starts from the same choice.
             self.remember();
         }
 
         ui.add_space(8.0);
-        // The Core's up-front cost warning (user story 15): the 2.4 GB first-run bootstrap
+        // The Core's up-front cost warning: the 2.4 GB first-run bootstrap
         // must be known before the click, and the sentence disappears the moment the
         // Toolchain Cache makes it untrue.
         if let Some(note) = &self.first_run_note {
@@ -642,9 +637,7 @@ impl InstallerApp {
         }
 
         ui.add_space(6.0);
-        // The status, coloured by outcome — parchment at rest, gold while working, laurel on
-        // success, ember on failure — with the deco progress bar while there is anything to
-        // wait for. What the states mean is the Core's business; this is only their colour.
+        // What the states mean is the Core's business; this is only their colour.
         let line = self.status_line();
         match &self.status {
             Status::Ready => {
@@ -663,8 +656,8 @@ impl InstallerApp {
             Status::Failed { .. } => {
                 deco::notice(ui, theme::EMBER, |ui| {
                     ui.label(line.clone());
-                    // User story 20: the full detail is in the log file; these put it in
-                    // reach without raw compiler output ever entering the panel (rule 10).
+                    // The full detail is in the log file; these put it in
+                    // reach without raw compiler output ever entering the panel.
                     self.support_buttons(ui, &line);
                 });
             }
@@ -708,7 +701,6 @@ impl InstallerApp {
         }
     }
 
-    /// Ask the Core what the two folders mean, now that one of them has been edited.
     fn folders_changed(&mut self) {
         self.resolved =
             resolve(&self.game_folder, &self.documents_folder).map_err(|r| r.user_message());
@@ -728,7 +720,6 @@ impl InstallerApp {
             .retain(|name| self.extra_mods_available.contains(name));
     }
 
-    /// Hand the current state to the App Data Store, so the next launch starts here.
     fn remember(&self) {
         let settings = Settings {
             game_installation: Some(PathBuf::from(self.game_folder.trim())),
@@ -744,7 +735,7 @@ impl InstallerApp {
         };
         if let Err(problem) = self.store.save(&settings) {
             // Not being able to remember is not worth interrupting anything over: it goes in
-            // the log, and the player finds out next launch (rule 11).
+            // the log, and the player finds out next launch.
             crate::log_detail(&problem.log_detail());
         }
     }
@@ -834,7 +825,7 @@ impl InstallerApp {
             }
         }
 
-        // The unofficial lookup (ticket 13): started once the toggle is on and the catalog
+        // The unofficial lookup: started once the toggle is on and the catalog
         // has named the newest Release, polled like the catalog's own lookup.
         if self.show_unofficial
             && matches!(self.unofficial, UnofficialState::NotAsked)
@@ -922,7 +913,7 @@ impl InstallerApp {
                                 )
                                 .changed();
                         }
-                        // Unofficial versions (ticket 13), newest first — the top entry is
+                        // Unofficial versions, newest first — the top entry is
                         // what "latest development version" used to mean. The whole commit
                         // message never fits a dropdown row, so the row truncates and the
                         // full message is the hover text.
@@ -1042,7 +1033,7 @@ impl InstallerApp {
             && !matches!(&self.versions, VersionsState::Ready(_)))
     }
 
-    /// The storage panel (user story 25): where the App Data Store is, how large it is, and
+    /// The storage panel: where the App Data Store is, how large it is, and
     /// the one button that clears it. Everything it shows and does comes from
     /// [`AppDataStore`]; the game is never involved.
     fn storage_section(&mut self, ui: &mut egui::Ui) {
@@ -1105,11 +1096,9 @@ impl InstallerApp {
         }
     }
 
-    /// What "Copy details" puts on the clipboard: the sentence the user can see plus the
-    /// tail of the log file — enough for a useful report, small enough to paste anywhere.
-    /// The copy/open row every failure surface carries (user story 20, ticket 10's "all
-    /// failure surfaces"). `headline` is what the notice says; the clipboard gets it plus
-    /// the log tail.
+    /// The copy/open row every failure surface carries. `headline` is what the notice says;
+    /// "Copy details" puts it on the clipboard plus the tail of the log file — enough for a
+    /// useful report, small enough to paste anywhere.
     fn support_buttons(&self, ui: &mut egui::Ui, headline: &str) {
         ui.add_space(4.0);
         ui.horizontal(|ui| {
@@ -1158,7 +1147,6 @@ impl InstallerApp {
         self.source_choice == SourceChoice::OwnCheckout
     }
 
-    /// What the player has chosen, as the Core wants it.
     fn configuration(&self) -> InstallConfiguration {
         let source = match self.source_choice {
             SourceChoice::OwnCheckout => InstallationSource::LocalRepo {
@@ -1175,15 +1163,15 @@ impl InstallerApp {
             install_mode: self.install_mode,
             extra_mods: self.extra_mods_picked.clone(),
             // Sent as chosen, even when Dev mode is off and the checkbox is not drawn:
-            // which Build Configurations are legal with which sources is the Core's ruling
-            // (rule 3), and it refuses an illegal pair with a sentence.
+            // which Build Configurations are legal with which sources is the Core's ruling,
+            // and it refuses an illegal pair with a sentence.
             build_configuration: self.build_configuration,
         }
     }
 
     fn start_install(&mut self) {
         // The folders are judged before anything is fetched, built, or written, and the
-        // judgement is the Core's (user story 12).
+        // judgement is the Core's.
         let folders = match &self.resolved {
             Ok(folders) => folders.clone(),
             Err(explanation) => {
@@ -1231,7 +1219,7 @@ impl InstallerApp {
         });
     }
 
-    /// User story 24: back to an unmodded game in one click. Same worker shape as an
+    /// Back to an unmodded game in one click. Same worker shape as an
     /// install; what gets removed is the Core's ruling.
     fn start_uninstall(&mut self) {
         let folders = match &self.resolved {
@@ -1360,7 +1348,7 @@ fn folder_field(ui: &mut egui::Ui, caption: &str, value: &mut String) -> bool {
     field.changed()
 }
 
-/// Ask the Core what a pair of typed-in folders means, logging the detail either way (rule 11).
+/// Ask the Core what a pair of typed-in folders means, logging the detail either way.
 ///
 /// The rejection is handed back rather than turned into a sentence here, because the two
 /// callers show different ones: a launch may have something more specific to say about this

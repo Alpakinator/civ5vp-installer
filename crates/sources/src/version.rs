@@ -6,21 +6,16 @@
 
 use civ5vp_core::Version;
 
-/// The prefix that makes a tag a Release.
 const RELEASE_PREFIX: &str = "Release-";
 
 /// The branch the Latest Development Version tracks.
 const DEVELOPMENT_BRANCH: &str = "master";
 
-// What the picker lists moved to the Core as `civ5vp_core::VersionCatalog` when listing
-// joined the source-provider boundary (ticket 10) — the fast suite fakes it there.
-
 /// Where a Version lives on the remote, and where the Upstream Cache keeps it locally.
 ///
-/// Every materialized Version keeps its own local ref. That is not bookkeeping for its own
-/// sake: the local refs are what the next fetch offers the server as "already have", and they
-/// are the reason switching Version transfers a fraction of a first fetch instead of a whole
-/// second snapshot.
+/// Every materialized Version keeps its own local ref: the local refs are what the next fetch
+/// offers the server as "already have", and they are the reason switching Version transfers a
+/// fraction of a first fetch instead of a whole second snapshot.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RefTarget {
     /// What to ask the remote for — a full ref name, a short name, or a commit id.
@@ -54,8 +49,8 @@ impl RefTarget {
                 local: format!("refs/civ5vp/arbitrary/{}", sanitize(reference)),
                 label: reference.clone(),
             },
-            // The unofficial-versions list (ticket 13) recorded the commit when it was
-            // fetched, so the label stays honest however far upstream has moved since.
+            // The unofficial-versions list recorded the commit when it was fetched, so the
+            // label stays honest however far upstream has moved since.
             Version::UnofficialBuild { label, commit } => Self {
                 remote: commit.clone(),
                 local: format!("refs/civ5vp/unofficial/{}", sanitize(commit)),

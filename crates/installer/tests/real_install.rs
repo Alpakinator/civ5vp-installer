@@ -1,8 +1,8 @@
 //! A real Deployment end to end: real source provider, real toolchain, real compile, real
 //! Sync — into throwaway game folders, never the developer's game.
 //!
-//! `#[ignore]`d (rule 14). This is the ticket-06 acceptance "a real Version installs end to
-//! end with a genuinely built DLL", exercised through the same `wiring::core_at` composition
+//! `#[ignore]`d. Proves that a real Version installs end to end with a genuinely built
+//! DLL, exercised through the same `wiring::core_at` composition
 //! the shipped binary uses — only the App Data Store root and the game folders are
 //! test-owned.
 //!
@@ -26,13 +26,13 @@ use civ5vp_core::{
 };
 use civ5vp_installer::wiring;
 
-/// Ticket 10's fresh-machine walkthrough: a clean App Data Store, empty game folders, and
+/// The fresh-machine walkthrough: a clean App Data Store, empty game folders, and
 /// the exact path a new player takes — list the versions, pick the newest Release, fetch it
 /// from the real GitHub, build the DLL, Sync into the game.
 ///
 /// The one concession: `CIV5VP_TOOLCHAIN_CACHE`, when set, is symlinked in as the Toolchain
 /// Cache so the run does not re-download 2.4 GB from archive.org every time — that download
-/// path has its own proof (`real_bootstrap.rs`, ticket 05). Everything else starts from
+/// path has its own proof (`real_bootstrap.rs`). Everything else starts from
 /// nothing, including the ~600 MB upstream fetch.
 #[test]
 #[ignore = "fetches ~600 MB from GitHub and compiles the real DLL; slow"]
@@ -203,7 +203,7 @@ fn a_real_version_installs_end_to_end_with_a_genuinely_built_dll() {
     );
     println!("installed {} bytes to {}", bytes.len(), deployed.display());
 
-    // Repeat install (user story 17): same configuration, nothing changed — the Build
+    // Repeat install: same configuration, nothing changed — the Build
     // Fingerprint sidecar and the intact DLL make the second run skip the build entirely.
     let started = std::time::Instant::now();
     let (sender, receiver) = mpsc::channel::<civ5vp_core::ProgressEvent>();
@@ -229,7 +229,7 @@ fn a_real_version_installs_end_to_end_with_a_genuinely_built_dll() {
         started.elapsed()
     );
 
-    // Ticket 08's edit-to-game loop: edit a Lua file in the checkout, redeploy, and the
+    // The edit-to-game loop: edit a Lua file in the checkout, redeploy, and the
     // change is in MODS — without the DLL recompiling. The fixture checkout is shared with
     // other tests, so the file is restored afterwards (a panic in between leaves an edit
     // behind; re-materializing the Version puts it right).

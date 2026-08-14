@@ -1,4 +1,5 @@
-//! One error type for the whole bootstrap, carrying both halves rule 10 asks for.
+//! One error type for the whole bootstrap: a sentence for the user, everything else for the
+//! log.
 
 use std::fmt;
 use std::path::Path;

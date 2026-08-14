@@ -11,7 +11,7 @@
 //!
 //! The one knowing deviation: the reference merges the VC9 CRT headers into a single SDK
 //! `Include` directory at extraction time, so its flag builder takes one include root. Our
-//! extraction honours the MSIs' real layout (ticket 05), which keeps the CRT and the SDK
+//! extraction honours the MSIs' real layout, which keeps the CRT and the SDK
 //! apart, so `-external:I` appears once per directory — same directories, same compiler
 //! search list, just not physically merged.
 

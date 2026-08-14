@@ -40,8 +40,8 @@ const COMMUNITY_PATCH: &[&str] = &[
     "MODS/(1) Community Patch/Core Files/Core Values/DefinesChanges.sql",
     "MODS/(1) Community Patch/Core Files/LUA/CoreHelper.lua",
     "MODS/(1) Community Patch/CvGameCore_Expansion2.dll",
-    // The Build Fingerprint sidecar, recorded beside the deployed DLL (ticket 07) — inside a
-    // Claimed Folder, so rule 6 holds, and part of every configuration's expected tree.
+    // The Build Fingerprint sidecar, recorded beside the deployed DLL — inside a Claimed
+    // Folder, and part of every configuration's expected tree.
     "MODS/(1) Community Patch/CvGameCore_Expansion2.dll.fingerprint",
     "MODS/(1) Community Patch/Kit/ReadMe.txt",
 ];
@@ -281,7 +281,7 @@ fn eui_is_unrepresentable_with_community_patch_only() {
     ));
 }
 
-/// User story 21: switching configurations removes exactly what no longer belongs.
+/// Switching configurations removes exactly what no longer belongs.
 ///
 /// This is the case that corrupts hand-made installs. Going from the largest configuration to
 /// the smallest has to leave the game as if the smallest had been installed on a clean game —
@@ -352,7 +352,7 @@ fn turning_eui_on_removes_the_lua_it_replaces() {
     );
 }
 
-/// Rule 8, across the whole matrix: every configuration is idempotent.
+/// Across the whole matrix: every configuration is idempotent.
 #[test]
 fn every_configuration_is_idempotent() {
     for (name, flavor, civs) in [
@@ -397,7 +397,7 @@ fn every_configuration_is_idempotent() {
     }
 }
 
-/// Rule 6 across the whole matrix: the biggest configuration still touches nothing else.
+/// Across the whole matrix: the biggest configuration still touches nothing else.
 #[test]
 fn the_largest_configuration_leaves_unrelated_content_alone() {
     let game = GameFixture::new();
@@ -489,7 +489,7 @@ fn a_source_missing_a_needed_folder_is_reported_and_nothing_is_installed() {
 }
 
 /// A source folder that is present but holds none of the files a configuration takes from it
-/// is refused before Sync starts, not part-way through it (rule 7).
+/// is refused before Sync starts, not part-way through it.
 ///
 /// This is what upstream renaming `AdvancedSetup.lua` would look like. Deploying the empty
 /// `(3b)` that would otherwise result reads as success and leaves the player with a mod that

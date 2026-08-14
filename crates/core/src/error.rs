@@ -7,11 +7,11 @@ use crate::boundaries::BoundaryError;
 
 /// Why a game folder cannot be used as a Deployment target.
 ///
-/// Rule 6 says every path the installer writes to is derived from a Claimed Folder root. That
-/// only holds if the root itself is a real, absolute location: a relative or empty path would
+/// Every path the installer writes to is derived from a Claimed Folder root, which only
+/// holds if the root itself is a real, absolute location: a relative or empty path would
 /// send Sync's deletes and copies at whatever the working directory happens to be.
 ///
-/// This is the safety floor, not folder detection — ticket 03 adds the marker checks
+/// This is the safety floor, not folder detection — detection does the marker checks
 /// (`CivilizationV.exe`, `Assets/DLC/Expansion2/`, `UserSettings.ini`) that decide whether a
 /// folder really is the game.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,7 +25,7 @@ pub enum GameFolderProblem {
     /// The MODS and Text Folders are not in the same `Sid Meier's Civilization 5` folder.
     ///
     /// In a real install they always are, and the installer relies on it: the game's `cache`
-    /// folder is their sibling, and clearing it is the one write rule 6 allows outside a
+    /// folder is their sibling, and clearing it is the one write allowed outside a
     /// Claimed Folder. Two folders that disagree about where the game is mean the installer
     /// cannot say which `cache` is the right one, so it refuses rather than guessing.
     NotBesideTheOthers,
@@ -34,7 +34,7 @@ pub enum GameFolderProblem {
 /// What the Installation Source was missing.
 ///
 /// The three read very differently to someone who is not a programmer, so they are separated
-/// here rather than papered over with one sentence (rule 10).
+/// here rather than papered over with one sentence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceItem {
     /// A whole folder the configuration deploys.
@@ -47,7 +47,7 @@ pub enum SourceItem {
 
 /// Anything that can stop a Deployment.
 ///
-/// Rule 10: `user_message` is what the UI shows — a sentence a non-programmer can act on.
+/// `user_message` is what the UI shows — a sentence a non-programmer can act on.
 /// `log_detail` is what goes in the log file, and is where raw compiler, git, and IO text
 /// is allowed to appear.
 #[derive(Debug)]
@@ -81,7 +81,7 @@ pub enum InstallError {
     },
     /// A configuration this build of the installer cannot deploy yet.
     UnsupportedConfiguration { message: String, detail: String },
-    /// The Modpack's base databases are not available yet (ticket 11): the game's cache is
+    /// The Modpack's base databases are not available yet: the game's cache is
     /// missing or was written by a modded session, and no snapshot has been taken.
     ModpackBaseUnavailable { detail: String },
     /// A Local Repo mod folder is missing files its own `.modinfo` lists — deploying it
@@ -180,7 +180,7 @@ impl InstallError {
         }
     }
 
-    /// The full detail, for the log file (rule 11).
+    /// The full detail, for the log file.
     pub fn log_detail(&self) -> String {
         match self {
             Self::Fetch(err) => format!("fetch failed: {}", err.detail()),

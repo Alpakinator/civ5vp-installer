@@ -1,12 +1,13 @@
 //! How progress leaves the Core.
 //!
-//! This is a return channel, not a third injected boundary (rule 2): the Core sends events
+//! This is a return channel, not a third injected boundary: the Core sends events
 //! down a plain `mpsc` sender it was handed for the duration of one [`crate::Core::execute`]
 //! call. Nothing is asked of the receiver and no behaviour is injected.
 
 use std::sync::mpsc::Sender;
 
-/// The three stages of a Deployment, in the order rule 7 requires them.
+/// The three stages of a Deployment, in order — Sync comes last so the game stays untouched
+/// until everything that can fail has succeeded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stage {
     Fetch,
@@ -15,7 +16,6 @@ pub enum Stage {
 }
 
 impl Stage {
-    /// Plain language, for the UI.
     pub fn label(self) -> &'static str {
         match self {
             Self::Fetch => "Fetching sources",
@@ -25,7 +25,7 @@ impl Stage {
     }
 }
 
-/// One thing that happened, phrased for a player rather than a programmer (rule 10).
+/// One thing that happened, phrased for a player rather than a programmer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProgressEvent {
     pub stage: Stage,

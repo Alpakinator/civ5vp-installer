@@ -1,8 +1,7 @@
 //! The Core-facing side: a [`ToolchainRunner`] backed by the Toolchain Cache.
 //!
-//! Ticket 05 owns everything up to "the Toolchain exists"; ticket 06 owns turning it into a
-//! DLL. This type is where those two meet: a build bootstraps the Toolchain first (instant
-//! once the cache is populated), then drives the compile through [`DllBuild`].
+//! A build bootstraps the Toolchain first (instant once the cache is populated), then drives
+//! the compile through [`DllBuild`].
 
 use std::path::PathBuf;
 
@@ -50,8 +49,8 @@ impl ToolchainRunner for BootstrappedToolchain {
 
     fn toolchain_identity(&self) -> String {
         // Available before the bootstrap has run: the identity is a property of what is
-        // pinned, not of what happens to be on disk. Ticket 07 folds this into the Build
-        // Fingerprint, where it has to be knowable up front.
+        // pinned, not of what happens to be on disk. The Build Fingerprint folds this in,
+        // so it has to be knowable up front.
         self.cache.expected_identity()
     }
 
@@ -109,7 +108,7 @@ mod tests {
     ///
     /// A build against an *empty* cache heads straight for the 2.4 GB bootstrap, so the fast
     /// suite must never call `build_dll` with one; the real end-to-end build lives in
-    /// `tests/real_build.rs`, `#[ignore]`d (rule 14).
+    /// `tests/real_build.rs`, `#[ignore]`d.
     #[test]
     fn a_bootstrapped_cache_is_used_and_a_sourceless_tree_is_refused() {
         let dir = tempfile::tempdir().unwrap();

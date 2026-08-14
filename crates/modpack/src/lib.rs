@@ -1,4 +1,4 @@
-//! The Modpack's database engine (ticket 11).
+//! The Modpack's database engine.
 //!
 //! The Modpack install mode generates a DLC folder in which the game finds, instead of the
 //! mods themselves, two XML dumps of the *merged* databases: every mod's `.sql` and `.xml`
@@ -13,11 +13,10 @@
 //! its line-buffered writer leaves behind. See that module for the details.
 //!
 //! It is a separate crate from the Core for one reason: the Core has no dependencies and must
-//! keep having none (rule 1), while this needs a SQLite engine and an XML parser. The Core
-//! consumes it through the [`ModpackAssembler`] boundary. Nothing here depends on egui either.
+//! keep having none, while this needs a SQLite engine and an XML parser. The Core consumes it
+//! through the [`ModpackAssembler`] boundary. Nothing here depends on egui either.
 
-// Rule 9: everything in this crate is reachable from the UI, through the `ModpackAssembler`
-// boundary.
+// Everything in this crate is reachable from the UI, so nothing may panic.
 #![deny(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -118,8 +117,6 @@ fn attach_text(gameplay: &Connection, text_copy: &Path) -> Result<(), BoundaryEr
         })
 }
 
-/// Rule 10's two halves for a scratch-space failure: a sentence for the user, the raw IO
-/// error for the log.
 fn scratch_error(action: String, error: &std::io::Error) -> BoundaryError {
     BoundaryError::new(
         "Preparing the Modpack's working databases failed — check free disk space and try again.",

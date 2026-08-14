@@ -14,7 +14,7 @@
 //! ever stops being derivable from these, it must join the fingerprint explicitly.
 //!
 //! Hashing is FNV-1a 64 implemented here in a dozen lines, because the Core has no
-//! dependencies (rule 1) and the job is integrity against accident — a swapped DLL, an
+//! dependencies and the job is integrity against accident — a swapped DLL, an
 //! edited source — not against an adversary forging collisions on purpose.
 
 use std::fmt::Write as _;
@@ -66,8 +66,8 @@ impl BuildFingerprint {
             FortyThreeCivs::Enabled => "on",
             FortyThreeCivs::Disabled => "off",
         };
-        // One line per input, in a fixed order (rule 8: same input, same fingerprint, byte
-        // for byte). `v1` is the format's own version: a future installer whose fingerprint
+        // One line per input, in a fixed order — same input must yield the same
+        // fingerprint, byte for byte. `v1` is the format's own version: a future installer whose fingerprint
         // means something different must not skip on a sidecar it does not understand. The
         // installer version rides along because the compiler flags are *derived by this
         // code* from the other lines — a release that changes the derivation must
@@ -176,7 +176,7 @@ fn hash_directory(
     mix: &mut impl FnMut(u64),
 ) -> Result<(), std::path::PathBuf> {
     let entries = fs::read_dir(directory).map_err(|_| directory.to_path_buf())?;
-    // Sorted, so the identity does not depend on readdir order (rule 8).
+    // Sorted, so the identity does not depend on readdir order.
     let mut paths: Vec<_> = entries
         .filter_map(Result::ok)
         .map(|entry| entry.path())
@@ -185,7 +185,7 @@ fn hash_directory(
     for path in paths {
         let relative = path.strip_prefix(relative_to).unwrap_or(&path);
         // The OS bytes, not a lossy string: two names that differ only outside UTF-8 must
-        // not hash alike (rule 8 — and a false skip is exactly what that would risk).
+        // not hash alike — a false skip is exactly what that would risk.
         mix(fnv1a64(relative.as_os_str().as_encoded_bytes()));
         if path.is_dir() {
             hash_directory(&path, relative_to, mix)?;

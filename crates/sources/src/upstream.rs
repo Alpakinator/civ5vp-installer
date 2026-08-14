@@ -40,10 +40,8 @@ pub const UPSTREAM_URL: &str = "https://github.com/LoneGazebo/Community-Patch-DL
 
 /// Written inside the cache's own `.git` when this code creates it, and checked before the
 /// working tree is emptied. Its only job is to make "is this directory ours?" answerable.
-///
-/// It lives under `.git` rather than beside the mod folders for two reasons: the working tree
-/// is what gets deployed, so nothing of the installer's belongs in it, and `.git` is the one
-/// thing `empty_working_tree` already preserves.
+/// It lives under `.git` because the working tree is what gets deployed, and `.git` is the
+/// one thing `empty_working_tree` preserves.
 const CACHE_MARKER: &str = ".git/civ5vp-upstream-cache";
 
 const CACHE_MARKER_CONTENTS: &str = "This folder is the Civ 5 VP Installer's Upstream Cache. It is safe to delete when the \
@@ -56,24 +54,21 @@ const MATERIALIZED_MARKER: &str = "civ5vp-materialized";
 /// One commit per Version and nothing behind it — the whole point of the strategy.
 const SHALLOW_DEPTH: NonZeroU32 = NonZeroU32::MIN;
 
-/// Nothing cancels a fetch yet; the UI's cancel button is ticket 09's.
+/// Nothing cancels a fetch yet.
 static NEVER_INTERRUPTED: AtomicBool = AtomicBool::new(false);
 
 /// The installer-managed clone, checked out at one Version at a time.
 pub struct UpstreamCache {
     root: PathBuf,
     url: String,
-    /// Where the unofficial-versions list comes from (ticket 13): a GitHub-compare-shaped
-    /// endpoint, derived from `url` unless overridden.
+    /// Where the unofficial-versions list comes from: a GitHub-compare-shaped endpoint,
+    /// derived from `url` unless overridden.
     compare_api: Option<String>,
 }
 
 impl UpstreamCache {
     /// `root` is the cache directory inside the App Data Store, created on first use; `url`
     /// is the repository to fetch from, which is [`UPSTREAM_URL`] everywhere except in tests.
-    ///
-    /// The URL is an ordinary parameter rather than a second `with_url` constructor so that
-    /// nothing here exists only so a test can reach it (rule 12).
     pub fn new(root: impl Into<PathBuf>, url: impl Into<String>) -> Self {
         Self {
             root: root.into(),
@@ -90,7 +85,6 @@ impl UpstreamCache {
         self
     }
 
-    /// The compare endpoint in use — the override, or the one the repository URL implies.
     fn compare_api(&self) -> Result<String, SourceError> {
         if let Some(endpoint) = &self.compare_api {
             return Ok(endpoint.clone());
@@ -112,7 +106,7 @@ impl UpstreamCache {
         }
     }
 
-    /// Every commit after `newest_release`, oldest first, labelled `X.Y.Z.NN` (ticket 13).
+    /// Every commit after `newest_release`, oldest first, labelled `X.Y.Z.NN`.
     ///
     /// One GitHub compare call — the Upstream Cache is a shallow clone with no history to
     /// walk locally. The endpoint reports at most 250 commits per page; if upstream is
@@ -223,8 +217,7 @@ impl UpstreamCache {
     /// objects it did get and no ref pointing at a half-written state, and a checkout is only
     /// recorded as done once every file is written.
     ///
-    /// The `source_identity` is the checked-out commit's *tree* id — "the Fingerprint for a
-    /// checked-out Version derives from the git tree", literally: no file content is
+    /// The `source_identity` is the checked-out commit's *tree* id: no file content is
     /// re-hashed, and two refs pointing at identical trees (an amend, a rebase) share an
     /// identity instead of forcing a needless rebuild.
     pub fn materialize(
@@ -271,7 +264,6 @@ impl UpstreamCache {
         })
     }
 
-    /// Open the cache repository, creating it if this is the first run.
     fn open_or_init(&self) -> Result<gix::Repository, SourceError> {
         fs::create_dir_all(&self.root).map_err(|err| SourceError::CacheUnusable {
             path: self.root.clone(),
@@ -287,8 +279,8 @@ impl UpstreamCache {
             gix::init(&self.root).map_err(|err| unusable(&err))
         }?;
 
-        // Written as soon as the repository exists, so any cache this code has opened once
-        // carries it. `empty_working_tree` checks it before deleting anything.
+        // Written as soon as the repository exists; `empty_working_tree` checks it before
+        // deleting anything.
         let marker = self.root.join(CACHE_MARKER);
         if !marker.is_file() {
             fs::write(&marker, CACHE_MARKER_CONTENTS).map_err(|err| {
@@ -326,8 +318,7 @@ impl UpstreamCache {
             )
             .map_err(|err| self.unreachable(&err))?;
 
-        // The remote answered but had nothing matching: that is a wrong Version, not a
-        // network problem, and it deserves the message that says so.
+        // The remote answered but had nothing matching: a wrong Version, not a network problem.
         if prepared.ref_map().mappings.is_empty() {
             return Err(SourceError::VersionNotFound {
                 version: target.label.clone(),
@@ -345,8 +336,7 @@ impl UpstreamCache {
     /// Write `commit`'s tree into the cache's working directory.
     ///
     /// Rewritten from scratch every time rather than updated in place: a directory that is
-    /// emptied and refilled cannot keep a file from the Version before it, which is the same
-    /// exactness Sync gives the game folders (rule 8).
+    /// emptied and refilled cannot keep a file from the Version before it.
     fn checkout(
         &self,
         repo: &gix::Repository,
@@ -390,9 +380,8 @@ impl UpstreamCache {
         let options = gix::worktree::state::checkout::Options {
             // True because `empty_working_tree` just made it so.
             destination_is_initially_empty: true,
-            // No filters and no attribute sources: blobs are written exactly as they are
-            // stored. Rule 5 also means no `.gitattributes` in the repository may cause an
-            // external filter program to be run.
+            // No filters and no attribute sources: blobs are written exactly as stored, and
+            // no `.gitattributes` in the repository may cause an external filter program to run.
             ..Default::default()
         };
         gix::worktree::state::checkout(
@@ -417,9 +406,8 @@ impl UpstreamCache {
     /// Remove everything in the cache directory except the repository itself.
     ///
     /// This deletes a whole directory tree, so it first checks the directory is one this code
-    /// made. `new` accepts any path, and a caller that passed a wrong one — the user's home
-    /// directory, say — would otherwise have it emptied. The Core has the same rule about the
-    /// game folders (rule 6); the cache deserves it too, and the check costs one `exists`.
+    /// made: `new` accepts any path, and a caller that passed a wrong one — the user's home
+    /// directory, say — would otherwise have it emptied.
     fn empty_working_tree(&self) -> Result<(), String> {
         if !self.root.join(CACHE_MARKER).is_file() {
             return Err(format!(
@@ -492,8 +480,7 @@ fn parse_compare(
 }
 
 #[cfg(test)]
-// The crate-level deny is for code the UI can reach; a unit test may unwrap like the
-// integration tests (separate crates) already do.
+// The crate-level deny is for code the UI can reach; tests may unwrap.
 #[allow(clippy::unwrap_used)]
 mod unofficial_tests {
     use super::parse_compare;

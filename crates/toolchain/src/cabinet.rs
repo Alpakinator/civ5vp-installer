@@ -184,7 +184,6 @@ struct Member {
     folder: usize,
 }
 
-/// An open cabinet on disk.
 pub struct Cabinet {
     reader: BufReader<File>,
     label: String,
@@ -201,7 +200,6 @@ pub struct Wanted<'a> {
     pub destination: PathBuf,
 }
 
-/// What one extraction pass wrote.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Extracted {
     pub files: usize,
@@ -652,7 +650,6 @@ mod tests {
         );
     }
 
-    /// The whole point of the rewrite: many files, one pass, all correct.
     #[test]
     fn many_members_are_extracted_in_a_single_pass() {
         let dir = tempfile::tempdir().unwrap();
@@ -744,7 +741,6 @@ mod tests {
 
         assert!(error.detail().contains("file2.h"));
         assert!(!error.message().contains("file2.h"));
-        // Nothing is written when a name does not resolve.
         assert!(!dir.path().join("out").exists());
 
         assert!(

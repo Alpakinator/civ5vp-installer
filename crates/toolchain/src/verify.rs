@@ -40,8 +40,7 @@ pub struct Baseline {
 ///
 /// The header count was 2033 until fix-up 6 stopped stubbing headers the SDK already ships.
 /// The difference is exactly the six stubs it used to write, and dropping them is what made
-/// `windows.h` includable at all — so the lower number is the correct one. That the guard
-/// noticed, and that the size of the drop matched the cause exactly, is the guard working.
+/// `windows.h` includable at all — so the lower number is the correct one.
 pub const REFERENCE_BASELINE: Option<Baseline> = Some(Baseline {
     headers: 2027,
     libs: 928,
@@ -245,7 +244,7 @@ mod tests {
         assert!(!report.is_complete());
         assert_eq!(report.missing, vec!["windows.h".to_string()]);
         let error = require_complete(&report, dir.path()).unwrap_err();
-        // Rule 10: the name goes in the log, and the player gets a sentence instead.
+        // The name goes in the log, and the player gets a sentence instead.
         assert!(error.detail().contains("windows.h"));
         assert!(!error.message().contains("windows.h"));
     }

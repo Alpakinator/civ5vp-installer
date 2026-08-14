@@ -1,14 +1,14 @@
 //! Real-clone integration tests against `LoneGazebo/Community-Patch-DLL`.
 //!
-//! `#[ignore]`d, never deleted (rule 14): they download hundreds of megabytes and take
-//! minutes. Run them with
+//! `#[ignore]`d, never deleted: they download hundreds of megabytes and take minutes. Run
+//! them with
 //!
 //! ```text
 //! cargo test -p civ5vp-sources --test real_upstream -- --ignored --nocapture --test-threads 1
 //! ```
 //!
 //! `--nocapture` matters: the measurements these tests assert on are also printed, and the
-//! printed numbers are the evidence behind the transfer budget in ticket 04.
+//! printed numbers are the evidence behind the transfer budget.
 //!
 //! ## What "transferred" means here
 //!
@@ -27,7 +27,7 @@ use civ5vp_core::{
 };
 use civ5vp_sources::{InstallationSources, UPSTREAM_URL, UpstreamCache};
 
-/// Ticket 04's ceiling for a first materialization.
+/// The ceiling for a first materialization.
 ///
 /// Measured on 2026-08-03: 147.7 MiB. A shallow fetch transfers a *snapshot*, so this figure
 /// tracks how big the mod is, not how long its history is — it creeps up as files are added.
@@ -35,7 +35,7 @@ use civ5vp_sources::{InstallationSources, UPSTREAM_URL, UpstreamCache};
 /// the test, tight enough that a change of strategy back towards full history would.
 const FIRST_FETCH_CEILING: u64 = 200 * 1024 * 1024;
 
-/// Ticket 04's ceiling for switching to another Version.
+/// The ceiling for switching to another Version.
 ///
 /// Measured on 2026-08-03: 32.7 MiB for `master` → `Release-4.15`, roughly a year apart.
 ///
@@ -115,7 +115,7 @@ fn the_version_picker_lists_the_real_releases_and_master() {
     );
 }
 
-/// Ticket 04's transfer budget, measured rather than estimated.
+/// The transfer budget, measured rather than estimated.
 #[test]
 #[ignore = "clones the real upstream repository"]
 fn a_first_materialization_and_a_version_switch_stay_within_budget() {
@@ -272,7 +272,7 @@ impl ToolchainRunner for MarkerToolchainRunner {
     }
 }
 
-/// Ticket 11's boundary, for tests that never run a Modpack Deployment: refuses if asked.
+/// For tests that never run a Modpack Deployment: refuses if asked.
 struct UnusedModpackAssembler;
 
 impl civ5vp_core::ModpackAssembler for UnusedModpackAssembler {
@@ -298,8 +298,8 @@ impl civ5vp_core::ModpackAssembler for UnusedModpackAssembler {
     }
 }
 
-/// Ticket 13, live: the compare endpoint answers, the labels are numbered off the newest
-/// Release, and the newest unofficial build really materializes by its recorded commit.
+/// Live: the compare endpoint answers, the labels are numbered off the newest Release, and
+/// the newest unofficial build really materializes by its recorded commit.
 #[test]
 #[ignore = "talks to the real GitHub API and clones the real upstream repository"]
 fn the_unofficial_versions_list_and_install_for_real() {

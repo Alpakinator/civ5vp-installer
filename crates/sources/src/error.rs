@@ -1,8 +1,8 @@
 //! Typed errors for the Installation Sources.
 //!
 //! Same shape as the Core's: `user_message` is the sentence the UI shows, `log_detail` is
-//! where raw git and IO text is allowed to appear (rules 10 and 11). Crossing back into the
-//! Core happens through [`BoundaryError`], which carries exactly those two strings.
+//! where raw git and IO text is allowed to appear. Crossing back into the Core happens
+//! through [`BoundaryError`], which carries exactly those two strings.
 
 use std::fmt;
 use std::path::PathBuf;
@@ -10,10 +10,6 @@ use std::path::PathBuf;
 use civ5vp_core::BoundaryError;
 
 /// Why a Local Repo cannot be used as an Installation Source.
-///
-/// Deliberately short: the installer does not inspect a Local Repo beyond checking that the
-/// path it was handed is a real place on disk. Whether the checkout contains the mod folders
-/// is the Core's question, and it already answers it with a better message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LocalRepoProblem {
     /// A relative path, which would be resolved against the working directory.
@@ -93,7 +89,7 @@ impl SourceError {
         }
     }
 
-    /// The full detail, for the log file (rule 11).
+    /// The full detail, for the log file.
     pub fn log_detail(&self) -> String {
         match self {
             Self::CacheUnusable { path, detail } => {

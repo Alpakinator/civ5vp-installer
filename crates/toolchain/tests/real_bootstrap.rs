@@ -1,9 +1,8 @@
 //! The real Toolchain Bootstrap, against the artifacts `docs/pinned-artifacts.md` pins.
 //!
-//! `#[ignore]`d, never deleted (rule 14). It downloads ~1.6 GB and unpacks tens of thousands
+//! `#[ignore]`d, never deleted. It downloads ~1.6 GB and unpacks tens of thousands
 //! of files, so it is nothing like a per-commit test — but a bootstrap that has never once
-//! extracted the real ISO has not resolved the spec's extraction-fidelity bet, and that bet
-//! is what ticket 05 exists to settle.
+//! extracted the real ISO has not resolved the spec's extraction-fidelity bet.
 //!
 //! ```bash
 //! cargo test -p civ5vp-toolchain -- --ignored --nocapture
@@ -70,11 +69,10 @@ fn the_real_sdk_iso_extracts_into_a_usable_toolchain() {
         report.missing
     );
 
-    // The compiler half.
     let clang = toolchain.clang_path();
     assert!(clang.is_file(), "{} should exist", clang.display());
 
-    // What ticket 06 will need: the MSIs bury these, so print where they actually landed.
+    // What the build will need: the MSIs bury these, so print where they actually landed.
     let include_dirs = toolchain.include_dirs().unwrap();
     let lib_dirs = toolchain.lib_dirs().unwrap();
     println!("include dirs:");

@@ -49,9 +49,8 @@ pub struct Core {
 
 impl Core {
     /// `work_dir` is scratch space the Core owns — the build directory lives inside it.
-    /// It belongs in the App Data Store; ticket 03 resolves that location, tests pass a
-    /// temporary directory. It is never a game folder: rule 7 requires the DLL to be built
-    /// somewhere the game cannot see before Sync runs.
+    /// It belongs in the App Data Store; tests pass a temporary directory. It is never a
+    /// game folder: the DLL must be built somewhere the game cannot see before Sync runs.
     pub fn new(
         source_provider: Box<dyn SourceProvider>,
         toolchain_runner: Box<dyn ToolchainRunner>,
@@ -82,7 +81,7 @@ impl Core {
         self.toolchain_runner.first_run_expectation()
     }
 
-    /// The unofficial versions after `newest_release` (ticket 13), from the same boundary.
+    /// The unofficial versions after `newest_release`, from the same boundary.
     pub fn unofficial_versions(
         &self,
         newest_release: &str,
@@ -104,11 +103,11 @@ impl Core {
     }
 
     /// Fetch, build, then Sync — in that order, and the game is not touched until the first
-    /// two have fully succeeded (rule 7).
+    /// two have fully succeeded.
     ///
     /// The build is skipped when the Build Fingerprint recorded at the last Deployment still
     /// matches this configuration *and* the deployed DLL still hashes to what was recorded —
-    /// both, so neither a changed input nor a tampered DLL can survive (user story 17).
+    /// both, so neither a changed input nor a tampered DLL can survive.
     pub fn execute(
         &self,
         plan: &Plan,
@@ -127,8 +126,7 @@ impl Core {
             None => self.build(plan, &source.root, progress)?,
         };
         // In Modpack mode the whole pack is assembled in the App Data Store before Sync
-        // runs — rule 7's ordering again: the game is untouched until everything that can
-        // fail has succeeded.
+        // runs — the game is untouched until everything that can fail has succeeded.
         let staged_modpack = if plan.modpack() {
             let resolved = self.resolve_sources(plan, &source.root)?;
             Some(crate::modpack::assemble(
@@ -181,8 +179,8 @@ impl Core {
             }
 
             // Copied out of the game folder before Sync starts deleting, so the skip path
-            // feeds Sync exactly the way a build would (rule 7's ordering is preserved:
-            // nothing in the game is touched yet).
+            // feeds Sync exactly the way a build would — nothing in the game is touched
+            // yet.
             let build_dir = self.work_dir.join("build");
             tree::create_dir_all(&build_dir)?;
             let output_path = build_dir.join(BUILT_DLL_FILE_NAME);
@@ -244,7 +242,7 @@ impl Core {
             .map_err(InstallError::Fetch)?;
 
         // Check everything the plan needs is actually there before the build burns minutes —
-        // and, more importantly, before Sync starts deleting (rule 7).
+        // and, more importantly, before Sync starts deleting.
         let resolved = self.resolve_sources(plan, &source.root)?;
 
         // Dev mode only: hold the checkout against each mod's own .modinfo manifest. A
@@ -294,8 +292,8 @@ impl Core {
         let output_path = build_dir.join(BUILT_DLL_FILE_NAME);
 
         // Drop any DLL left by an earlier run, so a failed build cannot pass off a stale
-        // artifact as a fresh one. Everything else in the build directory stays: ticket 06
-        // recompiles incrementally out of it.
+        // artifact as a fresh one. Everything else in the build directory stays: the
+        // toolchain recompiles incrementally out of it.
         tree::remove_file_if_present(&output_path)?;
 
         progress.report(
@@ -340,7 +338,8 @@ impl Core {
 
         // Resolved before a single deletion, not between them. `fetch` has already checked the
         // same thing, but Sync must not depend on that: the moment this runs after a removal
-        // it becomes a way for a Deployment to stop half-done, which is what rule 7 forbids.
+        // it becomes a way for a Deployment to stop half-done, and the game must never be
+        // left half-modified.
         let sources = self.resolve_sources(plan, source_root)?;
 
         let mut removed = Vec::new();
@@ -384,7 +383,7 @@ impl Core {
                 continue;
             };
             // In Modpack mode the MODS-target folders were staged inside the pack instead
-            // of deploying here — and, deliberately, whatever is in MODS stays (ticket 11).
+            // of deploying here — and, deliberately, whatever is in MODS stays.
             if !plan.deploys_directly(deployment) {
                 continue;
             }
@@ -442,11 +441,11 @@ impl Core {
         }
 
         // The Build Fingerprint sidecar, beside the DLL it describes (both inside a Claimed
-        // Folder, so rule 6 holds). Hashed from the deployed copy, so what is recorded is
-        // what a later launch will re-hash. A failure on this path only ever costs a
-        // rebuild, never a false skip, so it does not fail an otherwise complete
-        // Deployment — but it is said out loud (rule 11): "it rebuilds every time" must be
-        // diagnosable from what the user can show us.
+        // Folder). Hashed from the deployed copy, so what is recorded is what a later
+        // launch will re-hash. A failure on this path only ever costs a rebuild, never a
+        // false skip, so it does not fail an otherwise complete Deployment — but it is said
+        // out loud: "it rebuilds every time" must be diagnosable from what the user can
+        // show us.
         let sidecar = dll_home.join(FINGERPRINT_FILE_NAME);
         let recorded = match fnv1a64_of_file(&dll_destination) {
             Some(hash) => std::fs::write(&sidecar, fingerprint.sidecar_contents(hash)).is_ok(),
@@ -533,8 +532,8 @@ fn deployed_dll_home(plan: &Plan, mode: crate::InstallMode) -> PathBuf {
 }
 
 /// Empty the game's `cache` folder — the one path outside the Claimed Folders the installer
-/// may touch (rule 6), and the fix for the stale-cache corruption the community works around
-/// by hand (user story 23). `ModUserData` is its sibling and is deliberately left alone.
+/// may touch, and the fix for the stale-cache corruption the community works around by
+/// hand. `ModUserData` is its sibling and is deliberately left alone.
 fn clear_game_cache(
     folders: &GameFolders,
     progress: &ProgressReporter,

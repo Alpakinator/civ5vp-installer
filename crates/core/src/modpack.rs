@@ -1,4 +1,4 @@
-//! Assembling the Modpack (ticket 11).
+//! Assembling the Modpack.
 //!
 //! Everything here is plain file work: the Civ5Pkg manifest, the mods copied inside the
 //! pack, the UI entry files and their addin hooks, and the emptied overrides of the game's
@@ -81,7 +81,7 @@ const BASE_UI_FILES: [(&str, &str); 3] = [
 /// dead weight inside one.
 const MODPACK_MAKER_ID: &str = "eb8f6ed3-109d-4f2f-a81d-516c8d2f91c1";
 
-/// The player's own mods in the MODS folder that a Modpack could bake in (ticket 12):
+/// The player's own mods in the MODS folder that a Modpack could bake in:
 /// every folder holding a `.modinfo`, minus the Claimed Folders — those are the managed
 /// set, governed by the configuration — and the in-game Modpack Maker. Sorted; that is
 /// also the order they are applied in, after the managed set, which is what a modmod
@@ -166,7 +166,7 @@ pub(crate) fn assemble(
         staged_mods.push(destination);
     }
 
-    // The player's own picks from MODS (ticket 12), staged after the managed set so their
+    // The player's own picks from MODS, staged after the managed set so their
     // database changes land on top of Vox Populi's, the way a modmod expects. MODS is only
     // read — the copies live inside the pack.
     for name in &plan.configuration.extra_mods {
@@ -253,7 +253,7 @@ fn ensure_base_snapshot(
     }
 
     let Some(cache) = folders.cache() else {
-        // `GameFolders::check` ran before planning, so this cannot happen — but rule 9 wants
+        // `GameFolders::check` ran before planning, so this cannot happen — but it must be
         // an error, not a panic, if it somehow does.
         return Err(InstallError::ModpackBaseUnavailable {
             detail: "documents root unresolved after check".to_owned(),

@@ -3,7 +3,7 @@
 //! This is the composition root — the one place the installer decides that "sources" means
 //! the Upstream Cache / Local Repo provider from `civ5vp-sources` and that "build" means the
 //! bootstrapped clang from `civ5vp-toolchain`. The shell tests wire
-//! [`crate::placeholder`] instead, which is what keeps the fast suite offline (rule 13);
+//! [`crate::placeholder`] instead, which is what keeps the fast suite offline;
 //! this module is exercised by the `#[ignore]`d real-install test and by the shipped binary.
 
 use std::path::Path;

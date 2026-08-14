@@ -1,7 +1,7 @@
 //! Stand-ins for the Core's three boundaries, for the shell tests and screen previews.
 //!
 //! The shipped binary wires [`crate::wiring`] instead. These exist so the `egui_kittest`
-//! suite can drive a whole install offline (rule 13):
+//! suite can drive a whole install offline:
 //!
 //! * [`DirectorySourceProvider`] handles the Local Repo case for real — a folder is a folder
 //!   — and refuses the Upstream Cache, which would need the network.
@@ -109,9 +109,9 @@ impl SourceProvider for DirectorySourceProvider {
     }
 }
 
-/// The unofficial list every offline surface shares (ticket 13): two changes after the
+/// The unofficial list every offline surface shares: two changes after the
 /// newest Release, the second with a summary far too long for any dropdown — the shape the
-/// shell has to cope with (rule 13: no socket in the fast suite).
+/// shell has to cope with.
 pub fn fixture_unofficial_versions(newest_release: &str) -> Vec<civ5vp_core::UnofficialVersion> {
     let base = newest_release.trim_start_matches("Release-").to_owned();
     vec![
@@ -131,7 +131,7 @@ pub fn fixture_unofficial_versions(newest_release: &str) -> Vec<civ5vp_core::Uno
 }
 
 /// The catalog every offline surface shares — the fake provider, the screen previews — so
-/// the shell tests and baselines can draw the picker without a socket (rule 13).
+/// the shell tests and baselines can draw the picker without a socket.
 pub fn fixture_version_catalog() -> civ5vp_core::VersionCatalog {
     civ5vp_core::VersionCatalog::from_remote_refs([
         ("refs/tags/Release-5.2", "b".repeat(40)),

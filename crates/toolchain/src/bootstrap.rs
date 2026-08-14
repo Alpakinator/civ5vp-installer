@@ -35,7 +35,7 @@ pub struct ToolchainBootstrap {
     source: Box<dyn ByteSource + Send + Sync>,
     /// What to fetch. Fields rather than constants read inline, so the fast suite can point
     /// the *real* [`ToolchainBootstrap::ensure`] at artifacts it built itself instead of
-    /// re-implementing the sequence in a test helper (rule 13).
+    /// re-implementing the sequence in a test helper.
     sdk_iso: PinnedDownload,
     llvm: Option<PinnedLlvm>,
     libtinfo: Option<PinnedLibrary>,
@@ -95,7 +95,7 @@ impl ToolchainBootstrap {
 
         // Say how much before starting, and say it from the pinned sizes rather than from a
         // number typed into a sentence — a stale figure here is how a 2.5 GB download comes
-        // as a surprise (user story 15).
+        // as a surprise.
         let total = self.sdk_iso.approximate_bytes
             + self.llvm.map_or(0, |llvm| llvm.download.approximate_bytes)
             + self
@@ -177,7 +177,7 @@ impl ToolchainBootstrap {
         let report = verify_extraction(&sdk_root)?;
         require_complete(&report, &sdk_root)?;
 
-        // Rule 11: the numbers a maintainer would want are in the log whether or not anything
+        // The numbers a maintainer would want are in the log whether or not anything
         // went wrong, because the interesting failures are the ones that do not error. The
         // include and lib paths are in there because they are the surprising part — the MSIs
         // bury them under the path Windows would have installed to, and a build that cannot
@@ -639,7 +639,6 @@ mod tests {
         // The compiler is unpacked and filtered.
         assert!(toolchain.llvm_root().join("bin/clang-cl").exists());
         assert!(!toolchain.llvm_root().join("lib/libLLVMCore.a").exists());
-        // Scratch space is gone.
         assert!(!dir.path().join("staging").exists());
     }
 
@@ -663,8 +662,8 @@ mod tests {
         assert!(!sdk_root.join("f1").exists());
     }
 
-    /// Ticket 05: "Bootstrap runs once; subsequent builds detect the populated Toolchain
-    /// Cache and skip it."
+    /// Bootstrap runs once; subsequent builds detect the populated Toolchain Cache and
+    /// skip it.
     #[test]
     fn a_second_bootstrap_does_nothing_at_all() {
         let dir = tempfile::tempdir().unwrap();
@@ -692,7 +691,7 @@ mod tests {
         );
     }
 
-    /// Ticket 05: "Interrupted bootstrap leaves a state that self-repairs on retry."
+    /// An interrupted bootstrap leaves a state that self-repairs on retry.
     #[test]
     fn a_bootstrap_interrupted_halfway_repairs_itself() {
         let dir = tempfile::tempdir().unwrap();
@@ -749,7 +748,7 @@ mod tests {
         );
     }
 
-    /// Rule 10 across the whole crate: no user-facing sentence may be raw jargon.
+    /// No user-facing sentence may be raw jargon.
     #[test]
     fn progress_reaches_the_user_in_plain_language() {
         let dir = tempfile::tempdir().unwrap();

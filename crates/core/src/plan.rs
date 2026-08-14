@@ -91,13 +91,11 @@ impl Plan {
         configuration: &InstallConfiguration,
         folders: &GameFolders,
     ) -> Result<Self, InstallError> {
-        // Before anything else: refuse folders the installer cannot safely write to.
         folders.check()?;
 
         // A Debug DLL is a mod developer's tool. Outside Dev mode there is no way to choose
         // it, and a remembered or hand-edited configuration that says otherwise is refused
-        // here rather than quietly built (rule 3: the shell draws choices, the Core rules on
-        // them).
+        // here rather than quietly built.
         if configuration.build_configuration == crate::BuildConfiguration::Debug
             && !matches!(
                 configuration.source,
@@ -130,7 +128,7 @@ impl Plan {
             .collect()
     }
 
-    /// Is this a Modpack Deployment (ticket 11)?
+    /// Is this a Modpack Deployment?
     pub(crate) fn modpack(&self) -> bool {
         self.configuration.install_mode == InstallMode::Modpack
     }
@@ -164,7 +162,7 @@ impl Plan {
     /// The Claimed Folders that do not belong to this configuration and will be removed if
     /// they are present. This is the Sync half that keeps a switched configuration clean.
     ///
-    /// Two asymmetric rules from ticket 11, both deliberate:
+    /// Two asymmetric rules, both deliberate:
     /// - A Mods-mode Deployment removes the Modpack. A baked-in Modpack loads at every
     ///   startup, so activating the same mods on top of it corrupts the game.
     /// - A Modpack-mode Deployment does *not* remove the MODS folders. Inactive mods in the

@@ -100,7 +100,6 @@ impl<W: Write> MakerFile<W> {
     }
 }
 
-/// The message half of every dump-side [`BoundaryError`]; the detail carries the specifics.
 fn dump_error(detail: String) -> BoundaryError {
     BoundaryError::new(
         "Writing the Modpack's database dump failed — check free disk space and try again.",

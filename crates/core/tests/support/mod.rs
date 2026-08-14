@@ -1,10 +1,10 @@
 //! Shared scaffolding for the Core-seam tests.
 //!
-//! House style (CODING_STANDARDS.md rule 12): a test gets a fixture repository and temporary
+//! House style: a test gets a fixture repository and temporary
 //! MODS/DLC/Text directories, runs an Install Configuration through the public Core API, and
 //! asserts on the resulting file tree. Nothing here reaches into the Core.
 //!
-//! The two injected boundaries are faked (rule 13): [`FixtureSourceProvider`] hands back a
+//! The two injected boundaries are faked: [`FixtureSourceProvider`] hands back a
 //! committed fixture tree, [`MarkerToolchainRunner`] writes a recognisable marker instead of
 //! compiling. So the fast suite never clones, downloads, or compiles anything.
 
@@ -137,7 +137,7 @@ impl SourceProvider for FailingSourceProvider {
 pub const GAMEPLAY_DUMP_MARKER: &str = "marker standing in for the merged gameplay dump";
 pub const TEXT_DUMP_MARKER: &str = "marker standing in for the merged text dump";
 
-/// The third boundary, faked (rule 13): reads a marker instead of a database, writes
+/// The third boundary, faked: reads a marker instead of a database, writes
 /// markers instead of dumps, and remembers every job so a test can assert what crossed
 /// the seam.
 pub struct FixtureModpackAssembler {
@@ -202,7 +202,7 @@ impl ModpackAssembler for FixtureModpackAssembler {
 /// What [`MarkerToolchainRunner`] writes instead of a real DLL.
 pub const DLL_MARKER: &str = "marker artifact standing in for the Built DLL";
 
-/// Writes a marker file where the Built DLL would go (rule 13).
+/// Writes a marker file where the Built DLL would go.
 pub struct MarkerToolchainRunner;
 
 impl ToolchainRunner for MarkerToolchainRunner {

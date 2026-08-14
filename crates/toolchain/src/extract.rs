@@ -64,7 +64,7 @@ pub fn extract_sdk(
 /// Worth the extra pass: the alternative is discovering the fourth member is missing after
 /// half a gigabyte of headers has already been written. The log gets a listing of the
 /// directory the member should have been in, which is the one thing that makes a report about
-/// a wrong image actionable (rule 11).
+/// a wrong image actionable.
 fn check_members_present<R: Read + Seek>(image: &mut Disc<R>) -> Result<(), ToolchainError> {
     for member in ISO_MEMBERS {
         for path in std::iter::once(member.msi_path).chain(member.cab_paths.iter().copied()) {
@@ -220,9 +220,9 @@ fn extract_from_cabinet(
 /// Turn an MSI-supplied relative path into an absolute one that is definitely inside
 /// `sdk_root`.
 ///
-/// The MSI comes off a download, so it is input, not truth. Rule 6's spirit is that every
-/// path the installer writes to is derived from a root it owns; `..` in a directory table
-/// must not be able to walk out of the Toolchain Cache.
+/// The MSI comes off a download, so it is input, not truth. Every path the installer writes
+/// to is derived from a root it owns; `..` in a directory table must not be able to walk out
+/// of the Toolchain Cache.
 fn safe_destination(sdk_root: &Path, relative: &str) -> Result<PathBuf, ToolchainError> {
     let mut destination = sdk_root.to_path_buf();
     for segment in relative

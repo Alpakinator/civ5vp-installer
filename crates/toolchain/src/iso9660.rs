@@ -1,7 +1,7 @@
 //! A read-only ISO9660 reader, enough to pull four known paths out of the SDK image.
 //!
-//! Hand-rolled rather than taken from crates.io. Rule 5 forbids external *programs*, not
-//! libraries, so a dependency would have been legal — but every ISO9660 crate on crates.io is
+//! Hand-rolled rather than taken from crates.io. A dependency would have been legal — only
+//! external *programs* are forbidden — but every ISO9660 crate on crates.io is
 //! either explicitly incomplete, `no_std`-shaped for bootloaders, or unmaintained, and the
 //! part of the format we need is small: descriptors start at a fixed sector, a volume
 //! descriptor points at the root directory record, and directory records are a flat list of
@@ -70,7 +70,6 @@ pub struct Entry {
     extents: Vec<(u64, u64)>,
 }
 
-/// A mounted ISO9660 image.
 pub struct Iso9660<R> {
     reader: R,
     encoding: NameEncoding,
@@ -157,7 +156,6 @@ impl<R: Read + Seek> Iso9660<R> {
         Ok(entry.size)
     }
 
-    /// Whether a member exists, without reading it.
     pub fn contains(&mut self, path: &str) -> bool {
         self.resolve(path).is_ok()
     }
@@ -421,7 +419,7 @@ mod tests {
 
         let error = iso.read_file("Setup/WinSDK/WinSDK_x86.msi").unwrap_err();
         assert!(error.detail().contains("Setup/WinSDK/WinSDK_x86.msi"));
-        // Rule 10: the sentence the user sees says nothing about disc images internals.
+        // The sentence the user sees says nothing about disc image internals.
         assert!(!error.message().contains("Setup/WinSDK"));
     }
 

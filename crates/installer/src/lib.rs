@@ -1,11 +1,11 @@
 //! The Civ 5 VP Installer's egui shell.
 //!
 //! The whole of the installer's behaviour lives in `civ5vp-core`; this crate opens a window
-//! and draws what the Core reports (rule 3). It is a library as well as a binary so that the
+//! and draws what the Core reports. It is a library as well as a binary so that the
 //! `egui_kittest` harness can drive the real UI through its AccessKit tree.
 
-// Rule 9: no panicking paths in code reachable from the UI. `main.rs` is a separate crate
-// root and keeps the latitude the rule allows for startup wiring.
+// No panicking paths in code reachable from the UI. `main.rs` is a separate crate root and
+// keeps the latitude startup wiring needs.
 #![deny(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -28,7 +28,7 @@ pub use app::{InstallerApp, Screen};
 /// Where the log file lives once [`init_log_file`] has run — inside the App Data Store.
 static LOG_FILE: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
 
-/// Point the log at its real file (user story 20). Called once at startup with the App Data
+/// Point the log at its real file. Called once at startup with the App Data
 /// Store resolved; until then — and always, additionally — detail goes to stderr.
 pub fn init_log_file(path: std::path::PathBuf) {
     let _ = LOG_FILE.set(path);
@@ -60,12 +60,9 @@ pub fn open_path(path: &std::path::Path) {
     }
 }
 
-/// Where the detail behind a user-facing error goes.
-///
-/// Rule 11 wants everything a user might report in a log file, and rule 10 keeps that detail
-/// out of the UI. Appended to the log file in the App Data Store (and echoed to stderr); a
-/// log line that cannot be written is not worth interrupting anything over — stderr still
-/// has it.
+/// Where the detail behind a user-facing error goes: appended to the log file in the App
+/// Data Store (and echoed to stderr), keeping it out of the UI. A log line that cannot be
+/// written is not worth interrupting anything over — stderr still has it.
 pub fn log_detail(detail: &str) {
     if let Some(path) = LOG_FILE.get() {
         let timestamp = std::time::SystemTime::now()

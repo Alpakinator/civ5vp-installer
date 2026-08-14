@@ -1,6 +1,6 @@
-//! The `ModpackAssembler` boundary, exercised the way the Core will use it (rule 12): build
-//! fixture bases with rusqlite, hand `SqliteModpackAssembler` a job, assert on the dumps and
-//! the progress lines. No game data, no network — this is the fast suite.
+//! The `ModpackAssembler` boundary, exercised the way the Core will use it: build fixture
+//! bases with rusqlite, hand `SqliteModpackAssembler` a job, assert on the dumps and the
+//! progress lines. No game data, no network — this is the fast suite.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -28,7 +28,6 @@ struct Merged {
     progress: Vec<String>,
 }
 
-/// Build both bases, write the updates in order, run the merge, read everything back.
 fn run_merge(
     gameplay_sql: &str,
     text_sql: &str,
@@ -404,7 +403,6 @@ fn a_duplicate_row_is_skipped_with_a_progress_line() {
     )
     .unwrap();
 
-    // The first row wins, the merge carries on, and the log says so.
     assert!(merged.gameplay.contains("<Value>1</Value>"));
     assert!(!merged.gameplay.contains("<Value>5</Value>"));
     assert!(
@@ -633,7 +631,7 @@ fn the_text_dump_replicates_the_modpack_maker_byte_for_byte() {
     assert_eq!(merged.text, expected);
 }
 
-/// Rule 8 reaches through the boundary too: the same job merged twice is the same bytes.
+/// The same job merged twice must produce the same bytes.
 #[test]
 fn merging_twice_produces_identical_bytes() {
     let dir = tempfile::tempdir().unwrap();

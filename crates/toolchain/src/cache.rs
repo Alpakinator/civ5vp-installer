@@ -5,8 +5,7 @@
 //! plausible-looking tree of headers behind, and a build started against it would fail in a
 //! way nobody could read. So completeness is a single marker file written last, holding the
 //! Toolchain identity; until it exists the cache counts as absent and its contents are
-//! discarded on the next attempt (ticket 05: "interrupted bootstrap leaves a state that
-//! self-repairs on retry").
+//! discarded on the next attempt — an interrupted bootstrap self-repairs on retry.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -55,13 +54,13 @@ impl Toolchain {
         &self.sdk_root
     }
 
-    /// Every `Include` directory in the extracted SDK, sorted — what ticket 06 puts on the
+    /// Every `Include` directory in the extracted SDK, sorted — what the build puts on the
     /// compiler's include path.
     pub fn include_dirs(&self) -> Result<Vec<PathBuf>, ToolchainError> {
         Ok(crate::sdk_layout::find(&self.sdk_root)?.include)
     }
 
-    /// Every `Lib` directory in the extracted SDK, sorted — what ticket 06 puts on the
+    /// Every `Lib` directory in the extracted SDK, sorted — what the build puts on the
     /// linker's library path.
     pub fn lib_dirs(&self) -> Result<Vec<PathBuf>, ToolchainError> {
         Ok(crate::sdk_layout::find(&self.sdk_root)?.lib)
@@ -209,7 +208,7 @@ mod tests {
         );
     }
 
-    /// The acceptance criterion: bootstrap runs once, later builds detect the populated cache.
+    /// Bootstrap runs once; later builds detect the populated cache.
     #[test]
     fn a_marked_cache_reports_its_toolchain() {
         let dir = tempfile::tempdir().unwrap();
@@ -226,8 +225,7 @@ mod tests {
         );
     }
 
-    /// The other half of the same criterion: a tree of files with no marker is not a
-    /// Toolchain, however complete it looks.
+    /// A tree of files with no marker is not a Toolchain, however complete it looks.
     #[test]
     fn a_populated_but_unmarked_cache_counts_as_absent() {
         let dir = tempfile::tempdir().unwrap();

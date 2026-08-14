@@ -4,7 +4,7 @@
 //! The shape is deliberate. A big download over a slow connection will be interrupted, so
 //! bytes land in `<name>.part` and the finished, *verified* file appears at `<name>` in one
 //! atomic rename. Anything that goes wrong leaves either a resumable `.part` or nothing —
-//! never a short file that looks finished (an acceptance criterion of ticket 05).
+//! never a short file that looks finished.
 //!
 //! Large artifacts download over **several connections at once**. The Wayback Machine — the
 //! one source of the pinned SDK image — throttles per connection to roughly 1 MB/s, and
@@ -46,9 +46,9 @@ const PARALLEL_THRESHOLD: u64 = 64 * 1024 * 1024;
 /// from the network.
 ///
 /// A trait, because the interesting behaviour here (resume, verify, atomic move, self-repair
-/// after an interruption) is exactly what the fast suite must cover and the network is
-/// exactly what it must not touch (rule 13). `Sync`, because the parallel path shares one
-/// source across its worker threads.
+/// after an interruption) is exactly what the fast suite must cover, and the fast suite never
+/// opens sockets. `Sync`, because the parallel path shares one source across its worker
+/// threads.
 pub trait ByteSource: Sync {
     /// Open `url` from `offset`.
     ///
@@ -703,7 +703,7 @@ pub fn hash_file(path: &Path) -> Result<String, ToolchainError> {
 fn hex(bytes: &[u8]) -> String {
     use std::fmt::Write as _;
     bytes.iter().fold(String::new(), |mut out, byte| {
-        // Writing into a String cannot fail, and rule 9 rules out unwrapping to say so.
+        // Writing into a String cannot fail.
         let _ = write!(out, "{byte:02x}");
         out
     })
@@ -841,12 +841,10 @@ mod tests {
 
         assert_eq!(path, dir.path().join("artifact.bin"));
         assert_eq!(fs::read(&path).unwrap(), content);
-        // Nothing half-finished is left behind.
         assert!(!dir.path().join("artifact.bin.part").exists());
         assert!(!dir.path().join("artifact.bin.parts").exists());
     }
 
-    /// The parallel path: several ranged requests, the same verified file, no leftovers.
     #[test]
     fn a_large_artifact_downloads_over_several_connections() {
         let dir = tempfile::tempdir().unwrap();
@@ -864,8 +862,6 @@ mod tests {
         assert!(!dir.path().join("artifact.bin.parts").exists());
     }
 
-    /// A parallel run interrupted partway leaves a ledger, and the next run fetches only
-    /// the chunks that are missing.
     #[test]
     fn an_interrupted_parallel_download_resumes_by_chunk() {
         let dir = tempfile::tempdir().unwrap();
@@ -894,8 +890,6 @@ mod tests {
         );
     }
 
-    /// A server that ignores `Range` drops the fetch back to the sequential path, which
-    /// still converges on the verified file.
     #[test]
     fn a_range_refusing_server_falls_back_to_the_sequential_path() {
         let dir = tempfile::tempdir().unwrap();
@@ -910,8 +904,6 @@ mod tests {
         assert!(!dir.path().join("artifact.bin.parts").exists());
     }
 
-    /// A server that never says the total size cannot be chunked; the sequential path
-    /// handles it.
     #[test]
     fn a_server_without_a_total_size_downloads_sequentially() {
         let dir = tempfile::tempdir().unwrap();
@@ -925,8 +917,6 @@ mod tests {
         assert_eq!(fs::read(&path).unwrap(), content);
     }
 
-    /// A sequential `.part` from an older run is converted into chunk credit rather than
-    /// thrown away.
     #[test]
     fn a_sequential_partial_is_credited_to_the_parallel_resume() {
         let dir = tempfile::tempdir().unwrap();
@@ -949,8 +939,8 @@ mod tests {
         );
     }
 
-    /// The acceptance criterion in as few words as it can be put: interrupt it, run it again,
-    /// get the right file — and do not re-download what already arrived.
+    /// Interrupt it, run it again, get the right file — without re-downloading what already
+    /// arrived.
     #[test]
     fn an_interrupted_download_resumes_where_it_stopped() {
         let dir = tempfile::tempdir().unwrap();
@@ -979,7 +969,6 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let content = content();
         let pinned = pinned_for(&content);
-        // Simulate a crash: half the bytes already on disk under the `.part` name.
         fs::write(dir.path().join("artifact.bin.part"), &content[..120_000]).unwrap();
 
         let source = FakeSource::new(content.clone(), vec![]);
@@ -1033,7 +1022,6 @@ mod tests {
         );
     }
 
-    /// A cached file that is no longer the pinned artifact is replaced, not trusted.
     #[test]
     fn a_corrupted_cached_file_is_replaced() {
         let dir = tempfile::tempdir().unwrap();
@@ -1048,7 +1036,7 @@ mod tests {
         assert_eq!(source.opens.lock().unwrap().as_slice(), &[0u64]);
     }
 
-    /// A 580 MB download with no visible progress is a defect (ticket 05).
+    /// A 580 MB download with no visible progress is a defect.
     #[test]
     fn progress_is_reported_while_bytes_arrive() {
         let dir = tempfile::tempdir().unwrap();

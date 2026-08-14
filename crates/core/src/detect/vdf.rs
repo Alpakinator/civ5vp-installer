@@ -1,8 +1,8 @@
 //! `libraryfolders.vdf` — the file in which Steam lists its libraries.
 //!
 //! Hand-rolled, like the CLI parser in the shell and for the same reason: the Core has no
-//! dependencies and keeping it that way is what makes the seam cheap to test (rule 17, and
-//! the comment in `crates/core/Cargo.toml`). The format is small — quoted strings, `{ … }`
+//! dependencies and keeping it that way is what makes the seam cheap to test (see the
+//! comment in `crates/core/Cargo.toml`). The format is small — quoted strings, `{ … }`
 //! blocks, `//` comments — and only one thing is wanted out of it.
 //!
 //! Both shapes Steam has written are accepted, because both are still on people's machines:

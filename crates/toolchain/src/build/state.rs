@@ -1,6 +1,6 @@
 //! What is already built, and whether it can be trusted — the incremental half of the build.
 //!
-//! The contract (ticket 06): within a build, only sources that changed since the last build
+//! The contract: within a build, only sources that changed since the last build
 //! recompile. The rules here are deliberately conservative — when in doubt, rebuild — because
 //! a stale object linked into the game is a corrupt install nobody can diagnose, while an
 //! unnecessary recompile costs seconds.

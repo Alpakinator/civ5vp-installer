@@ -1,5 +1,5 @@
 //! Synthetic archives, built byte by byte, so the readers can be tested without the 1.45 GiB
-//! download (rule 13).
+//! download.
 //!
 //! Everything here is `#[cfg(test)]`: it is compiled into the test binary only and is not
 //! part of the crate's API. The CAB and MSI builders are thin wrappers over the writer halves
@@ -29,14 +29,12 @@ pub mod iso {
         Ucs2,
     }
 
-    /// A directory being assembled.
     #[derive(Default)]
     struct Dir {
         dirs: BTreeMap<String, Dir>,
         files: BTreeMap<String, Vec<u8>>,
     }
 
-    /// Collects paths, then lays them out into a disc image.
     #[derive(Default)]
     pub struct IsoBuilder {
         root: Dir,
@@ -319,14 +317,12 @@ pub mod udf {
     const FILE_TYPE_DIRECTORY: u8 = 4;
     const FILE_TYPE_REGULAR: u8 = 5;
 
-    /// A directory being assembled.
     #[derive(Default)]
     struct Dir {
         dirs: BTreeMap<String, Dir>,
         files: BTreeMap<String, Vec<u8>>,
     }
 
-    /// Collects paths, then lays them out into a UDF image.
     #[derive(Default)]
     pub struct UdfBuilder {
         root: Dir,

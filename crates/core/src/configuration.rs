@@ -28,7 +28,7 @@ pub enum FortyThreeCivs {
     Disabled,
 }
 
-/// How the selection reaches the game (ticket 11).
+/// How the selection reaches the game.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InstallMode {
     /// The classic install: mod folders in MODS, activated in the game's Mods menu.
@@ -53,8 +53,8 @@ impl InstallMode {
 
 /// Which of the two proven compiler configurations the Built DLL is compiled with.
 ///
-/// Players always get [`BuildConfiguration::Release`]; the Debug choice arrives with Dev mode
-/// (ticket 08, user story 31). It lives here rather than in the toolchain crate because the
+/// Players always get [`BuildConfiguration::Release`]; the Debug choice arrives with Dev
+/// mode. It lives here rather than in the toolchain crate because the
 /// Core decides it and hands it across the boundary in a [`crate::BuildRequest`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuildConfiguration {
@@ -82,7 +82,7 @@ pub enum Version {
     LatestDevelopmentVersion,
     /// Any branch, tag, or commit. Advanced users only.
     ArbitraryRef(String),
-    /// One commit after the newest Release, from the unofficial-versions list (ticket 13):
+    /// One commit after the newest Release, from the unofficial-versions list:
     /// `label` reads like `5.4.3.07`, `commit` is the full hash the label stood for when
     /// the list was fetched — the label alone would drift as upstream moves.
     UnofficialBuild { label: String, commit: String },
@@ -133,7 +133,7 @@ impl Flavor {
     ///
     /// Vox Populi with EUI. Vox Populi is the mod people mean when they say "Vox Populi", and
     /// EUI is part of the standard experience — Community Patch alone is the smaller, more
-    /// deliberate choice. Deciding this is the Core's job, not the shell's (rule 3).
+    /// deliberate choice. Deciding this is the Core's job, not the shell's.
     pub fn suggested() -> Self {
         Self::VoxPopuli { eui: Eui::Enabled }
     }
@@ -145,13 +145,13 @@ pub struct InstallConfiguration {
     pub source: InstallationSource,
     pub flavor: Flavor,
     pub forty_three_civs: FortyThreeCivs,
-    /// Release for players; Debug is a Dev-mode choice (user story 31) and is only legal
-    /// with a Local Repo — [`crate::Core::plan`] refuses it anywhere else.
+    /// Release for players; Debug is a Dev-mode choice and is only legal with a Local
+    /// Repo — [`crate::Core::plan`] refuses it anywhere else.
     pub build_configuration: BuildConfiguration,
-    /// Mods in the MODS folder, or one baked Modpack in the game's DLC (ticket 11).
+    /// Mods in the MODS folder, or one baked Modpack in the game's DLC.
     pub install_mode: InstallMode,
     /// Folder names of the player's own MODS-folder mods to bake into the Modpack, applied
-    /// after the managed set in this order (ticket 12). Offered by
+    /// after the managed set in this order. Offered by
     /// [`crate::available_extra_mods`]; meaningful only in Modpack mode and ignored
     /// otherwise — in a Mods-mode install those mods are already in MODS and the game's
     /// own Mods menu governs them.

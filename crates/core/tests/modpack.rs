@@ -1,8 +1,8 @@
-//! Core-seam tests for the Modpack install mode (ticket 11).
+//! Core-seam tests for the Modpack install mode.
 //!
 //! Same house style as `deployment.rs`: fixture repository, temporary game folders, the
 //! public Core API, assertions on the resulting file tree. The database engine is faked
-//! ([`FixtureModpackAssembler`], rule 13) — what these tests pin down is everything around
+//! ([`FixtureModpackAssembler`]) — what these tests pin down is everything around
 //! it: what is staged, what crosses the seam, what Sync writes and removes, and the two
 //! asymmetric removal rules the user asked for by name.
 
@@ -252,7 +252,7 @@ fn a_second_modpack_deployment_runs_from_the_snapshot() {
     assert!(game.game_root().join("DLC/VP_MODPACK").is_dir());
 }
 
-/// Ticket 12: a MODS folder with the player's own mods in it, for the extra-mod tests.
+/// A MODS folder with the player's own mods in it, for the extra-mod tests.
 fn plant_players_own_mods(game: &GameFixture) {
     game.plant(
         "MODS/Even More Bonuses/Even More Bonuses.modinfo",

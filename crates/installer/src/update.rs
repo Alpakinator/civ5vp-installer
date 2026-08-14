@@ -1,4 +1,4 @@
-//! The launch-time new-version check (user story 27).
+//! The launch-time new-version check.
 //!
 //! One GET against GitHub's "latest release" endpoint, on a background thread, entirely
 //! best-effort: offline, rate-limited, or unparsable all mean "say nothing" — the spec is
@@ -25,9 +25,8 @@ pub fn check_for_newer_release() -> Option<String> {
         // GitHub's API requires a User-Agent; the version in it is politeness.
         .header("user-agent", &format!("civ5vp-installer/{CURRENT_VERSION}"))
         .call()
-        // The UI stays silent either way (user story 27: no update machinery); the log
-        // still records why, so "it never told me about the update" is diagnosable
-        // (rule 11).
+        // The UI stays silent either way; the log still records why, so "it never
+        // told me about the update" is diagnosable.
         .inspect_err(|error| crate::log_detail(&format!("update check failed: {error}")))
         .ok()?;
     let mut body = response.into_body();
@@ -53,7 +52,7 @@ pub fn newer_release(current: &str, latest_json: &str) -> Option<String> {
 /// The `tag_name` field out of GitHub's release JSON.
 ///
 /// A field scan rather than a JSON parser: the value wanted is one string in a stable,
-/// GitHub-controlled document, and a parsing dependency would buy nothing (rule 17). A
+/// GitHub-controlled document, and a parsing dependency would buy nothing. A
 /// document this does not fit yields `None`, which yields silence.
 fn tag_name(json: &str) -> Option<String> {
     let key = "\"tag_name\"";

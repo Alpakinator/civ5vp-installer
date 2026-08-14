@@ -10,7 +10,7 @@
 //! On Windows the whole set is a no-op: the filesystem already does all six.
 //!
 //! Everything here walks directories in sorted order and produces the same tree from the same
-//! input, because the Build Fingerprint is taken over what this leaves behind (rule 8).
+//! input, because the Build Fingerprint is taken over what this leaves behind.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -46,7 +46,6 @@ pub struct FixupReport {
 pub fn apply(sdk_root: &Path, progress: &ProgressReporter) -> Result<FixupReport, ToolchainError> {
     let mut report = FixupReport::default();
     if !platform::NEEDS_FIXUPS {
-        // Documented rather than silent: on Windows the filesystem is the fix-up.
         return Ok(report);
     }
 
@@ -144,7 +143,6 @@ fn rewrite_backslash_includes(root: &Path) -> Result<usize, ToolchainError> {
     Ok(rewritten)
 }
 
-/// The line-level half of fix-up 4, split out so it can be tested without a filesystem.
 fn rewrite_include_lines(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for line in text.split_inclusive('\n') {
@@ -315,7 +313,7 @@ fn link_directory_spellings(root: &Path) -> Result<usize, ToolchainError> {
     };
 
     let mut created = 0;
-    // A fixed, sorted set, so two runs produce the same tree (rule 8).
+    // A fixed, sorted set, so two runs produce the same tree.
     let spellings = BTreeSet::from([name.to_ascii_lowercase(), capitalise(name)]);
     for spelling in spellings {
         if spelling == name {
@@ -332,7 +330,6 @@ fn link_directory_spellings(root: &Path) -> Result<usize, ToolchainError> {
     Ok(created)
 }
 
-/// `include` → `Include`. ASCII only, which is all these names ever are.
 fn capitalise(name: &str) -> String {
     let mut lowered = name.to_ascii_lowercase();
     if let Some(first) = lowered.get_mut(..1) {
@@ -345,7 +342,7 @@ fn capitalise(name: &str) -> String {
 ///
 /// The SDK ships `Kernel32.Lib`, the CRT ships `msvcrt.lib`, and the project file references
 /// both spellings and others besides. The set of extra spellings is fixed and sorted so two
-/// runs produce the same tree (rule 8).
+/// runs produce the same tree.
 fn link_lib_spellings(root: &Path) -> Result<usize, ToolchainError> {
     let mut created = 0;
     for file in walk_files(root)? {
@@ -375,7 +372,6 @@ fn link_lib_spellings(root: &Path) -> Result<usize, ToolchainError> {
     Ok(created)
 }
 
-/// The stem of `X.lib` in any case, or `None` if this is not an import library.
 fn strip_lib_extension(name: &str) -> Option<&str> {
     let (stem, extension) = name.rsplit_once('.')?;
     extension.eq_ignore_ascii_case("lib").then_some(stem)
@@ -450,8 +446,8 @@ fn walk_files(root: &Path) -> Result<Vec<PathBuf>, ToolchainError> {
     Ok(files)
 }
 
-/// The one platform-dependent thing in this module (rule 4): how a symlink is made, and
-/// whether any of this is needed at all.
+/// The one platform-dependent thing in this module: how a symlink is made, and whether any
+/// of this is needed at all.
 mod platform {
     use std::io;
     use std::path::Path;
@@ -460,7 +456,7 @@ mod platform {
     #[cfg(unix)]
     pub const NEEDS_FIXUPS: bool = true;
     /// NTFS resolves every spelling in the SDK already, and creating symlinks on Windows
-    /// needs a privilege the installer explicitly does not require (user story 34).
+    /// needs a privilege the installer explicitly does not require.
     #[cfg(not(unix))]
     pub const NEEDS_FIXUPS: bool = false;
 
@@ -517,13 +513,11 @@ mod tests {
         let report = apply_to(root);
 
         assert!(report.lowercased >= 1);
-        // The real file is lowercase…
         assert!(
             fs::symlink_metadata(root.join("Include/windef.h"))
                 .unwrap()
                 .is_file()
         );
-        // …and the SDK's own spelling still opens it.
         assert_eq!(
             fs::read_to_string(root.join("Include/WinDef.h")).unwrap(),
             fs::read_to_string(root.join("Include/windef.h")).unwrap()
@@ -577,7 +571,6 @@ mod tests {
 
         let text = fs::read_to_string(root.join("Include/tricky.h")).unwrap();
         assert!(text.contains("#include <a/b.h>"));
-        // The line-continuation backslashes are untouched.
         assert!(text.contains("do { \\\n"));
     }
 
@@ -610,8 +603,7 @@ mod tests {
 
         apply_to(root);
 
-        // Nothing in this tree supplies `DriverSpecs.h` under any spelling, so the stub is
-        // what keeps the `#include` chain intact.
+        // Nothing in this tree supplies `DriverSpecs.h` under any spelling.
         let stub = root.join("Include/DriverSpecs.h");
         assert!(
             stub.exists(),
@@ -620,15 +612,9 @@ mod tests {
         assert!(fs::read_to_string(&stub).unwrap().contains("Stubbed"));
     }
 
-    /// The bug this fix-up used to cause, and the reason a real build could not compile.
-    ///
-    /// `DriverSpecs.h` and `SpecStrings.h` are *shipped by the SDK*, whatever
-    /// `docs/pinned-artifacts.md` used to say. Stubbing them anyway shadows the real headers:
-    /// `kernelspecs.h` includes `"DriverSpecs.h"` with quotes, so the stub sitting beside it
-    /// wins whatever the include order, and `__ANNOTATION` is then never defined — which makes
-    /// `windows.h` impossible to include at all.
-    ///
-    /// So every spelling must resolve to the *real* header's contents, never to a stub.
+    /// The SDK ships `DriverSpecs.h`/`SpecStrings.h`; stubbing them shadows the real headers
+    /// (quoted includes search the including file's directory first) and `windows.h` then
+    /// cannot be included at all. Every spelling must resolve to the real header, never a stub.
     #[test]
     fn fixup_6_never_shadows_a_header_the_sdk_ships() {
         let dir = sdk_tree();
@@ -682,9 +668,9 @@ mod tests {
         );
     }
 
-    /// Rule 8: the same input twice produces the same tree, and the second run changes
-    /// nothing. A fix-up pass that is not idempotent would turn every retried bootstrap into
-    /// a slightly different toolchain.
+    /// The same input twice produces the same tree, and the second run changes nothing —
+    /// a non-idempotent pass would turn every retried bootstrap into a slightly different
+    /// toolchain.
     #[test]
     fn applying_the_fixups_twice_changes_nothing_the_second_time() {
         let dir = sdk_tree();
@@ -728,7 +714,6 @@ mod tests {
             rewrite_include_lines("  #  include \"a\\b\\c.h\"\n"),
             "  #  include \"a/b/c.h\"\n"
         );
-        // Not an include directive: left exactly alone.
         assert_eq!(
             rewrite_include_lines("// see <sys\\types.h>\n"),
             "// see <sys\\types.h>\n"
@@ -760,7 +745,6 @@ mod tests {
         assert_eq!(strip_lib_extension("windows.h"), None);
     }
 
-    /// A sorted snapshot of the tree: every path, and for symlinks what they point at.
     fn walk_all(root: &Path) -> Vec<String> {
         let mut out = Vec::new();
         let mut queue = vec![root.to_path_buf()];

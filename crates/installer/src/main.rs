@@ -42,12 +42,11 @@ fn run_app() -> Result<(), String> {
         eprintln!("[civ5vp-installer] {}", problem.log_detail());
         problem.user_message()
     })?;
-    // The log file joins the settings in the App Data Store (user story 20); everything
-    // `log_detail` receives from here on is on disk as well as stderr.
+    // From here on, everything `log_detail` receives is on disk as well as stderr.
     civ5vp_installer::init_log_file(store.root().join("installer.log"));
     let core = Arc::new(wiring::core(&store));
     let locations = SearchLocations::for_this_platform();
-    // The update ping (user story 27): fired once, in the background, entirely best-effort.
+    // The update ping: fired once, in the background, entirely best-effort.
     // Offline or failing, nothing arrives and nothing is shown — launch never waits on it.
     let (newer_sender, newer_receiver) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
@@ -60,7 +59,7 @@ fn run_app() -> Result<(), String> {
             .with_title("Civ 5 VP Installer")
             .with_inner_size(cli::DEFAULT_SIZE)
             // The layout is designed down to this size and no further; below it the
-            // activity log would have no room left. Ticket 09 verifies at and above it.
+            // activity log would have no room left.
             .with_min_inner_size(cli::DEFAULT_SIZE),
         ..Default::default()
     };

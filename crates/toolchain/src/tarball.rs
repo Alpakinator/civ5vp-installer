@@ -14,8 +14,6 @@ use civ5vp_core::{ProgressReporter, Stage};
 
 use crate::error::{ToolchainError, io_error, stream_error};
 
-// `PathBuf` is used by `safe_join` and `clang_path`.
-
 /// The tools in `bin/` a `clang-cl` → `lld-link` build of the DLL needs, by exact name.
 ///
 /// An allowlist rather than "keep `bin/`", because these binaries each statically link their
@@ -25,7 +23,7 @@ use crate::error::{ToolchainError, io_error, stream_error};
 ///
 /// Symlinks count as entries, so each tool's real binary is listed next to the names that
 /// reach it: `clang-cl` → `clang` → `clang-18`, `lld-link` → `lld`, `llvm-lib` → `llvm-ar`.
-/// Ticket 06 owns the build and may find it needs another tool; adding one here is a line.
+/// If the build turns out to need another tool, adding it here is a line.
 const KEPT_TOOLS: &[&str] = &[
     // The compiler driver, under every name it is invoked by.
     "clang",

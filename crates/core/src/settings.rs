@@ -1,8 +1,8 @@
 //! The App Data Store, what the installer remembers in it, and what it knows at launch.
 //!
 //! The store is the single installer-owned directory in the platform's app-data location. The
-//! Upstream Cache, the Toolchain Cache and the log file join the settings here in later
-//! tickets; today it holds the settings file and the Core's work directory.
+//! Upstream Cache, the Toolchain Cache and the log file share it with the settings file and
+//! the Core's work directory.
 //!
 //! The file format is hand-rolled `key = value` lines. That is a deliberate choice, made for
 //! the same reason as the VDF parser and the CLI parser: the Core has no dependencies, and a
@@ -43,7 +43,7 @@ pub enum SettingsError {
 }
 
 impl SettingsError {
-    /// The sentence shown in the UI (rule 10).
+    /// The sentence shown in the UI.
     pub fn user_message(&self) -> String {
         match self {
             Self::NoAppDataLocation { .. } => "Could not work out where to keep the installer's \
@@ -57,7 +57,7 @@ impl SettingsError {
         }
     }
 
-    /// The full detail, for the log file (rule 11).
+    /// The full detail, for the log file.
     pub fn log_detail(&self) -> String {
         match self {
             Self::NoAppDataLocation { variable } => {
@@ -140,7 +140,7 @@ impl AppDataStore {
     }
 
     /// Everything the store currently holds, in bytes — the Upstream Cache, the Toolchain
-    /// Cache, settings, logs (user story 25). Unreadable entries count as zero rather than
+    /// Cache, settings, logs. Unreadable entries count as zero rather than
     /// failing: the answer is for a label, not an audit.
     pub fn size_on_disk(&self) -> u64 {
         directory_size(&self.root)
@@ -193,7 +193,7 @@ impl AppDataStore {
     }
 }
 
-/// What the installer remembers between runs (user story 26).
+/// What the installer remembers between runs.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settings {
     /// The Game Installation the player last used.
@@ -282,7 +282,7 @@ impl Settings {
 }
 
 /// Everything the installer knows at launch: what it remembered, reconciled with what it can
-/// find (user story 11 and 26).
+/// find.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Startup {
     /// What to put in the game folder field, if anything.
@@ -293,7 +293,7 @@ pub struct Startup {
     pub configuration: Option<InstallConfiguration>,
     /// What to tell the player, when the folders could not be settled. Already plain language.
     pub note: Option<String>,
-    /// Lines for the log file (rule 11).
+    /// Lines for the log file.
     pub log: Vec<String>,
     /// The remembered Dev-mode checkout, whatever the active source is.
     pub dev_checkout: Option<PathBuf>,

@@ -2,7 +2,7 @@
 //!
 //! Everything here runs on Linux against fixture trees, including the Windows arrangement:
 //! detection takes the directories to look in as input, and the only platform-specific step
-//! is producing that list (`CODING_STANDARDS.md` rule 4). So the decision logic — is this the
+//! is producing that list. So the decision logic — is this the
 //! Windows game? the native port? the Documents side? — is exercised on both layouts by the
 //! same tests, on the one machine this project is verified on.
 
@@ -32,7 +32,7 @@ fn found(detection: Detection) -> civ5vp_core::DetectedGame {
     }
 }
 
-/// The reference layout from the ticket: game and Proton prefix in the same Steam library.
+/// The reference layout: game and Proton prefix in the same Steam library.
 #[test]
 fn linux_detection_resolves_the_game_and_the_proton_documents_folder() {
     let temp = temp();
@@ -136,8 +136,8 @@ fn the_two_folder_names_are_never_derived_from_each_other() {
     );
 }
 
-/// User story 14: the native Aspyr port is found only so that it can be refused, in words a
-/// player can act on.
+/// The native Aspyr port is found only so that it can be refused, in words a player can
+/// act on.
 #[test]
 fn the_native_linux_port_is_detected_and_refused_with_an_explanation() {
     let temp = temp();
@@ -256,7 +256,7 @@ fn an_empty_machine_reports_that_nothing_was_found() {
     assert!(detection.user_message().is_some());
 }
 
-/// User story 12: a wrong folder is caught before anything is written, and the message names
+/// A wrong folder is caught before anything is written, and the message names
 /// the marker that was missing so the player can tell which folder was wanted.
 #[test]
 fn a_picked_game_folder_is_rejected_naming_the_marker_that_is_missing() {
@@ -348,7 +348,7 @@ fn picked_folders_resolve_to_the_three_deployment_targets() {
 /// Detection against the machine this is running on, rather than against a fixture.
 ///
 /// `#[ignore]`d because it depends on the developer having Civilization V installed, which the
-/// fast suite must not (rule 14). It is the only check that the platform adapter's guesses at
+/// fast suite must not. It is the only check that the platform adapter's guesses at
 /// where Steam lives are right, so it is kept rather than run once and thrown away:
 ///
 /// ```text

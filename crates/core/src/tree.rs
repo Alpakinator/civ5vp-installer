@@ -1,5 +1,5 @@
 //! File-tree operations used by Sync. Every destination path here is derived from a
-//! Claimed Folder root by the caller (rule 6); nothing in this module invents one.
+//! Claimed Folder root by the caller; nothing in this module invents one.
 
 use std::fs;
 use std::path::Path;
@@ -17,9 +17,8 @@ const EXCLUDED_EXTENSIONS: &[&str] = &["civ5proj", "civ5proj.user", "civ5sln", "
 /// The official installer never ships these, though it gets there a different way: it copies
 /// from a `Build/` staging tree containing only the files listed in each mod's `.civ5proj`,
 /// so anything unlisted is invisible to it. We copy from the repository itself and so need
-/// the names. Reading the `.civ5proj` allowlist is the faithful version and belongs with
-/// ticket 06, which parses that file anyway to find the DLL's sources; until then this
-/// denylist covers the documents that are actually there.
+/// the names. Reading the `.civ5proj` allowlist would be the faithful version; until then
+/// this denylist covers the documents that are actually there.
 const EXCLUDED_NAMES: &[&str] = &[
     "MANUAL INSTALL.txt",
     "INSTRUCTIONS.txt",
@@ -88,7 +87,7 @@ pub(crate) fn copy_selected(
 
 /// Copy `from` into `to` verbatim — no selection, no standard exclusions.
 ///
-/// For trees the Core assembled itself (the Modpack stage, ticket 11): the exclusions exist
+/// For trees the Core assembled itself (the Modpack stage): the exclusions exist
 /// to keep repository clutter out of the game, and everything in an assembled tree is there
 /// because the Core put it there — including the Built DLL, which `is_excluded` would strip.
 pub(crate) fn copy_all(from: &Path, to: &Path) -> Result<(), InstallError> {
@@ -112,8 +111,8 @@ pub(crate) fn copy_all(from: &Path, to: &Path) -> Result<(), InstallError> {
 /// A named-entries selection matching nothing means the source is not shaped the way this
 /// installer expects — a file renamed upstream, most likely. Deploying the empty folder that
 /// would result looks like success and leaves the player with a mod that silently does
-/// nothing, so it is reported instead. Asked before the Deployment starts, never during it:
-/// rule 7 wants the game untouched when anything is wrong.
+/// nothing, so it is reported instead. Asked before the Deployment starts, never during it —
+/// the game must stay untouched while anything can still be wrong.
 pub(crate) fn holds_anything_selected(
     from: &Path,
     selection: &SourceSelection,
@@ -159,7 +158,7 @@ pub(crate) fn remove_file_if_present(path: &Path) -> Result<(), InstallError> {
 ///
 /// This exists for the game's `cache` folder and nothing else. The folder is kept because the
 /// game expects to find it; its contents go because a stale cache is the classic cause of a
-/// corrupt-looking install (user story 23).
+/// corrupt-looking install.
 pub(crate) fn clear_directory_contents(path: &Path) -> Result<(), InstallError> {
     let dir = match fs::read_dir(path) {
         Ok(dir) => dir,
@@ -204,7 +203,7 @@ pub(crate) fn create_dir_all(path: &Path) -> Result<(), InstallError> {
 }
 
 /// The entries of `dir`, sorted, so that two runs over the same source do the same operations
-/// in the same sequence (rule 8).
+/// in the same sequence.
 fn sorted_entries(dir: &Path) -> Result<Vec<std::path::PathBuf>, InstallError> {
     let read = fs::read_dir(dir).map_err(|cause| InstallError::Deployment {
         action: "read directory",

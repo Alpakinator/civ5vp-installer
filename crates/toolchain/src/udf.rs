@@ -45,7 +45,7 @@ const TAG_EXTENDED_FILE_ENTRY: u16 = 266;
 ///
 /// Real optical media use 512..=32768; the value is read straight out of the image and then
 /// used as an allocation length for every directory entry, so an unbounded one is an abort
-/// waiting to happen rather than an error a user can be shown (rule 9).
+/// waiting to happen rather than an error a user can be shown.
 const MAX_BLOCK_SIZE: u64 = 32 * 1024;
 
 /// Fixed header sizes, up to but not including the extended-attribute area.
@@ -98,7 +98,6 @@ pub struct Entry {
     inline: Option<Vec<u8>>,
 }
 
-/// A mounted UDF volume.
 pub struct Udf<R> {
     reader: R,
     /// First logical block of the partition, in sectors from the start of the image.
@@ -160,7 +159,7 @@ impl<R: Read + Seek> Udf<R> {
         // Bounded, not merely non-zero. `block_size` comes straight out of the image and is
         // then used as an allocation length for every directory entry read, so a descriptor
         // claiming 4 GiB would abort the process on the allocator rather than return an error
-        // a user can be shown (rule 9). Real UDF block sizes are 512..=32768.
+        // a user can be shown. Real UDF block sizes are 512..=32768.
         if block_size == 0 || block_size > MAX_BLOCK_SIZE {
             return Err(unreadable(&format!(
                 "the logical volume declares a block size of {block_size}, which is not a size \
@@ -238,7 +237,6 @@ impl<R: Read + Seek> Udf<R> {
         Ok(entry.size)
     }
 
-    /// Whether a member exists, without reading it.
     pub fn contains(&mut self, path: &str) -> bool {
         self.resolve(path).is_ok()
     }

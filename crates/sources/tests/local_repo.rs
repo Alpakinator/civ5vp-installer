@@ -1,4 +1,4 @@
-//! A Local Repo is used byte-for-byte as it is (user story 29).
+//! A Local Repo is used byte-for-byte as it is.
 
 mod support;
 
@@ -83,8 +83,8 @@ fn a_local_repo_that_is_not_a_folder_is_refused_before_anything_happens() {
     assert!(failure.detail().contains("NotADirectory"));
 }
 
-/// Ticket 08: a folder that exists but is not the repository — a Steam library, a mods
-/// folder — is named as such, before any Deployment starts.
+/// A folder that exists but is not the repository — a Steam library, a mods folder — is
+/// named as such, before any Deployment starts.
 #[test]
 fn a_folder_that_is_not_a_checkout_is_refused_with_a_sentence() {
     let fixture = UpstreamFixture::new();
@@ -111,8 +111,7 @@ fn a_folder_that_is_not_a_checkout_is_refused_with_a_sentence() {
 }
 
 /// The dirty working tree names itself by content: editing a DLL source changes the
-/// identity, and the read is the only thing that happens to the tree (ticket 07 semantics
-/// for ticket 08's dirty Local Repo).
+/// identity, and the read is the only thing that happens to the tree.
 #[test]
 fn a_dirty_local_repos_identity_tracks_its_working_files() {
     let fixture = UpstreamFixture::new();

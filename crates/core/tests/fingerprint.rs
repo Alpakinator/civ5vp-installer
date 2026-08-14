@@ -1,4 +1,4 @@
-//! The Build Fingerprint, through the Core seam (ticket 07).
+//! The Build Fingerprint, through the Core seam.
 //!
 //! Everything is observed from outside: the file tree, the progress events, and how many
 //! times the toolchain-runner boundary was asked to build — a skipped build is a build the
@@ -76,8 +76,8 @@ fn install(core: &Core, game: &GameFixture, configuration: &InstallConfiguration
         .collect()
 }
 
-/// The headline behaviour (user story 17): same inputs, intact DLL, no second build — and
-/// the skip is said out loud.
+/// The headline behaviour: same inputs, intact DLL, no second build — and the skip is said
+/// out loud.
 #[test]
 fn an_unchanged_configuration_skips_the_build_and_says_so() {
     let game = GameFixture::new();
@@ -145,7 +145,7 @@ fn an_edited_source_rebuilds_but_edited_mod_content_only_redeploys() {
     );
 }
 
-/// Each remaining invalidation from the ticket, alone, forces a rebuild.
+/// Each remaining invalidation, alone, forces a rebuild.
 #[test]
 fn configuration_toolchain_tamper_and_missing_sidecar_each_force_a_rebuild() {
     let game = GameFixture::new();
@@ -213,7 +213,7 @@ fn configuration_toolchain_tamper_and_missing_sidecar_each_force_a_rebuild() {
     );
 }
 
-/// Dev mode's Debug choice (ticket 08): it reaches the toolchain-runner boundary, it is its
+/// Dev mode's Debug choice: it reaches the toolchain-runner boundary, it is its
 /// own fingerprint, and switching back to Release rebuilds again — Debug objects can never
 /// be skipped-to as Release ones.
 #[test]

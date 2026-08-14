@@ -7,7 +7,7 @@
 //!
 //! `ar` is parsed here rather than pulled in as a dependency: the format is a magic string
 //! followed by 60-byte plain-text headers, which is less code than the justification for
-//! adding a crate would be (rule 17). The same call this project already made for the CLI,
+//! adding a crate would be. The same call this project already made for the CLI,
 //! the Steam `libraryfolders.vdf` parser and the settings format.
 //!
 //! The package is small — a third of a megabyte — so it is read whole rather than streamed.
@@ -251,7 +251,7 @@ mod tests {
     }
 
     /// A truncated download must produce a sentence, not a panic — this module indexes into
-    /// byte ranges taken from the file itself (rule 9).
+    /// byte ranges taken from the file itself.
     #[test]
     fn a_truncated_package_is_refused_rather_than_panicking() {
         let full = synthetic_deb("lib/thing", b"some contents here");

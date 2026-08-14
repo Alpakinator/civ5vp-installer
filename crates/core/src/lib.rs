@@ -3,16 +3,16 @@
 //! This crate is the single primary seam described in `docs/spec.md`: it accepts an
 //! [`InstallConfiguration`] plus resolved [`GameFolders`], produces a [`Plan`], executes it,
 //! and reports progress and results. It knows nothing about egui — that is enforced by the
-//! crate boundary rather than by convention (`CODING_STANDARDS.md` rule 1).
+//! crate boundary rather than by convention.
 //!
 //! Exactly three boundaries are injected into [`Core`]: the [`SourceProvider`] (where mod
 //! files and DLL sources come from), the [`ToolchainRunner`] (which compiles the Built DLL),
 //! and the [`ModpackAssembler`] (which merges and dumps the Modpack's databases). Everything
-//! else — planning, exclusions, Sync — is concrete behind this API (rule 2).
+//! else — planning, exclusions, Sync — is concrete behind this API.
 //!
-//! Vocabulary is `CONTEXT.md`'s, exactly (rule 16).
+//! Vocabulary is `CONTEXT.md`'s, exactly.
 
-// Rule 9: no panicking paths in code reachable from the UI. These are crate-level, so the
+// No panicking paths in code reachable from the UI. These are crate-level, so the
 // integration tests under `tests/` (separate crates) are free to `unwrap` as usual.
 #![deny(
     clippy::unwrap_used,

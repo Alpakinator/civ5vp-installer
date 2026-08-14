@@ -1,4 +1,4 @@
-//! The Core's one platform adapter (rule 4).
+//! The Core's one platform adapter.
 //!
 //! This is the only place in the crate where `#[cfg(windows)]` or `#[cfg(unix)]` appears, and
 //! it is deliberately the thinnest thing that could work: it produces *candidate directories*

@@ -1,6 +1,6 @@
 //! Finding the game — and deciding whether a folder really is the game.
 //!
-//! Two halves, deliberately separated (rule 4):
+//! Two halves, deliberately separated:
 //!
 //! * this module, which is platform-agnostic. Given directories to look in, it judges what it
 //!   finds against the markers below and resolves the three Deployment targets. Every decision
@@ -20,7 +20,7 @@ mod platform;
 mod vdf;
 
 // The App Data Store's location is the other question only the platform can answer, so it is
-// answered in the same adapter rather than in a second `#[cfg]` split elsewhere (rule 4).
+// answered in the same adapter rather than in a second `#[cfg]` split elsewhere.
 pub(crate) use platform::{APP_DATA_VARIABLE, app_data_root};
 
 /// Steam's app id for Civilization V. It names the Proton prefix on Linux:
@@ -109,7 +109,7 @@ impl FolderRejected {
         }
     }
 
-    /// The sentence shown in the UI (rule 10).
+    /// The sentence shown in the UI.
     pub fn user_message(&self) -> String {
         let label = self.folder.label();
         match self.reason {
@@ -142,7 +142,7 @@ impl FolderRejected {
         }
     }
 
-    /// The full detail, for the log file (rule 11).
+    /// The full detail, for the log file.
     pub fn log_detail(&self) -> String {
         format!(
             "{:?} rejected at {}: {:?}",
@@ -212,7 +212,7 @@ pub fn game_folders(game: &GameInstallation, documents: &DocumentsFolder) -> Gam
 }
 
 /// The manual picker's whole job: check both folders the user chose and resolve the three
-/// Deployment targets, or say which folder is wrong and why (user story 12).
+/// Deployment targets, or say which folder is wrong and why.
 pub fn resolve_game_folders(game: &Path, documents: &Path) -> Result<GameFolders, FolderRejected> {
     let game = validate_game_installation(game)?;
     let documents = validate_documents_folder(documents)?;
@@ -296,8 +296,7 @@ fn reject(folder: FolderKind, path: PathBuf, reason: RejectionReason) -> FolderR
 }
 
 /// The floor every picked path has to clear before its contents are worth looking at: a real,
-/// absolute directory. Rule 6 holds only if the roots Sync derives its paths from are real
-/// absolute locations.
+/// absolute directory — Sync derives its write paths from these roots.
 fn usable_directory(path: &Path, folder: FolderKind) -> Result<PathBuf, FolderRejected> {
     let reason = if path.as_os_str().is_empty() {
         RejectionReason::NotChosen
@@ -393,7 +392,7 @@ impl Detection {
         }
     }
 
-    /// The full detail, for the log file (rule 11).
+    /// The full detail, for the log file.
     pub fn log_detail(&self) -> String {
         match self {
             Self::Found(game) => format!(

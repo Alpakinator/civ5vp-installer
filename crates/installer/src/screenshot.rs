@@ -1,6 +1,6 @@
 //! `--screenshot <dir>`: render every screen to PNG with no user present.
 //!
-//! This is half of how UI work is verified (rule 15). The other half is the `egui_kittest`
+//! This is half of how UI work is verified. The other half is the `egui_kittest`
 //! snapshot baselines; both drive the same [`InstallerApp::show`], so what lands in a PNG
 //! here is what the shipped window draws.
 

@@ -24,7 +24,6 @@ pub struct DiscEntry {
     pub size: u64,
 }
 
-/// A mounted disc image.
 pub enum Disc<R> {
     Udf(Box<Udf<R>>),
     Iso9660(Box<Iso9660<R>>),
@@ -40,7 +39,7 @@ impl<R: Read + Seek> Disc<R> {
     }
 
     /// What this image turned out to be. Goes in the log, because "which filesystem?" is the
-    /// first question when an extraction finds nothing (rule 11).
+    /// first question when an extraction finds nothing.
     pub fn format(&self) -> &'static str {
         match self {
             Self::Udf(_) => "UDF",
@@ -97,7 +96,6 @@ impl<R: Read + Seek> Disc<R> {
     }
 }
 
-/// Open a disc image from a path.
 pub fn open(
     path: &std::path::Path,
 ) -> Result<Disc<std::io::BufReader<std::fs::File>>, ToolchainError> {

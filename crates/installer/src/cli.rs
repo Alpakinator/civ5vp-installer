@@ -1,7 +1,7 @@
 //! Command-line arguments.
 //!
-//! Hand-rolled rather than pulled from a crate: there are three options, and rule 17 asks
-//! for a reason before every dependency.
+//! Hand-rolled rather than pulled from a crate: there are three options, not worth a
+//! dependency.
 
 use std::path::PathBuf;
 

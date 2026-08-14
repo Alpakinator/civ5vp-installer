@@ -1,9 +1,9 @@
 //! Installation Sources for the Civ 5 VP Installer.
 //!
 //! This crate is the real implementation of the Core's first injected boundary,
-//! [`civ5vp_core::SourceProvider`]. It exists as its own crate for the same reason the egui
-//! shell does: the Core has no dependencies and must keep having none (rule 1), and an
-//! embedded git implementation is a large dependency.
+//! [`civ5vp_core::SourceProvider`]. It exists as its own crate because the Core has no
+//! dependencies and must keep having none, and an embedded git implementation is a large
+//! dependency.
 //!
 //! Two Installation Sources, exactly as `CONTEXT.md` defines them:
 //!
@@ -12,11 +12,11 @@
 //! * a **Local Repo** — a developer's own checkout, used as-is including uncommitted changes,
 //!   with no git operation performed on it at all.
 //!
-//! The git work is done by `gix` (gitoxide) in-process. Nothing here runs an external program
-//! (rule 5), so the installer works on a machine that has never had git installed.
+//! The git work is done by `gix` (gitoxide) in-process. Nothing here runs an external
+//! program, so the installer works on a machine that has never had git installed.
 
-// Rule 9: no panicking paths in code reachable from the UI. Crate-level, so the integration
-// tests under `tests/` (separate crates) may `unwrap` as usual.
+// No panicking paths in code reachable from the UI. Crate-level, so the integration tests
+// under `tests/` (separate crates) may `unwrap` as usual.
 #![deny(
     clippy::unwrap_used,
     clippy::expect_used,

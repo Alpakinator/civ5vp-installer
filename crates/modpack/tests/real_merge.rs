@@ -1,7 +1,7 @@
 //! A dry run of a real Vox Populi merge, on a machine that has real data.
 //!
-//! Ignored in the fast suite (rule 13's spirit: multi-hundred-megabyte inputs, minutes of
-//! work). Run by hand while developing:
+//! Ignored in the fast suite — multi-hundred-megabyte inputs, minutes of work. Run by hand
+//! while developing:
 //!
 //! ```text
 //! CIV5VP_REAL_MERGE_LIST=/path/to/updates.txt \

@@ -3,7 +3,7 @@
 //! The shape is the reference script's (`build_vp_clang_linux.py`, docker branch):
 //! `clang.cpp`, then the precompiled header, then every project source through it in
 //! parallel, then one `lld-link` over a response file. Three things are different on
-//! purpose, each an explicit ticket-06 requirement:
+//! purpose:
 //!
 //! * the source list comes from the project file at the selected Version
 //!   ([`project`]), not from a frozen list;
@@ -39,7 +39,6 @@ pub struct DllBuild<'a> {
     parallelism: usize,
 }
 
-/// One source file's compile job, ready to run.
 struct CompileTask {
     /// Path relative to the source root — what clang is given, and what the log names.
     source: String,
@@ -118,7 +117,7 @@ impl<'a> DllBuild<'a> {
 
         // Two sources `#include "../commit_id.inc"`. Upstream generates that file at the
         // repository root with git; the installer must not write into an Installation Source
-        // (a Local Repo is "used as-is" — rule 6's spirit, user story 29), so it generates
+        // (a Local Repo is used as-is), so it generates
         // the file under the variant directory and adds one include directory whose parent
         // holds it. MSVC-style quoted includes try the including file's own directory first
         // — so a `commit_id.inc` a developer's checkout already has still wins, which is
@@ -326,7 +325,7 @@ impl<'a> DllBuild<'a> {
         let results = self.compile_in_parallel(&tasks, progress);
 
         // The log is written in source order whatever order the workers finished in, so two
-        // identical builds produce identical logs (rule 8's spirit, applied to evidence).
+        // identical builds produce identical logs.
         let mut first_failure: Option<(&str, String)> = None;
         let mut failures = 0usize;
         for (task, result) in tasks.iter().zip(&results) {
@@ -581,9 +580,7 @@ fn ensure_parent(path: &Path) -> Result<(), ToolchainError> {
 
 /// The generated `commit_id.inc` — upstream generates it with `git describe` as a pre-build
 /// step; the installer runs no git, so the selected Version stands in as the DLL's version
-/// string. Written into the source root because two sources `#include "../commit_id.inc"`
-/// relative to themselves, and upstream's own builds write the identical (gitignored) file
-/// there.
+/// string.
 fn commit_id_contents(version_label: &str) -> String {
     let sanitized: String = version_label
         .chars()
@@ -643,7 +640,7 @@ fn excerpt(output: &str) -> &str {
     &output[..end]
 }
 
-/// The build log: every tool's full output, one section per file (rule 11).
+/// The build log: every tool's full output, one section per file.
 struct BuildLog {
     file: fs::File,
     path: PathBuf,
@@ -697,7 +694,7 @@ mod tests {
     use crate::cache::ToolchainCache;
 
     /// Records every invocation and forges each tool's outputs (objects, the PCH, the DLL)
-    /// so the orchestration around the compiler can be exercised without one (rule 13).
+    /// so the orchestration around the compiler can be exercised without one.
     struct FakeInvoker {
         calls: Mutex<Vec<ToolCommand>>,
         fail_source_containing: Option<String>,
@@ -878,7 +875,7 @@ mod tests {
 
         // The generated version include exists in the variant directory, carries the
         // Version, and is reachable through the extra include directory — never written
-        // into the Installation Source (rule 6's spirit; a Local Repo is used as-is).
+        // into the Installation Source (a Local Repo is used as-is).
         let generated = fixture
             .output_path
             .parent()
@@ -911,8 +908,7 @@ mod tests {
         assert!(city < lua, "objects keep project-file order");
     }
 
-    /// Second half of the Build Fingerprint story at the file level: nothing changed means
-    /// nothing recompiled and nothing relinked.
+    /// Nothing changed means nothing recompiled and nothing relinked.
     #[test]
     fn an_unchanged_tree_reruns_no_tool_at_all() {
         let fixture = fixture();
@@ -927,7 +923,6 @@ mod tests {
         assert!(fixture.output_path.is_file());
     }
 
-    /// The acceptance criterion verbatim: touch one source, get one recompile and a relink.
     #[test]
     fn touching_one_source_recompiles_only_it_and_relinks() {
         let fixture = fixture();
@@ -1023,7 +1018,7 @@ mod tests {
         assert_eq!(third.call_inputs(), Vec::<String>::new());
     }
 
-    /// Rule 10: the user gets a sentence, the log gets everything.
+    /// The user gets a sentence, the log gets everything.
     #[test]
     fn a_compile_failure_is_a_sentence_and_the_log_holds_the_output() {
         let fixture = fixture();
@@ -1052,7 +1047,6 @@ mod tests {
         assert!(log.contains("==== CvGameCoreDLL_Expansion2/Lua/CvLuaArea.cpp ===="));
     }
 
-    /// The CRT include directories go first, as MSVC's own `INCLUDE` would put them.
     #[test]
     fn the_crt_include_directories_precede_the_sdks() {
         let fixture = fixture();
@@ -1102,7 +1096,6 @@ mod tests {
         );
     }
 
-    /// A Version predating the clang build gets a sentence, not a linker explosion.
     #[test]
     fn a_version_without_the_clang_shim_is_refused_plainly() {
         let fixture = fixture();

@@ -1,9 +1,9 @@
 //! The Upstream Cache driving a real Deployment through the Core seam.
 //!
 //! The source provider here is the real one — it fetches and checks out a Version — while the
-//! toolchain runner is still faked (rule 13). That is the half of ticket 04's "a real Release
-//! installs end-to-end" criterion that can run per-commit; the other half, against the real
-//! upstream repository, is the `#[ignore]`d test in `real_upstream.rs`.
+//! toolchain runner is still faked. This is the half of "a real Release installs end-to-end"
+//! that can run per-commit; the other half, against the real upstream repository, is the
+//! `#[ignore]`d test in `real_upstream.rs`.
 
 mod support;
 
@@ -158,7 +158,7 @@ fn switching_version_between_installs_removes_what_the_new_version_dropped() {
     );
 }
 
-/// Ticket 11's boundary, for tests that never run a Modpack Deployment: refuses if asked.
+/// For tests that never run a Modpack Deployment: refuses if asked.
 struct UnusedModpackAssembler;
 
 impl civ5vp_core::ModpackAssembler for UnusedModpackAssembler {

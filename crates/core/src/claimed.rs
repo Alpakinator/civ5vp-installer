@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{GameFolderProblem, InstallError};
 
-/// The resolved deployment targets. Ticket 03 detects these; the Core is handed them.
+/// The resolved deployment targets. Detection resolves these; the Core is handed them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GameFolders {
     /// `…/Documents/My Games/Sid Meier's Civilization 5/MODS`
@@ -22,7 +22,7 @@ impl GameFolders {
     /// Derived rather than stored, and deliberately only when the MODS and Text Folders agree
     /// on it. That agreement is checked before a Deployment runs, so by the time Sync asks for
     /// the `cache` folder the answer is a real location and not a guess — which matters,
-    /// because clearing `cache` is the one write rule 6 permits outside a Claimed Folder.
+    /// because clearing `cache` is the one write permitted outside a Claimed Folder.
     pub(crate) fn documents_root(&self) -> Option<&Path> {
         match (self.mods.parent(), self.text.parent()) {
             (Some(from_mods), Some(from_text)) if from_mods == from_text => Some(from_mods),
@@ -40,7 +40,7 @@ impl GameFolders {
 
     /// Refuse folders the installer cannot safely write to, before anything happens.
     ///
-    /// Rule 6 holds only if the roots every destination path is derived from are real absolute
+    /// Every destination path is derived from these roots, so they must be real absolute
     /// locations: a relative or empty root would aim Sync's deletes and copies at whatever the
     /// working directory happens to be. Both Deployment and Uninstall start here, because both
     /// delete things.
@@ -91,8 +91,8 @@ pub enum DeploymentTarget {
 
 /// A folder the installer owns and may create, sync, or delete.
 ///
-/// This is the whole list. Rule 6 — nothing outside the Claimed Folders is ever written,
-/// moved, or deleted — is upheld by deriving every destination path from
+/// This is the whole list. Nothing outside the Claimed Folders is ever written, moved, or
+/// deleted; that holds because every destination path is derived from
 /// [`ClaimedFolder::path_in`] and never from a string the caller supplied.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ClaimedFolder {
@@ -103,7 +103,7 @@ pub enum ClaimedFolder {
     SquadsForVoxPopuli,
     Vpui,
     UiBc1,
-    /// The generated Modpack (ticket 11). Unlike every other Claimed Folder it is not filled
+    /// The generated Modpack. Unlike every other Claimed Folder it is not filled
     /// from the Installation Source — the Core assembles it in the App Data Store and Sync
     /// deploys the result.
     Modpack,
@@ -111,7 +111,7 @@ pub enum ClaimedFolder {
 
 impl ClaimedFolder {
     /// Every Claimed Folder, in a fixed order. Iterating this — rather than a `HashSet` — is
-    /// what keeps Sync's file operations deterministic (rule 8).
+    /// what keeps Sync's file operations deterministic.
     pub const ALL: [Self; 8] = [
         Self::CommunityPatch,
         Self::VoxPopuli,
@@ -157,7 +157,7 @@ impl ClaimedFolder {
     /// The name this folder is deployed under: the current one, whatever the source called it.
     pub fn folder_name(self) -> &'static str {
         // `folder_names` is never empty — every arm above is a non-empty literal — so this
-        // cannot fall through. Rule 9 forbids `unwrap` here, hence the explicit arm.
+        // cannot fall through. The crate denies `unwrap`, hence the explicit arm.
         match self.folder_names() {
             [current, ..] => current,
             [] => "",
@@ -198,8 +198,8 @@ impl ClaimedFolder {
 ///
 /// The Claimed *Folders* are replaced wholesale, which is what makes Sync exact. That is not
 /// available in the Text Folder: it belongs to the game and holds the player's other text
-/// files, so the installer has to name the one file in it that is its own. Rule 6 still holds
-/// — the path is derived here and never from anything a caller supplied.
+/// files, so the installer has to name the one file in it that is its own. The path is
+/// still derived here and never from anything a caller supplied.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ClaimedFile {
     /// The loading-screen tips, deployed by every Vox Populi configuration.
@@ -207,7 +207,7 @@ pub enum ClaimedFile {
 }
 
 impl ClaimedFile {
-    /// Every Claimed File, in a fixed order (rule 8).
+    /// Every Claimed File, in a fixed order.
     pub const ALL: [Self; 1] = [Self::VpuiTips];
 
     /// The file's name in the game folder.

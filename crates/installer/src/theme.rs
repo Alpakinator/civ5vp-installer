@@ -1,9 +1,9 @@
 //! The palette, the typeface, and the widget styling.
 //!
 //! Every value here is generated from `docs/ui-reference/visual-language.md` — the prose is
-//! the source, this file is the transcription (ticket 09). Change the prose first, then this.
+//! the source, this file is the transcription. Change the prose first, then this.
 //!
-//! Presentation only (rule 3): nothing in this module knows what any screen means.
+//! Presentation only: nothing in this module knows what any screen means.
 
 use std::sync::Arc;
 

@@ -1,4 +1,4 @@
-//! The three — and only three — boundaries injected into the Core (rule 2).
+//! The three — and only three — boundaries injected into the Core.
 //!
 //! Everything else the installer does is concrete behind [`crate::Core`]. Adding a trait
 //! here is an architectural change, not a refactor.
@@ -10,8 +10,8 @@ use crate::progress::ProgressReporter;
 
 /// A failure reported by one of the injected boundaries.
 ///
-/// Two strings, because rule 10 wants both: `message` is shown to the user, `detail` is the
-/// raw git/compiler/IO text and goes to the log.
+/// Two strings: `message` is shown to the user, `detail` is the raw git/compiler/IO text
+/// and goes to the log.
 #[derive(Debug, Clone)]
 pub struct BoundaryError {
     message: String,
@@ -62,7 +62,7 @@ pub struct MaterializedSource {
 
 /// Boundary one: where the mod files and DLL sources come from.
 ///
-/// Implemented by the Upstream Cache (ticket 04) and by the Local Repo path (ticket 08).
+/// Implemented by the Upstream Cache and by the Local Repo path.
 /// `Send + Sync` because the shell runs a Deployment on a worker thread.
 pub trait SourceProvider: Send + Sync {
     /// Make `source` available on disk and describe what was materialized.
@@ -85,7 +85,7 @@ pub trait SourceProvider: Send + Sync {
     ) -> Result<crate::VersionCatalog, BoundaryError>;
 
     /// Every commit after `newest_release` (a `Release-*` tag name), oldest first — what
-    /// the picker lists as unofficial versions (ticket 13). One small HTTP round trip for
+    /// the picker lists as unofficial versions. One small HTTP round trip for
     /// the Upstream Cache; a Local Repo has no notion of this and returns an error saying
     /// so.
     fn unofficial_versions(
@@ -102,21 +102,21 @@ pub struct BuildRequest {
     pub source_root: PathBuf,
     /// Whether to compile with the 43-civ setting.
     pub forty_three_civs: FortyThreeCivs,
-    /// Release or Debug — always Release until Dev mode (ticket 08) offers the choice.
+    /// Release or Debug — always Release until Dev mode offers the choice.
     pub build_configuration: BuildConfiguration,
     /// Compiled into the DLL as its version string — see
     /// [`InstallationSource::version_label`].
     pub version_label: String,
     /// Exactly where the Built DLL must be written.
     ///
-    /// Always inside the Core's own build directory, never in a game folder — rule 7 means
-    /// the game is not touched until the build has fully succeeded.
+    /// Always inside the Core's own build directory, never in a game folder — the game is
+    /// not touched until the build has fully succeeded.
     pub output_path: PathBuf,
 }
 
 /// Boundary two: compiling the Built DLL.
 ///
-/// Implemented for real by ticket 06, driving the bootstrapped clang from the Toolchain Cache.
+/// The real implementation drives the bootstrapped clang from the Toolchain Cache.
 pub trait ToolchainRunner: Send + Sync {
     /// Compile the DLL and write it to [`BuildRequest::output_path`].
     fn build_dll(
@@ -125,21 +125,20 @@ pub trait ToolchainRunner: Send + Sync {
         progress: &ProgressReporter,
     ) -> Result<(), BoundaryError>;
 
-    /// A stable identifier for this toolchain, e.g. `clang-18.1.8`.
-    ///
-    /// Ticket 07 folds this into the Build Fingerprint; today it only appears in the log.
+    /// A stable identifier for this toolchain, e.g. `clang-18.1.8`. Folded into the Build
+    /// Fingerprint.
     fn toolchain_identity(&self) -> String;
 
     /// A sentence to show *before* the first Deployment, while getting the toolchain still
-    /// costs a download — `None` once it is set up (user story 15: the 2.4 GB must not be
-    /// a surprise, and it must stop being said the moment it stops being true). The default
-    /// is `None`: a runner with nothing to warn about says nothing.
+    /// costs a download — `None` once it is set up (the multi-GB download must not be a
+    /// surprise, and the warning must stop being said the moment it stops being true). The
+    /// default is `None`: a runner with nothing to warn about says nothing.
     fn first_run_expectation(&self) -> Option<String> {
         None
     }
 }
 
-/// Whether a game cache database can serve as the Modpack's base (ticket 11).
+/// Whether a game cache database can serve as the Modpack's base.
 ///
 /// The Modpack build starts from the game's own merged vanilla database
 /// (`cache/Civ5DebugDatabase.db` after an unmodded launch). A launch with mods activated
@@ -153,7 +152,7 @@ pub enum CacheState {
     Modded,
 }
 
-/// What the Core asks the modpack assembler to merge and dump (ticket 11).
+/// What the Core asks the modpack assembler to merge and dump.
 ///
 /// The Core stages every file of the Modpack itself; the assembler only does the part that
 /// needs a database engine: apply the mods' updates to copies of the two base databases and
@@ -177,11 +176,11 @@ pub struct ModpackDatabaseJob {
     pub scratch_dir: PathBuf,
 }
 
-/// Boundary three: the Modpack's database merge (ticket 11).
+/// Boundary three: the Modpack's database merge.
 ///
 /// A separate boundary for the same reason the toolchain is one: the work needs machinery —
-/// a SQLite engine — that rule 1 keeps out of the plain-std Core, and tests need to stand in
-/// a fake for it.
+/// a SQLite engine — that must stay out of the dependency-free Core, and tests need to
+/// stand in a fake for it.
 pub trait ModpackAssembler: Send + Sync {
     /// Whether `gameplay_db` is a usable Modpack base — see [`CacheState`].
     fn cache_state(&self, gameplay_db: &std::path::Path) -> Result<CacheState, BoundaryError>;

@@ -1,8 +1,8 @@
-//! The Upstream Cache, against fixture repositories rather than the network (rule 13).
+//! The Upstream Cache, against fixture repositories rather than the network.
 //!
 //! Everything here goes through the crate's public API: list the Versions, materialize one,
 //! look at the files that appear. The real-upstream counterparts live in `real_upstream.rs`
-//! and are `#[ignore]`d (rule 14).
+//! and are `#[ignore]`d.
 
 mod support;
 
@@ -10,7 +10,6 @@ use civ5vp_core::{ProgressReporter, Version};
 use civ5vp_sources::UpstreamCache;
 use support::{UpstreamFixture, materialized_files};
 
-/// Read a file out of the materialized tree.
 fn read(root: &std::path::Path, relative: &str) -> String {
     std::fs::read_to_string(root.join(relative)).unwrap()
 }
@@ -39,8 +38,8 @@ fn version_picker_reports_the_latest_development_version() {
     assert_eq!(catalog.latest_development_version(), fixture.master_head());
 }
 
-/// Ticket 07: for a checked-out Version the Build Fingerprint's source half derives from the
-/// git tree — the tree id itself, so nothing is re-hashed and identical trees share it.
+/// For a checked-out Version the Build Fingerprint's source half derives from the git tree —
+/// the tree id itself, so nothing is re-hashed and identical trees share it.
 #[test]
 fn the_source_identity_is_the_checked_out_tree() {
     let fixture = UpstreamFixture::new();

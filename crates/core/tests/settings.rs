@@ -25,7 +25,7 @@ fn nowhere() -> SearchLocations {
     SearchLocations::default()
 }
 
-/// User story 25: the store answers "how big" and "make it go away", and clearing leaves a
+/// The store answers "how big" and "make it go away", and clearing leaves a
 /// state a next install starts cleanly from.
 #[test]
 fn the_store_reports_its_size_and_clears_to_nothing() {
@@ -113,7 +113,7 @@ fn the_remembered_state_survives_the_round_trip() {
             install_mode: InstallMode::Mods,
             extra_mods: Vec::new(),
         },
-        // An unofficial build (ticket 13): the label and the commit both survive.
+        // An unofficial build: the label and the commit both survive.
         InstallConfiguration {
             source: InstallationSource::UpstreamCache {
                 version: Version::UnofficialBuild {
@@ -127,8 +127,8 @@ fn the_remembered_state_survives_the_round_trip() {
             install_mode: InstallMode::Mods,
             extra_mods: Vec::new(),
         },
-        // Modpack mode with extra picks (tickets 11 and 12) — names with spaces and
-        // parentheses, like real mod folders have.
+        // Modpack mode with extra picks — names with spaces and parentheses, like real
+        // mod folders have.
         InstallConfiguration {
             source: InstallationSource::UpstreamCache {
                 version: Version::Release("Release-4.19.1".to_owned()),
@@ -197,7 +197,7 @@ fn unreadable_settings_do_not_stop_the_installer() {
     assert_eq!(settings.configuration, None);
 }
 
-/// User story 26: the folders and the last configuration pre-fill the next launch.
+/// The folders and the last configuration pre-fill the next launch.
 #[test]
 fn remembered_folders_pre_fill_the_next_launch() {
     let temp = temp();
