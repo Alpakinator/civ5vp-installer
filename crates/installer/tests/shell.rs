@@ -146,7 +146,7 @@ fn visible_labels(harness: &mut Harness<'_, InstallerApp>) -> Vec<String> {
     use egui_kittest::kittest::NodeT as _;
     harness
         .query_all_by_label_contains("")
-        .filter_map(|node| node.accesskit_node().label().map(str::to_owned))
+        .filter_map(|node| node.accesskit_node().label())
         .collect()
 }
 
