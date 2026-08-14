@@ -166,11 +166,17 @@ fn crowned_portal(title_rect: Rect, rule_rect: Rect) -> Shape {
         ));
     }
 
-    // Wing tiers: four lines a side, tightly stepped toward the medallion, the longest at
-    // the bottom, alternating bright and dim — each with a feather tick at its outer end.
+    // Wing tiers: four lines a side, tightly stepped, the longest at the bottom,
+    // alternating bright and dim — each with a feather tick at its outer end. Every tier
+    // runs inward until it meets the arch's outer arc and stops exactly there, so the wings
+    // join the dome rather than hiding behind it; the tier heights stay inside the arch's
+    // radius so even the top one lands on the dome near its crown.
     for tier in 0..4 {
-        let y = shoulder_y - 5.0 - tier as f32 * 5.0;
-        let inner = MEDALLION_HALF + 4.0 + tier as f32 * 3.0;
+        let height = 5.0 + tier as f32 * 4.0;
+        let y = shoulder_y - height;
+        let inner = (MEDALLION_HALF * MEDALLION_HALF - height * height)
+            .max(0.0)
+            .sqrt();
         let outer = stem_reach - 10.0 - tier as f32 * 18.0;
         let stroke = if tier % 2 == 0 { bright } else { dim };
         for side in [-1.0_f32, 1.0] {
