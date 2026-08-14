@@ -575,6 +575,19 @@ fn the_version_picker_defaults_to_the_newest_release_and_the_pick_is_remembered(
     // Pick the Latest Development Version through the combo, as a player would.
     harness.get_by_label("Version").click();
     harness.step();
+    // The open list names the newest release once — inside "Latest release — …" — and
+    // never again as a bare entry; older releases keep their own rows.
+    assert_eq!(
+        harness
+            .query_all_by_label_contains("Release-5.2")
+            .count(),
+        1,
+        "the newest release must not be listed twice"
+    );
+    assert!(
+        harness.query_all_by_label("Release-5.1").next().is_some(),
+        "older releases keep their own entries"
+    );
     harness.get_by_label("Latest development version").click();
     harness.step();
     harness.step();

@@ -730,7 +730,12 @@ impl InstallerApp {
                                 "Latest development version",
                             )
                             .changed();
-                        for tag in &releases {
+                        // The newest release is already the "Latest release — …" entry.
+                        let newest_tag = match &newest {
+                            Some(Version::Release(tag)) => Some(tag.as_str()),
+                            _ => None,
+                        };
+                        for tag in releases.iter().filter(|tag| Some(tag.as_str()) != newest_tag) {
                             changed |= ui
                                 .selectable_value(
                                     &mut self.picked_version,
