@@ -129,6 +129,14 @@ pub trait ToolchainRunner: Send + Sync {
     ///
     /// Ticket 07 folds this into the Build Fingerprint; today it only appears in the log.
     fn toolchain_identity(&self) -> String;
+
+    /// A sentence to show *before* the first Deployment, while getting the toolchain still
+    /// costs a download — `None` once it is set up (user story 15: the 2.4 GB must not be
+    /// a surprise, and it must stop being said the moment it stops being true). The default
+    /// is `None`: a runner with nothing to warn about says nothing.
+    fn first_run_expectation(&self) -> Option<String> {
+        None
+    }
 }
 
 /// Whether a game cache database can serve as the Modpack's base (ticket 11).

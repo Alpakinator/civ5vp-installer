@@ -880,3 +880,41 @@ fn the_dev_checkout_survives_a_switch_back_to_github_and_a_relaunch() {
         miniature_repo().display().to_string(),
     );
 }
+
+/// User story 15, before the click: the first-run cost is on screen while the toolchain
+/// would still have to be downloaded, and the sentence disappears the moment an install
+/// has made it untrue.
+#[test]
+fn the_first_run_cost_is_announced_until_the_toolchain_exists() {
+    let game = TempGame::new();
+    let mut harness = harness_over(game.launch(&game.locations()));
+    harness.step();
+    assert!(
+        harness
+            .query_all_by_label_contains("First install downloads about")
+            .next()
+            .is_some(),
+        "a fresh App Data Store must announce the first-run cost"
+    );
+
+    enter_dev_mode(&mut harness, &miniature_repo().display().to_string());
+    harness.get_by_label("Community Patch only").click();
+    harness.get_by_label("Install").click();
+    wait_for_the_install_to_finish(&mut harness);
+    assert!(
+        harness
+            .query_all_by_label_contains("First install downloads about")
+            .next()
+            .is_none(),
+        "once the toolchain exists the warning must stop"
+    );
+
+    // And it stays gone on the next launch.
+    let mut next = harness_over(game.launch(&game.nowhere()));
+    next.step();
+    assert!(
+        next.query_all_by_label_contains("First install downloads about")
+            .next()
+            .is_none()
+    );
+}

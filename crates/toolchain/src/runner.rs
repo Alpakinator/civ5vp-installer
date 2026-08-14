@@ -54,6 +54,18 @@ impl ToolchainRunner for BootstrappedToolchain {
         // Fingerprint, where it has to be knowable up front.
         self.cache.expected_identity()
     }
+
+    fn first_run_expectation(&self) -> Option<String> {
+        if self.cache.installed().is_some() {
+            return None;
+        }
+        let gigabytes =
+            crate::pinned::approximate_download_total() as f64 / (1024.0 * 1024.0 * 1024.0);
+        Some(format!(
+            "First install downloads about {gigabytes:.1} GB of build tools — one time — \
+             and typically takes 10–25 minutes. Later installs take seconds to minutes."
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -73,6 +85,23 @@ mod tests {
         assert!(identity.contains("winsdk-7.0"));
         // Nothing was created just by asking.
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn the_first_run_expectation_disappears_once_the_cache_is_set_up() {
+        let dir = tempfile::tempdir().unwrap();
+        let runner = BootstrappedToolchain::new(dir.path().join("toolchain"));
+        let sentence = runner
+            .first_run_expectation()
+            .expect("an empty cache warns about the download");
+        assert!(sentence.contains("GB"), "got: {sentence}");
+        assert!(sentence.contains("one time"), "got: {sentence}");
+
+        let cache = ToolchainCache::new(dir.path().join("toolchain"));
+        std::fs::create_dir_all(cache.llvm_root().join("bin")).unwrap();
+        std::fs::create_dir_all(cache.sdk_root().join("Include")).unwrap();
+        cache.mark_complete().unwrap();
+        assert_eq!(runner.first_run_expectation(), None);
     }
 
     /// The wiring in front of the compile: a populated cache is reused (no download), and

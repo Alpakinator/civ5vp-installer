@@ -30,7 +30,9 @@ pub const PLACEHOLDER_DUMP_CONTENTS: &str =
 pub fn core(work_dir: PathBuf) -> Core {
     Core::new(
         Box::new(DirectorySourceProvider),
-        Box::new(PlaceholderToolchainRunner),
+        Box::new(PlaceholderToolchainRunner {
+            build_dir: work_dir.join("build"),
+        }),
         Box::new(PlaceholderModpackAssembler),
         work_dir,
     )
@@ -140,7 +142,11 @@ pub fn fixture_version_catalog() -> civ5vp_core::VersionCatalog {
 
 /// Writes a marker where the Built DLL belongs, so the rest of the pipeline can be exercised
 /// without a 580 MB toolchain download and a multi-minute compile.
-pub struct PlaceholderToolchainRunner;
+pub struct PlaceholderToolchainRunner {
+    /// Stands in for the Toolchain Cache: once a build has run, the first-run note stops —
+    /// the same life cycle the real runner has, so the shell tests can watch it disappear.
+    build_dir: PathBuf,
+}
 
 impl ToolchainRunner for PlaceholderToolchainRunner {
     fn build_dll(
@@ -165,6 +171,21 @@ impl ToolchainRunner for PlaceholderToolchainRunner {
 
     fn toolchain_identity(&self) -> String {
         "placeholder-toolchain-0".to_owned()
+    }
+
+    fn first_run_expectation(&self) -> Option<String> {
+        if self
+            .build_dir
+            .join(civ5vp_core::BUILT_DLL_FILE_NAME)
+            .is_file()
+        {
+            return None;
+        }
+        Some(
+            "First install downloads about 2.4 GB of build tools — one time — and \
+             typically takes 10–25 minutes. Later installs take seconds to minutes."
+                .to_owned(),
+        )
     }
 }
 

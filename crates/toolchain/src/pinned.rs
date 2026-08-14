@@ -89,6 +89,15 @@ pub struct PinnedLibrary {
 /// The library the pinned compiler needs in order to start, if this host needs one.
 ///
 /// `None` on Windows: the Windows LLVM build has no such dependency, so nothing is fetched.
+/// Everything a first Toolchain Bootstrap downloads, in bytes — what the up-front
+/// expectation sentences are computed from, so the figure can never go stale (user
+/// story 15).
+pub fn approximate_download_total() -> u64 {
+    SDK_ISO.approximate_bytes
+        + llvm_for_host().map_or(0, |llvm| llvm.download.approximate_bytes)
+        + libtinfo_for_host().map_or(0, |library| library.download.approximate_bytes)
+}
+
 pub const fn libtinfo_for_host() -> Option<PinnedLibrary> {
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {

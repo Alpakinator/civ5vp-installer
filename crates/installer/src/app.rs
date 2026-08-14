@@ -154,6 +154,10 @@ pub struct InstallerApp {
     /// The App Data Store's measured size, when the storage panel is open. `None` between
     /// looks — measuring a multi-gigabyte store is not a per-frame job.
     store_size: Option<u64>,
+    /// The Core's up-front cost warning, drawn near Install while the first build would
+    /// still bootstrap the toolchain. Refreshed when a Deployment finishes — that is the
+    /// moment it can stop being true.
+    first_run_note: Option<String>,
     /// The launch-time update ping's channel and answer (user story 27). Wired only by the
     /// real binary — the shell tests and previews never open a socket.
     update_check: Option<Receiver<String>>,
@@ -269,6 +273,7 @@ impl InstallerApp {
         let resolved = resolve(&game_folder, &documents_folder)
             .map_err(|rejected| startup.explanation(&rejected));
 
+        let first_run_note = core.first_run_expectation();
         let mut app = Self {
             core,
             store,
@@ -293,6 +298,7 @@ impl InstallerApp {
             running: None,
             skinned: false,
             store_size: None,
+            first_run_note,
             update_check: None,
             newer_installer: None,
         };
@@ -344,6 +350,7 @@ impl InstallerApp {
             running: None,
             skinned: false,
             store_size: None,
+            first_run_note: None,
             update_check: None,
             newer_installer: None,
         };
@@ -598,6 +605,19 @@ impl InstallerApp {
         }
 
         ui.add_space(8.0);
+        // The Core's up-front cost warning (user story 15): the 2.4 GB first-run bootstrap
+        // must be known before the click, and the sentence disappears the moment the
+        // Toolchain Cache makes it untrue.
+        if let Some(note) = &self.first_run_note {
+            ui.vertical_centered(|ui| {
+                ui.label(
+                    egui::RichText::new(note.as_str())
+                        .small()
+                        .color(theme::PARCHMENT_DIM),
+                );
+            });
+            ui.add_space(4.0);
+        }
         let busy = self.status == Status::Installing;
         let (install_clicked, uninstall_clicked) = ui
             .vertical_centered(|ui| {
@@ -1277,6 +1297,9 @@ impl InstallerApp {
         let finished = match run.result.try_recv() {
             Ok(Ok(summary)) => {
                 self.status = Status::Installed { summary };
+                // A finished Deployment is the moment the first-run warning can stop
+                // being true — ask again rather than guess.
+                self.first_run_note = self.core.first_run_expectation();
                 // The configuration that worked is the one worth starting from next time.
                 self.remember();
                 true

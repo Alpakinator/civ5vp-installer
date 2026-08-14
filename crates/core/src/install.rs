@@ -76,6 +76,12 @@ impl Core {
             .map_err(InstallError::Fetch)
     }
 
+    /// What to tell the player near the Install button while the first build still costs
+    /// the toolchain download — `None` once it is set up.
+    pub fn first_run_expectation(&self) -> Option<String> {
+        self.toolchain_runner.first_run_expectation()
+    }
+
     /// The unofficial versions after `newest_release` (ticket 13), from the same boundary.
     pub fn unofficial_versions(
         &self,
