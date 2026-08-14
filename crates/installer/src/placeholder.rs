@@ -12,8 +12,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use civ5vp_core::{
-    BoundaryError, BuildRequest, Core, InstallationSource, ProgressReporter, SourceProvider, Stage,
-    ToolchainRunner,
+    BoundaryError, BuildRequest, Core, InstallationSource, MaterializedSource, ProgressReporter,
+    SourceProvider, Stage, ToolchainRunner,
 };
 
 /// What [`PlaceholderToolchainRunner`] writes where the Built DLL belongs.
@@ -37,7 +37,7 @@ impl SourceProvider for DirectorySourceProvider {
         &self,
         source: &InstallationSource,
         progress: &ProgressReporter,
-    ) -> Result<PathBuf, BoundaryError> {
+    ) -> Result<MaterializedSource, BoundaryError> {
         match source {
             InstallationSource::LocalRepo { path } => {
                 if path.as_os_str().is_empty() {
@@ -59,7 +59,22 @@ impl SourceProvider for DirectorySourceProvider {
                     Stage::Fetch,
                     format!("Using the checkout at {}.", path.display()),
                 );
-                Ok(path.clone())
+                // Content-derived, like the real Local Repo provider — so the shell tests
+                // exercise the same skip-and-rebuild behaviour the shipped installer has.
+                let source_identity =
+                    civ5vp_core::dll_source_identity(path).map_err(|unreadable| {
+                        BoundaryError::new(
+                            format!(
+                                "A file in your repository could not be read: {}.",
+                                unreadable.display()
+                            ),
+                            format!("unreadable while fingerprinting: {}", unreadable.display()),
+                        )
+                    })?;
+                Ok(MaterializedSource {
+                    root: path.clone(),
+                    source_identity,
+                })
             }
             InstallationSource::UpstreamCache { .. } => Err(BoundaryError::new(
                 "Downloading versions from GitHub is not available in this build yet. \

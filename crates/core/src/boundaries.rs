@@ -45,20 +45,35 @@ impl std::fmt::Display for BoundaryError {
 
 impl std::error::Error for BoundaryError {}
 
+/// What [`SourceProvider::materialize`] hands back: where the tree is, and what its DLL
+/// build inputs are.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MaterializedSource {
+    /// Root of the materialized tree. The Core only ever reads from it.
+    pub root: PathBuf,
+    /// A stable identity of the DLL build inputs in this tree — equal identities mean the
+    /// build would read identical bytes.
+    ///
+    /// For a checked-out Version this derives from the git commit; for a Local Repo, from
+    /// the working files under [`crate::DLL_SOURCE_INPUT_ROOTS`]
+    /// (see [`crate::dll_source_identity`]). It is the source half of the Build Fingerprint.
+    pub source_identity: String,
+}
+
 /// Boundary one: where the mod files and DLL sources come from.
 ///
 /// Implemented by the Upstream Cache (ticket 04) and by the Local Repo path (ticket 08).
 /// `Send + Sync` because the shell runs a Deployment on a worker thread.
 pub trait SourceProvider: Send + Sync {
-    /// Make `source` available on disk and return the root of the resulting tree.
+    /// Make `source` available on disk and describe what was materialized.
     ///
-    /// The Core only ever reads from the returned path. For a Local Repo that means the
+    /// The Core only ever reads from the returned tree. For a Local Repo that means the
     /// developer's working tree is handed back untouched — no git operation runs against it.
     fn materialize(
         &self,
         source: &InstallationSource,
         progress: &ProgressReporter,
-    ) -> Result<PathBuf, BoundaryError>;
+    ) -> Result<MaterializedSource, BoundaryError>;
 }
 
 /// What the Core asks the toolchain runner to compile.

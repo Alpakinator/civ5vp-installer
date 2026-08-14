@@ -26,7 +26,7 @@ use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
-use civ5vp_core::{ProgressReporter, Stage, Version};
+use civ5vp_core::{MaterializedSource, ProgressReporter, Stage, Version};
 use gix::remote::Direction;
 use gix::remote::fetch::{Shallow, Tags};
 
@@ -127,16 +127,20 @@ impl UpstreamCache {
         Ok(catalog)
     }
 
-    /// Make `version` available on disk and return the root of the resulting tree.
+    /// Make `version` available on disk and return the resulting tree with its identity.
     ///
     /// Fetch, then check out. Both steps are safe to interrupt: a failed fetch leaves the
     /// objects it did get and no ref pointing at a half-written state, and a checkout is only
     /// recorded as done once every file is written.
+    ///
+    /// The `source_identity` is the checked-out commit — this is what "the Fingerprint for a
+    /// checked-out Version derives from the git tree" means: the commit names the tree, so no
+    /// file content has to be re-hashed.
     pub fn materialize(
         &self,
         version: &Version,
         progress: &ProgressReporter,
-    ) -> Result<PathBuf, SourceError> {
+    ) -> Result<MaterializedSource, SourceError> {
         let target = RefTarget::for_version(version);
         let repo = self.open_or_init()?;
 
@@ -160,7 +164,10 @@ impl UpstreamCache {
             .detach();
 
         self.checkout(&repo, commit, &target.label, progress)?;
-        Ok(self.root.clone())
+        Ok(MaterializedSource {
+            root: self.root.clone(),
+            source_identity: format!("git:{commit}"),
+        })
     }
 
     /// Open the cache repository, creating it if this is the first run.

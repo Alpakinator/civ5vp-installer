@@ -1,8 +1,8 @@
 //! The real [`SourceProvider`] — boundary one of the Core's two (rule 2).
 
-use std::path::PathBuf;
-
-use civ5vp_core::{BoundaryError, InstallationSource, ProgressReporter, SourceProvider};
+use civ5vp_core::{
+    BoundaryError, InstallationSource, MaterializedSource, ProgressReporter, SourceProvider,
+};
 
 use crate::local;
 use crate::upstream::UpstreamCache;
@@ -27,7 +27,7 @@ impl SourceProvider for InstallationSources {
         &self,
         source: &InstallationSource,
         progress: &ProgressReporter,
-    ) -> Result<PathBuf, BoundaryError> {
+    ) -> Result<MaterializedSource, BoundaryError> {
         match source {
             InstallationSource::UpstreamCache { version } => {
                 self.upstream.materialize(version, progress)

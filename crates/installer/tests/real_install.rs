@@ -110,4 +110,30 @@ fn a_real_version_installs_end_to_end_with_a_genuinely_built_dll() {
         "the Community Patch folder must hold more than the DLL"
     );
     println!("installed {} bytes to {}", bytes.len(), deployed.display());
+
+    // Repeat install (user story 17): same configuration, nothing changed — the Build
+    // Fingerprint sidecar and the intact DLL make the second run skip the build entirely.
+    let started = std::time::Instant::now();
+    let (sender, receiver) = mpsc::channel::<civ5vp_core::ProgressEvent>();
+    let progress = ProgressReporter::to_channel(sender);
+    let plan = core.plan(&configuration, &folders).unwrap();
+    core.execute(&plan, &progress).unwrap_or_else(|error| {
+        panic!("{}\n  detail: {}", error.user_message(), error.log_detail())
+    });
+    drop(progress);
+    let lines: Vec<String> = receiver.iter().map(|event| event.message).collect();
+    assert!(
+        lines.iter().any(|line| line.contains("already up to date")),
+        "the repeat install must skip the build: {lines:?}"
+    );
+    let again = fs::read(&deployed).unwrap();
+    assert_eq!(
+        again.len(),
+        bytes.len(),
+        "the deployed DLL survives the skip"
+    );
+    println!(
+        "repeat install skipped the build in {:?}",
+        started.elapsed()
+    );
 }

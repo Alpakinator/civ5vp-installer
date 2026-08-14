@@ -39,6 +39,9 @@ const COMMUNITY_PATCH: &[&str] = &[
     "MODS/(1) Community Patch/Core Files/Core Values/DefinesChanges.sql",
     "MODS/(1) Community Patch/Core Files/LUA/CoreHelper.lua",
     "MODS/(1) Community Patch/CvGameCore_Expansion2.dll",
+    // The Build Fingerprint sidecar, recorded beside the deployed DLL (ticket 07) — inside a
+    // Claimed Folder, so rule 6 holds, and part of every configuration's expected tree.
+    "MODS/(1) Community Patch/CvGameCore_Expansion2.dll.fingerprint",
     "MODS/(1) Community Patch/Kit/ReadMe.txt",
 ];
 

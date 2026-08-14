@@ -182,7 +182,8 @@ fn an_arbitrary_ref_can_be_a_commit_id() {
             &Version::ArbitraryRef(commit.to_owned()),
             &ProgressReporter::silent(),
         )
-        .unwrap();
+        .unwrap()
+        .root;
 
     assert!(materialized.join("(1) Community Patch").is_dir());
 }

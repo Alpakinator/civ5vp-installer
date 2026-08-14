@@ -20,6 +20,8 @@ pub enum LocalRepoProblem {
     NotAbsolute,
     /// Nothing there, or there but not a directory.
     NotADirectory,
+    /// A DLL source file could not be read while deriving the Build Fingerprint identity.
+    UnreadableSourceFile,
 }
 
 /// Anything that can stop an Installation Source from being materialized.
@@ -72,6 +74,11 @@ impl SourceError {
                 LocalRepoProblem::NotADirectory => format!(
                     "There is no folder at {}. Pick your copy of the Community-Patch-DLL \
                      repository again.",
+                    path.display()
+                ),
+                LocalRepoProblem::UnreadableSourceFile => format!(
+                    "A file in your repository could not be read: {}. Check its permissions \
+                     and try again.",
                     path.display()
                 ),
             },

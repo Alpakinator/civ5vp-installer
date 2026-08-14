@@ -40,7 +40,8 @@ fn a_local_repo_is_handed_back_untouched_with_its_uncommitted_changes() {
             },
             &ProgressReporter::silent(),
         )
-        .unwrap();
+        .unwrap()
+        .root;
 
     assert_eq!(root, checkout);
     assert_eq!(

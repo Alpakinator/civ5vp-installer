@@ -39,6 +39,31 @@ fn version_picker_reports_the_latest_development_version() {
     assert_eq!(catalog.latest_development_version(), fixture.master_head());
 }
 
+/// Ticket 07: for a checked-out Version the Build Fingerprint's source half derives from the
+/// git tree — the commit names it, so nothing is re-hashed.
+#[test]
+fn the_source_identity_is_the_checked_out_commit() {
+    let fixture = UpstreamFixture::new();
+    let cache = UpstreamCache::new(fixture.cache_root(), fixture.url());
+    let old = Version::Release("Release-1.0".to_owned());
+    let new = Version::Release("Release-2.0".to_owned());
+
+    let first = cache
+        .materialize(&old, &ProgressReporter::silent())
+        .unwrap();
+    let again = cache
+        .materialize(&old, &ProgressReporter::silent())
+        .unwrap();
+    let newer = cache
+        .materialize(&new, &ProgressReporter::silent())
+        .unwrap();
+
+    assert!(first.source_identity.starts_with("git:"));
+    assert_eq!(first.source_identity.len(), "git:".len() + 40);
+    assert_eq!(first.source_identity, again.source_identity);
+    assert_ne!(first.source_identity, newer.source_identity);
+}
+
 #[test]
 fn materializing_a_release_checks_out_that_releases_files() {
     let fixture = UpstreamFixture::new();
@@ -49,7 +74,8 @@ fn materializing_a_release_checks_out_that_releases_files() {
             &Version::Release("Release-2.0".to_owned()),
             &ProgressReporter::silent(),
         )
-        .unwrap();
+        .unwrap()
+        .root;
 
     assert_eq!(
         materialized_files(&root),
@@ -75,7 +101,8 @@ fn a_release_can_be_named_without_its_prefix() {
             &Version::Release("2.0".to_owned()),
             &ProgressReporter::silent(),
         )
-        .unwrap();
+        .unwrap()
+        .root;
 
     assert_eq!(
         read(&root, "(1) Community Patch/(1) Community Patch.modinfo"),
@@ -93,7 +120,8 @@ fn materializing_the_latest_development_version_checks_out_master_head() {
             &Version::LatestDevelopmentVersion,
             &ProgressReporter::silent(),
         )
-        .unwrap();
+        .unwrap()
+        .root;
 
     assert_eq!(
         read(&root, "(1) Community Patch/(1) Community Patch.modinfo"),
@@ -111,7 +139,8 @@ fn an_arbitrary_ref_accepts_a_branch_name() {
             &Version::ArbitraryRef("experimental".to_owned()),
             &ProgressReporter::silent(),
         )
-        .unwrap();
+        .unwrap()
+        .root;
 
     assert_eq!(
         read(&root, "(1) Community Patch/(1) Community Patch.modinfo"),
@@ -129,7 +158,8 @@ fn an_arbitrary_ref_accepts_a_tag_name_that_is_not_a_release() {
             &Version::ArbitraryRef("experiment-42".to_owned()),
             &ProgressReporter::silent(),
         )
-        .unwrap();
+        .unwrap()
+        .root;
 
     assert_eq!(
         read(&root, "(1) Community Patch/(1) Community Patch.modinfo"),
@@ -153,7 +183,8 @@ fn switching_version_leaves_no_file_from_the_previous_version() {
             &Version::Release("Release-2.0".to_owned()),
             &ProgressReporter::silent(),
         )
-        .unwrap();
+        .unwrap()
+        .root;
 
     // `RetiredInLaterVersions.txt` exists only in Release-1.0.
     assert_eq!(
@@ -178,7 +209,8 @@ fn switching_back_to_an_earlier_version_restores_its_files() {
                 &Version::Release(version.to_owned()),
                 &ProgressReporter::silent(),
             )
-            .unwrap();
+            .unwrap()
+            .root;
     }
 
     assert_eq!(
@@ -199,11 +231,13 @@ fn materializing_the_same_version_twice_is_idempotent() {
 
     let first = cache
         .materialize(&version, &ProgressReporter::silent())
-        .unwrap();
+        .unwrap()
+        .root;
     let before = materialized_files(&first);
     let second = cache
         .materialize(&version, &ProgressReporter::silent())
-        .unwrap();
+        .unwrap()
+        .root;
 
     assert_eq!(first, second);
     assert_eq!(before, materialized_files(&second));
@@ -238,7 +272,8 @@ fn an_unknown_version_is_reported_as_such_and_the_cache_still_works() {
             &Version::Release("Release-2.0".to_owned()),
             &ProgressReporter::silent(),
         )
-        .unwrap();
+        .unwrap()
+        .root;
     assert_eq!(
         read(&root, "(1) Community Patch/(1) Community Patch.modinfo"),
         "2.0"
@@ -270,7 +305,8 @@ fn a_failed_fetch_leaves_the_cache_consistent_and_a_retry_succeeds() {
     let online = UpstreamCache::new(fixture.cache_root(), fixture.url());
     let root = online
         .materialize(&version, &ProgressReporter::silent())
-        .unwrap();
+        .unwrap()
+        .root;
     assert_eq!(
         read(&root, "(1) Community Patch/(1) Community Patch.modinfo"),
         "2.0"
@@ -284,7 +320,8 @@ fn a_checkout_that_did_not_finish_is_redone_rather_than_trusted() {
     let version = Version::Release("Release-2.0".to_owned());
     let root = cache
         .materialize(&version, &ProgressReporter::silent())
-        .unwrap();
+        .unwrap()
+        .root;
 
     // Exactly the state an interrupted checkout leaves: files half there, nothing recorded
     // as materialized.
@@ -293,7 +330,8 @@ fn a_checkout_that_did_not_finish_is_redone_rather_than_trusted() {
 
     let root = cache
         .materialize(&version, &ProgressReporter::silent())
-        .unwrap();
+        .unwrap()
+        .root;
 
     assert_eq!(
         materialized_files(&root),

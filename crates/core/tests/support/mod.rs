@@ -16,8 +16,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use civ5vp_core::{
-    BoundaryError, BuildRequest, GameFolders, InstallationSource, ProgressReporter, SourceProvider,
-    Stage, ToolchainRunner,
+    BoundaryError, BuildRequest, GameFolders, InstallationSource, MaterializedSource,
+    ProgressReporter, SourceProvider, Stage, ToolchainRunner,
 };
 
 /// The miniature Community-Patch-DLL layout committed under `tests/fixtures/`.
@@ -41,9 +41,20 @@ impl SourceProvider for FixtureSourceProvider {
         &self,
         _source: &InstallationSource,
         progress: &ProgressReporter,
-    ) -> Result<PathBuf, BoundaryError> {
+    ) -> Result<MaterializedSource, BoundaryError> {
         progress.report(Stage::Fetch, "Using the fixture repository.");
-        Ok(self.root.clone())
+        // Content-derived, the way the Local Repo provider does it — so a test that edits a
+        // fixture source file really changes the identity the Core sees.
+        let source_identity = civ5vp_core::dll_source_identity(&self.root).map_err(|path| {
+            BoundaryError::new(
+                "A fixture file could not be read.",
+                format!("unreadable: {}", path.display()),
+            )
+        })?;
+        Ok(MaterializedSource {
+            root: self.root.clone(),
+            source_identity,
+        })
     }
 }
 
@@ -55,7 +66,7 @@ impl SourceProvider for FailingSourceProvider {
         &self,
         _source: &InstallationSource,
         _progress: &ProgressReporter,
-    ) -> Result<PathBuf, BoundaryError> {
+    ) -> Result<MaterializedSource, BoundaryError> {
         Err(BoundaryError::new(
             "Could not download the mod files. Check your internet connection and try again.",
             "fake provider: simulated network failure",
@@ -86,6 +97,46 @@ impl ToolchainRunner for MarkerToolchainRunner {
 
     fn toolchain_identity(&self) -> String {
         "fake-toolchain-0".to_owned()
+    }
+}
+
+/// A [`MarkerToolchainRunner`] that also counts how often it is asked to build — how the
+/// fingerprint tests observe, from outside the Core, whether the build was skipped.
+///
+/// The counter is shared: the Core takes the runner by `Box`, so the test keeps a clone of
+/// the `Arc` and reads it after the fact. `identity` is configurable because a different
+/// Toolchain version must invalidate the fingerprint.
+pub struct CountingToolchainRunner {
+    pub builds: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    pub identity: String,
+}
+
+impl CountingToolchainRunner {
+    pub fn new(identity: &str) -> (Self, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        let builds = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        (
+            Self {
+                builds: std::sync::Arc::clone(&builds),
+                identity: identity.to_owned(),
+            },
+            builds,
+        )
+    }
+}
+
+impl ToolchainRunner for CountingToolchainRunner {
+    fn build_dll(
+        &self,
+        request: &BuildRequest,
+        progress: &ProgressReporter,
+    ) -> Result<(), BoundaryError> {
+        self.builds
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        MarkerToolchainRunner.build_dll(request, progress)
+    }
+
+    fn toolchain_identity(&self) -> String {
+        self.identity.clone()
     }
 }
 

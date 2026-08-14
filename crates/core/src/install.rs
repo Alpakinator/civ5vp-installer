@@ -3,10 +3,11 @@
 use std::path::{Path, PathBuf};
 
 use crate::BUILT_DLL_FILE_NAME;
-use crate::boundaries::{BuildRequest, SourceProvider, ToolchainRunner};
+use crate::boundaries::{BuildRequest, MaterializedSource, SourceProvider, ToolchainRunner};
 use crate::claimed::{ClaimedFile, ClaimedFolder, GameFolders};
 use crate::configuration::{BuildConfiguration, InstallConfiguration};
 use crate::error::{InstallError, SourceItem};
+use crate::fingerprint::{BuildFingerprint, FINGERPRINT_FILE_NAME, fnv1a64_of_file};
 use crate::plan::Plan;
 use crate::progress::{ProgressReporter, Stage};
 use crate::tree;
@@ -72,14 +73,63 @@ impl Core {
 
     /// Fetch, build, then Sync — in that order, and the game is not touched until the first
     /// two have fully succeeded (rule 7).
+    ///
+    /// The build is skipped when the Build Fingerprint recorded at the last Deployment still
+    /// matches this configuration *and* the deployed DLL still hashes to what was recorded —
+    /// both, so neither a changed input nor a tampered DLL can survive (user story 17).
     pub fn execute(
         &self,
         plan: &Plan,
         progress: &ProgressReporter,
     ) -> Result<InstallOutcome, InstallError> {
-        let source_root = self.fetch(plan, progress)?;
-        let built_dll = self.build(plan, &source_root, progress)?;
-        self.sync(plan, &source_root, &built_dll, progress)
+        let source = self.fetch(plan, progress)?;
+        let fingerprint = BuildFingerprint::new(
+            &source.source_identity,
+            &plan.configuration.source.version_label(),
+            BuildConfiguration::Release,
+            plan.configuration.forty_three_civs,
+            &self.toolchain_runner.toolchain_identity(),
+        );
+        let built_dll = match self.reusable_deployed_dll(plan, &fingerprint, progress)? {
+            Some(deployed) => deployed,
+            None => self.build(plan, &source.root, progress)?,
+        };
+        self.sync(plan, &source.root, &built_dll, &fingerprint, progress)
+    }
+
+    /// The deployed DLL, brought back into the build directory — if and only if the recorded
+    /// fingerprint matches `fingerprint` and the DLL still hashes to what the record
+    /// promises. `None` means: build.
+    fn reusable_deployed_dll(
+        &self,
+        plan: &Plan,
+        fingerprint: &BuildFingerprint,
+        progress: &ProgressReporter,
+    ) -> Result<Option<PathBuf>, InstallError> {
+        let folder = ClaimedFolder::CommunityPatch.path_in(&plan.folders);
+        let Ok(sidecar) = std::fs::read_to_string(folder.join(FINGERPRINT_FILE_NAME)) else {
+            return Ok(None);
+        };
+        let Some(promised_hash) = fingerprint.matches_sidecar(&sidecar) else {
+            return Ok(None);
+        };
+        let deployed = folder.join(BUILT_DLL_FILE_NAME);
+        if fnv1a64_of_file(&deployed) != Some(promised_hash) {
+            return Ok(None);
+        }
+
+        // Copied out of the game folder before Sync starts deleting, so the skip path feeds
+        // Sync exactly the way a build would (rule 7's ordering is preserved: nothing in the
+        // game is touched yet).
+        let build_dir = self.work_dir.join("build");
+        tree::create_dir_all(&build_dir)?;
+        let output_path = build_dir.join(BUILT_DLL_FILE_NAME);
+        tree::copy_file(&deployed, &output_path)?;
+        progress.report(
+            Stage::Build,
+            "The DLL is already up to date — build skipped.",
+        );
+        Ok(Some(output_path))
     }
 
     /// One Claimed Folder and the folder in *this* Installation Source that fills it.
@@ -118,18 +168,22 @@ impl Core {
         Ok(resolved)
     }
 
-    fn fetch(&self, plan: &Plan, progress: &ProgressReporter) -> Result<PathBuf, InstallError> {
+    fn fetch(
+        &self,
+        plan: &Plan,
+        progress: &ProgressReporter,
+    ) -> Result<MaterializedSource, InstallError> {
         progress.report(Stage::Fetch, "Getting the mod files ready.");
-        let source_root = self
+        let source = self
             .source_provider
             .materialize(&plan.configuration.source, progress)
             .map_err(InstallError::Fetch)?;
 
         // Check everything the plan needs is actually there before the build burns minutes —
         // and, more importantly, before Sync starts deleting (rule 7).
-        self.resolve_sources(plan, &source_root)?;
+        self.resolve_sources(plan, &source.root)?;
         for file in &plan.files {
-            let path = source_root.join(file.source_path());
+            let path = source.root.join(file.source_path());
             if !path.is_file() {
                 return Err(InstallError::MissingInSource {
                     item: SourceItem::File,
@@ -140,7 +194,7 @@ impl Core {
         }
 
         progress.report(Stage::Fetch, "Mod files ready.");
-        Ok(source_root)
+        Ok(source)
     }
 
     /// Build the DLL into the Core's own build directory and return its path there.
@@ -194,6 +248,7 @@ impl Core {
         plan: &Plan,
         source_root: &Path,
         built_dll: &Path,
+        fingerprint: &BuildFingerprint,
         progress: &ProgressReporter,
     ) -> Result<InstallOutcome, InstallError> {
         progress.report(Stage::Sync, "Installing into the game.");
@@ -278,6 +333,18 @@ impl Core {
             .join(BUILT_DLL_FILE_NAME);
         tree::copy_file(built_dll, &dll_destination)?;
         progress.report(Stage::Sync, "Installed the DLL.");
+
+        // The Build Fingerprint sidecar, beside the DLL it describes (both inside a Claimed
+        // Folder, so rule 6 holds). Hashed from the deployed copy, so what is recorded is
+        // what a later launch will re-hash. A DLL that cannot be hashed cannot be skipped
+        // for — worst case is a needless rebuild, never a false skip — so a failed write
+        // here is not worth failing an otherwise complete Deployment over.
+        if let Some(hash) = fnv1a64_of_file(&dll_destination) {
+            let sidecar = ClaimedFolder::CommunityPatch
+                .path_in(&plan.folders)
+                .join(FINGERPRINT_FILE_NAME);
+            let _ = std::fs::write(&sidecar, fingerprint.sidecar_contents(hash));
+        }
 
         clear_game_cache(&plan.folders, progress)?;
 
