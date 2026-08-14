@@ -65,6 +65,12 @@ One self-contained binary per OS, built by CI on every version tag
 [`docs/spec.md`](docs/spec.md), [`CONTEXT.md`](CONTEXT.md) and
 [`CODING_STANDARDS.md`](CODING_STANDARDS.md).
 
+## License
+
+[Apache-2.0](LICENSE). Provided as is, without warranty of any kind — see the license for
+the full disclaimer. The installer only ever writes to the mod folders it manages and the
+game's cache; **Uninstall** restores an unmodded game.
+
 ## Privacy
 
 At launch the installer asks GitHub once whether a newer installer exists, and shows a
