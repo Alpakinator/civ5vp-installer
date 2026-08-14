@@ -13,9 +13,9 @@ use std::sync::mpsc::{Receiver, TryRecvError, channel};
 
 use civ5vp_core::{
     AppDataStore, BuildConfiguration, Core, Eui, Flavor, FolderRejected, FortyThreeCivs,
-    GameFolders, InstallConfiguration, InstallError, InstallationSource,
-    ProgressEvent, ProgressReporter, SearchLocations, Settings, Version, VersionCatalog,
-    resolve_game_folders, start_up,
+    GameFolders, InstallConfiguration, InstallError, InstallationSource, ProgressEvent,
+    ProgressReporter, SearchLocations, Settings, Version, VersionCatalog, resolve_game_folders,
+    start_up,
 };
 
 use crate::{deco, placeholder, theme};
@@ -66,6 +66,9 @@ impl Screen {
 struct RunningInstall {
     progress: Receiver<ProgressEvent>,
     result: Receiver<Result<String, InstallError>>,
+    /// When the click happened — the finished line reports the honest wall-clock cost,
+    /// which on a first run is dominated by the Toolchain Bootstrap.
+    started: std::time::Instant,
 }
 
 /// Which kind of Installation Source the player is using. Presentation state — the Core
@@ -963,7 +966,11 @@ impl InstallerApp {
 
         self.activity.clear();
         self.status = Status::Installing;
-        self.running = Some(RunningInstall { progress, result });
+        self.running = Some(RunningInstall {
+            progress,
+            result,
+            started: std::time::Instant::now(),
+        });
     }
 
     /// User story 24: back to an unmodded game in one click. Same worker shape as an
@@ -1005,7 +1012,11 @@ impl InstallerApp {
 
         self.activity.clear();
         self.status = Status::Installing;
-        self.running = Some(RunningInstall { progress, result });
+        self.running = Some(RunningInstall {
+            progress,
+            result,
+            started: std::time::Instant::now(),
+        });
     }
 
     /// Drain whatever the worker thread has produced since the last frame.
@@ -1058,6 +1069,10 @@ impl InstallerApp {
             while let Ok(event) = run.progress.try_recv() {
                 lines.push(format!("{}: {}", event.stage.label(), event.message));
             }
+            lines.push(format!(
+                "Finished in {}.",
+                elapsed_label(run.started.elapsed())
+            ));
         }
 
         self.activity.extend(lines);
@@ -1092,6 +1107,16 @@ fn resolve(game_folder: &str, documents_folder: &str) -> Result<GameFolders, Fol
         Path::new(documents_folder.trim()),
     )
     .inspect_err(|rejected| crate::log_detail(&rejected.log_detail()))
+}
+
+/// A duration as a player reads one: "47 s", "12 min 30 s", "1 h 08 min".
+fn elapsed_label(elapsed: std::time::Duration) -> String {
+    let seconds = elapsed.as_secs();
+    match (seconds / 3600, (seconds % 3600) / 60, seconds % 60) {
+        (0, 0, s) => format!("{s} s"),
+        (0, m, s) => format!("{m} min {s} s"),
+        (h, m, _) => format!("{h} h {m:02} min"),
+    }
 }
 
 /// Bytes as a player reads them. One decimal place, the unit that keeps the number small.
