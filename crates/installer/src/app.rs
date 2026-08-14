@@ -408,9 +408,11 @@ impl InstallerApp {
             if let Ok(folders) = &self.resolved {
                 deco::hairline(ui);
                 for (label, path) in [
+                    // MODS and Text first — they are siblings in the Documents folder, so
+                    // the two related paths sit together and the DLC one stands apart.
                     ("MODS folder", &folders.mods),
-                    ("DLC folder", &folders.dlc),
                     ("Text folder", &folders.text),
+                    ("DLC folder", &folders.dlc),
                 ] {
                     ui.label(
                         egui::RichText::new(format!("{label}: {}", path.display()))
@@ -1089,8 +1091,11 @@ impl InstallerApp {
 /// Returns whether the text changed this frame.
 fn folder_field(ui: &mut egui::Ui, caption: &str, value: &mut String) -> bool {
     let caption = ui.label(caption);
+    // The field takes every point between the label column and the panel's right edge, so it
+    // scales with the window exactly like the panel behind it, and a real path is readable
+    // rather than clipped at a fixed 360 points.
     let field = ui
-        .add(egui::TextEdit::singleline(value).desired_width(360.0))
+        .add(egui::TextEdit::singleline(value).desired_width(ui.available_width()))
         .labelled_by(caption.id);
     ui.end_row();
     field.changed()
