@@ -51,7 +51,7 @@ pub const EMBER: Color32 = Color32::from_rgb(0xC9, 0x6A, 0x45);
 /// `Caption` is drawn ad hoc by the deco header, so it has no `TextStyle` of its own.
 pub const CAPTION_SIZE: f32 = 17.0;
 
-/// Install the skin on a context: the embedded Tw Cen MT (ADR-0003) and the widget styling.
+/// Install the skin on a context: the embedded Jost (ADR-0003) and the widget styling.
 /// Idempotent, but rebuilding the font atlas is not free — call once per context.
 pub fn apply(ctx: &egui::Context) {
     ctx.set_fonts(fonts());
@@ -61,15 +61,17 @@ pub fn apply(ctx: &egui::Context) {
     ctx.set_style_of(egui::Theme::Dark, style());
 }
 
-/// Tw Cen MT for every piece of UI text (ADR-0003: embedded, licensing risk accepted).
+/// Jost for every piece of UI text (ADR-0003: an OFL-licensed geometric sans in the same
+/// Futura lineage as the game's Tw Cen MT — embeddable and redistributable without a
+/// licensing cloud; `assets/fonts/OFL.txt` accompanies it as the license requires).
 /// It is put first for both families rather than replacing them, so anything the face
 /// lacks — box-drawing, non-Latin — still falls back to egui's defaults instead of tofu.
 fn fonts() -> FontDefinitions {
     let mut fonts = FontDefinitions::default();
     fonts.font_data.insert(
-        "tw-cen-mt".to_owned(),
+        "jost".to_owned(),
         Arc::new(FontData::from_static(include_bytes!(
-            "../../../Tw Cen MT.ttf"
+            "../../../assets/fonts/Jost-400-Book.ttf"
         ))),
     );
     for family in [FontFamily::Proportional, FontFamily::Monospace] {
@@ -77,7 +79,7 @@ fn fonts() -> FontDefinitions {
             .families
             .entry(family)
             .or_default()
-            .insert(0, "tw-cen-mt".to_owned());
+            .insert(0, "jost".to_owned());
     }
     fonts
 }

@@ -40,3 +40,8 @@
 # Local working notes and reference images — not part of the published repository.
 /.scratch/
 /docs/ui-reference/art_for_inspiration/
+
+# AI-workflow files — local development tooling, not part of the published repository.
+/AGENTS.md
+/.claude/
+/docs/agents/

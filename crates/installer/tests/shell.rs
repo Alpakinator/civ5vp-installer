@@ -23,7 +23,7 @@ use egui_kittest::{Harness, SnapshotResults};
 /// The size the baselines are rendered at — the window's design minimum. It grew from 640
 /// when ticket 10 added the Version picker and the storage panel, and again when
 /// ticket 11 added the install-mode choice.
-const WINDOW: [f32; 2] = [900.0, 900.0];
+const WINDOW: [f32; 2] = [900.0, 990.0];
 
 /// The same miniature Community-Patch-DLL layout the Core-seam tests use. Shared rather
 /// than duplicated so there is one answer to "what does a repository look like".
@@ -787,7 +787,14 @@ fn wait_for_combo_value(harness: &mut Harness<'_, InstallerApp>, text: &str) {
 #[test]
 fn clear_stored_data_empties_the_app_data_store() {
     let game = TempGame::new();
-    let mut harness = harness_over(game.launch(&game.locations()));
+    // The Storage panel sits at the very bottom; a player scrolls to it, but a test can
+    // only click what is on screen — so this harness is simply tall enough.
+    let mut harness = Harness::builder()
+        .with_size(egui::Vec2::new(WINDOW[0], 1200.0))
+        .build_ui_state(
+            |ui, app: &mut InstallerApp| app.show(ui),
+            game.launch(&game.locations()),
+        );
     harness.step();
     let store_root = game.temp_path().join("app-data");
     assert!(

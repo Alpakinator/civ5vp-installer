@@ -14,7 +14,7 @@ Installing Community Patch / Vox Populi today is painful in every scenario excep
 
 ## Solution
 
-A single-file executable — **Civ 5 VP Installer** — for Windows and Linux, styled as if it were part of Civilization V itself (original art in the game's art-deco language, Tw Cen MT type). The user picks a Version (Release, latest development, or any ref — or their own Local Repo), a Flavor (Community Patch only / Vox Populi), and toggles (EUI, 43 Civs). The installer fetches sources incrementally so nothing is downloaded twice, **always compiles the DLL itself** with a bootstrapped, pinned clang toolchain (no Visual Studio, no Docker, no Python on the user's machine), and deploys via Sync into the game's MODS, DLC, and Text Folders — deterministically, with stale files removed and everything outside the Claimed Folders untouched. Failed downloads or builds leave the existing installation intact. Uninstall restores an unmodded game.
+A single-file executable — **Civ 5 VP Installer** — for Windows and Linux, styled as if it were part of Civilization V itself (original art in the game's art-deco language, Jost type — ADR-0003). The user picks a Version (Release, latest development, or any ref — or their own Local Repo), a Flavor (Community Patch only / Vox Populi), and toggles (EUI, 43 Civs). The installer fetches sources incrementally so nothing is downloaded twice, **always compiles the DLL itself** with a bootstrapped, pinned clang toolchain (no Visual Studio, no Docker, no Python on the user's machine), and deploys via Sync into the game's MODS, DLC, and Text Folders — deterministically, with stale files removed and everything outside the Claimed Folders untouched. Failed downloads or builds leave the existing installation intact. Uninstall restores an unmodded game.
 
 ## User Stories
 
@@ -64,7 +64,7 @@ A single-file executable — **Civ 5 VP Installer** — for Windows and Linux, s
 - **Deployment**: strict ordering fetch → build → Sync; failure at any stage aborts before the game is touched. Sync makes Claimed Folders exactly match the configuration (stale files deleted, unneeded Claimed Folders removed) and never touches anything else. Every Vox Populi configuration also deploys the tips XML to the Text Folder. Game `cache` cleared after each Deployment; `ModUserData` preserved. No running-game guard — deploying while the game runs is permitted deliberately. Uninstall removes all Claimed Folders and clears `cache`.
 - **Detection**: Windows — known-folder API for Documents, Steam registry + `libraryfolders.vdf` for the game. Linux — Steam library parsing plus the Proton prefix for the Documents side; the native Linux port is detected only to be refused with an explanation. Manual picker with validation as universal fallback.
 - **Storage**: everything (Upstream Cache, Toolchain Cache, settings, logs) in the platform app-data location; the executable is a lone file. UI shows store location/size and offers a clear-data button.
-- **Art**: original artwork in Civ5's art-deco language, game assets used as visual reference only; Tw Cen MT embedded (ADR-0003).
+- **Art**: original artwork in Civ5's art-deco language, game assets used as visual reference only; Jost embedded (ADR-0003, OFL).
 - **Distribution**: own repository; CI-built binaries later; no auto-update — launch-time new-version notification only.
 
 ## Testing Decisions

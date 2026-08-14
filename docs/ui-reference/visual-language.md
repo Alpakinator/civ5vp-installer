@@ -62,7 +62,7 @@ pure black anywhere.
 
 ## Typography
 
-One face: **Tw Cen MT** (embedded, ADR-0003), a geometric humanist sans of exactly the
+One face: **Jost** (embedded, ADR-0003 — OFL), a geometric sans of exactly the
 period the ornament comes from. It is used for every piece of UI text. No italics, no
 synthetic bold; hierarchy comes from size and colour.
 
