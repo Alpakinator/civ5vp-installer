@@ -121,18 +121,33 @@ impl TempGame {
 
 /// Step the UI until `text` shows up somewhere in the accessibility tree.
 ///
-/// The install runs on a worker thread, so this is a wait, not a single frame. It gives up
-/// after about two seconds rather than hanging a test run.
+/// The install runs on a worker thread, so this is a wait, not a single frame. The budget
+/// is generous because CI runners are slow and heavily shared; on timeout the panic says
+/// what *was* on screen, so a remote failure is diagnosable from its log alone.
 #[track_caller]
 fn wait_for_label(harness: &mut Harness<'_, InstallerApp>, text: &str) {
-    for _ in 0..200 {
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    while std::time::Instant::now() < deadline {
         harness.step();
         if harness.query_all_by_label_contains(text).next().is_some() {
             return;
         }
         std::thread::sleep(Duration::from_millis(10));
     }
-    panic!("the shell never showed {text:?}");
+    panic!(
+        "the shell never showed {text:?}; visible: {:?}",
+        visible_labels(harness)
+    );
+}
+
+/// Every label currently in the accessibility tree — the timeout panics print this, so a
+/// flaky CI failure carries its own screenshot-in-words.
+fn visible_labels(harness: &mut Harness<'_, InstallerApp>) -> Vec<String> {
+    use egui_kittest::kittest::NodeT as _;
+    harness
+        .query_all_by_label_contains("")
+        .filter_map(|node| node.accesskit_node().label().map(str::to_owned))
+        .collect()
 }
 
 /// Step until the install has finished, however it ended.
@@ -147,7 +162,8 @@ fn wait_for_label(harness: &mut Harness<'_, InstallerApp>, text: &str) {
 /// is not processed until the next frame.
 #[track_caller]
 fn wait_for_the_install_to_finish(harness: &mut Harness<'_, InstallerApp>) {
-    for _ in 0..400 {
+    let deadline = std::time::Instant::now() + Duration::from_secs(60);
+    while std::time::Instant::now() < deadline {
         harness.step();
         let waiting = ["Ready.", "Installing…"]
             .into_iter()
@@ -157,7 +173,10 @@ fn wait_for_the_install_to_finish(harness: &mut Harness<'_, InstallerApp>) {
         }
         std::thread::sleep(Duration::from_millis(10));
     }
-    panic!("the install never finished");
+    panic!(
+        "the install never finished; visible: {:?}",
+        visible_labels(harness)
+    );
 }
 
 /// What a text field currently holds, read out of the accessibility tree the way a screen
@@ -767,7 +786,8 @@ fn the_unofficial_toggle_lists_the_changes_since_the_newest_release() {
 /// Step until the Version combo's selection reads `text`.
 #[track_caller]
 fn wait_for_combo_value(harness: &mut Harness<'_, InstallerApp>, text: &str) {
-    for _ in 0..200 {
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    while std::time::Instant::now() < deadline {
         harness.step();
         if harness
             .query_all_by_label("Version")
@@ -777,7 +797,10 @@ fn wait_for_combo_value(harness: &mut Harness<'_, InstallerApp>, text: &str) {
         }
         std::thread::sleep(Duration::from_millis(10));
     }
-    panic!("the Version combo never read {text:?}");
+    panic!(
+        "the Version combo never read {text:?}; visible: {:?}",
+        visible_labels(harness)
+    );
 }
 
 /// The storage panel's clear button empties the App Data Store —

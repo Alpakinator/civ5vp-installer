@@ -16,6 +16,11 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+# The default workflow token is read-only; creating the Release and attaching the
+# binaries needs write access to the repository contents.
+permissions:
+  contents: write
+
 jobs:
   linux:
     runs-on: ubuntu-latest
