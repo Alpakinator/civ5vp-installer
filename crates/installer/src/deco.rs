@@ -142,33 +142,37 @@ fn crowned_portal(title_rect: Rect, rule_rect: Rect) -> Shape {
     let bright = Stroke::new(1.2, theme::GOLD);
     let dim = Stroke::new(1.0, theme::GOLD_DARK);
 
-    // Side stems: from the rule up to the shoulders, a stem's width outside the title.
+    // Side stems, chamfered into the shoulders — the same 45° corner cut every panel below
+    // carries — then down to the rule with a diamond foot at the join.
     let stem_reach = title_rect.width() / 2.0 + 16.0;
+    const CHAMFER: f32 = 5.0;
     for side in [-1.0_f32, 1.0] {
         let x = centre_x + side * stem_reach;
+        let corner = pos2(x - side * CHAMFER, shoulder_y);
         lines.push(Shape::line_segment(
-            [pos2(x, shoulder_y), pos2(x, rule_y)],
+            [pos2(x, shoulder_y + CHAMFER), pos2(x, rule_y)],
             bright,
         ));
-        // A diamond foot where the stem meets the rule.
-        lines.push(diamond(pos2(x, rule_y), 3.0));
-        // Shoulder: from the stem top inward, stopping short of the wings.
         lines.push(Shape::line_segment(
-            [
-                pos2(x, shoulder_y),
-                pos2(centre_x + side * (MEDALLION_HALF + 58.0), shoulder_y),
-            ],
+            [corner, pos2(x, shoulder_y + CHAMFER)],
+            bright,
+        ));
+        lines.push(diamond(pos2(x, rule_y), 3.0));
+        // The shoulder runs from the chamfer all the way to the medallion's base, so the
+        // arch sits astride a continuous lintel rather than hovering in a gap.
+        lines.push(Shape::line_segment(
+            [corner, pos2(centre_x + side * MEDALLION_HALF, shoulder_y)],
             bright,
         ));
     }
 
-    // Wing tiers: three lines a side, stepping up toward the medallion, the longest at the
-    // bottom — each with a small feather tick at its outer end.
-    for tier in 0..3 {
-        let y = shoulder_y - 5.0 - tier as f32 * 6.0;
-        let inner = MEDALLION_HALF + 6.0 + tier as f32 * 4.0;
-        let outer = stem_reach - 14.0 - tier as f32 * 24.0;
-        let stroke = if tier == 1 { dim } else { bright };
+    // Wing tiers: four lines a side, tightly stepped toward the medallion, the longest at
+    // the bottom, alternating bright and dim — each with a feather tick at its outer end.
+    for tier in 0..4 {
+        let y = shoulder_y - 5.0 - tier as f32 * 5.0;
+        let inner = MEDALLION_HALF + 4.0 + tier as f32 * 3.0;
+        let outer = stem_reach - 10.0 - tier as f32 * 18.0;
+        let stroke = if tier % 2 == 0 { bright } else { dim };
         for side in [-1.0_f32, 1.0] {
             let from = pos2(centre_x + side * inner, y);
             let to = pos2(centre_x + side * outer, y);
@@ -177,35 +181,30 @@ fn crowned_portal(title_rect: Rect, rule_rect: Rect) -> Shape {
         }
     }
 
-    // The medallion: a fan arch on a short-stemmed base, spokes radiating to the arc —
-    // the reference crest's fan window, contained rather than behind the text.
-    let base_y = shoulder_y - 2.0;
-    let arc_centre = pos2(centre_x, base_y);
-    lines.push(Shape::line_segment(
-        [
-            pos2(centre_x - MEDALLION_HALF, base_y),
-            pos2(centre_x + MEDALLION_HALF, base_y),
-        ],
-        bright,
-    ));
-    let mut arc = Vec::new();
-    let mut degrees = 0.0_f32;
-    while degrees <= 180.0 {
-        let direction = vec2(degrees.to_radians().cos(), -degrees.to_radians().sin());
-        arc.push(arc_centre + direction * MEDALLION_HALF);
-        degrees += 11.25;
+    // The medallion: a fan arch seated on the lintel, the arc doubled in the skin's
+    // two-pen manner, spokes radiating from a diamond hub.
+    let arc_centre = pos2(centre_x, shoulder_y);
+    for (radius, stroke) in [(MEDALLION_HALF, bright), (MEDALLION_HALF - 3.0, dim)] {
+        let mut arc = Vec::new();
+        let mut degrees = 0.0_f32;
+        while degrees <= 180.0 {
+            let direction = vec2(degrees.to_radians().cos(), -degrees.to_radians().sin());
+            arc.push(arc_centre + direction * radius);
+            degrees += 11.25;
+        }
+        lines.push(Shape::line(arc, stroke));
     }
-    lines.push(Shape::line(arc, bright));
     for spoke in [30.0_f32, 60.0, 90.0, 120.0, 150.0] {
         let direction = vec2(spoke.to_radians().cos(), -spoke.to_radians().sin());
         lines.push(Shape::line_segment(
             [
-                arc_centre + direction * 4.0,
-                arc_centre + direction * (MEDALLION_HALF - 2.0),
+                arc_centre + direction * 5.0,
+                arc_centre + direction * (MEDALLION_HALF - 4.5),
             ],
             dim,
         ));
     }
+    lines.push(diamond(arc_centre + vec2(0.0, -1.0), 2.5));
 
     Shape::Vec(lines)
 }
