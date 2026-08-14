@@ -24,6 +24,7 @@ pub fn core_at(root: &Path) -> Core {
     Core::new(
         Box::new(InstallationSources::new(upstream)),
         Box::new(BootstrappedToolchain::new(root.join("toolchain-cache"))),
+        Box::new(civ5vp_modpack::SqliteModpackAssembler::new()),
         root.to_path_buf(),
     )
 }

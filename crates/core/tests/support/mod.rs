@@ -16,8 +16,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use civ5vp_core::{
-    BoundaryError, BuildRequest, GameFolders, InstallationSource, MaterializedSource,
-    ProgressReporter, SourceProvider, Stage, ToolchainRunner,
+    BoundaryError, BuildRequest, CacheState, GameFolders, InstallationSource, MaterializedSource,
+    ModpackAssembler, ModpackDatabaseJob, ProgressReporter, SourceProvider, Stage, ToolchainRunner,
 };
 
 /// The miniature Community-Patch-DLL layout committed under `tests/fixtures/`.
@@ -94,6 +94,72 @@ impl SourceProvider for FailingSourceProvider {
              try again.",
             "fake provider: simulated network failure",
         ))
+    }
+}
+
+/// What [`FixtureModpackAssembler`] writes instead of the real database dumps.
+pub const GAMEPLAY_DUMP_MARKER: &str = "marker standing in for the merged gameplay dump";
+pub const TEXT_DUMP_MARKER: &str = "marker standing in for the merged text dump";
+
+/// The third boundary, faked (rule 13): reads a marker instead of a database, writes
+/// markers instead of dumps, and remembers every job so a test can assert what crossed
+/// the seam.
+pub struct FixtureModpackAssembler {
+    jobs: std::sync::Arc<std::sync::Mutex<Vec<ModpackDatabaseJob>>>,
+}
+
+impl FixtureModpackAssembler {
+    pub fn new() -> (
+        Self,
+        std::sync::Arc<std::sync::Mutex<Vec<ModpackDatabaseJob>>>,
+    ) {
+        let jobs = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        (Self { jobs: jobs.clone() }, jobs)
+    }
+
+    /// The common case: the recorded jobs are not asserted on.
+    pub fn ignored() -> Self {
+        Self::new().0
+    }
+}
+
+impl ModpackAssembler for FixtureModpackAssembler {
+    fn cache_state(&self, gameplay_db: &Path) -> Result<CacheState, BoundaryError> {
+        // A cache fixture says what it is: a file containing "modded" is one a modded
+        // session wrote.
+        let text = fs::read_to_string(gameplay_db).map_err(|err| {
+            BoundaryError::new(
+                "The game's database cache could not be read.",
+                format!("fake assembler: {err}"),
+            )
+        })?;
+        if text.contains("modded") {
+            Ok(CacheState::Modded)
+        } else {
+            Ok(CacheState::Pristine)
+        }
+    }
+
+    fn merge_and_dump(
+        &self,
+        job: &ModpackDatabaseJob,
+        progress: &ProgressReporter,
+    ) -> Result<(), BoundaryError> {
+        progress.report(Stage::Build, "Faking the database merge.");
+        let write = |path: &Path, marker: &str| {
+            fs::write(path, marker).map_err(|err| {
+                BoundaryError::new(
+                    "The Modpack databases could not be written.",
+                    format!("fake assembler could not write the marker: {err}"),
+                )
+            })
+        };
+        write(&job.gameplay_dump, GAMEPLAY_DUMP_MARKER)?;
+        write(&job.text_dump, TEXT_DUMP_MARKER)?;
+        if let Ok(mut jobs) = self.jobs.lock() {
+            jobs.push(job.clone());
+        }
+        Ok(())
     }
 }
 

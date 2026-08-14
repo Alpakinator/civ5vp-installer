@@ -28,6 +28,29 @@ pub enum FortyThreeCivs {
     Disabled,
 }
 
+/// How the selection reaches the game (ticket 11).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstallMode {
+    /// The classic install: mod folders in MODS, activated in the game's Mods menu.
+    Mods,
+    /// One generated `VP_MODPACK` folder in the game's DLC, with the mods and a full merged
+    /// database baked in. Loads automatically at startup — no Mods menu — and works in
+    /// multiplayer. The MODS folder is left alone either way; the conflict runs the other
+    /// direction, so a Mods-mode Deployment removes the Modpack (see
+    /// [`crate::Plan`]'s removal rules).
+    Modpack,
+}
+
+impl InstallMode {
+    /// The one lowercase token used everywhere this is written down (the settings file).
+    pub(crate) fn token(self) -> &'static str {
+        match self {
+            Self::Mods => "mods",
+            Self::Modpack => "modpack",
+        }
+    }
+}
+
 /// Which of the two proven compiler configurations the Built DLL is compiled with.
 ///
 /// Players always get [`BuildConfiguration::Release`]; the Debug choice arrives with Dev mode
@@ -120,4 +143,6 @@ pub struct InstallConfiguration {
     /// Release for players; Debug is a Dev-mode choice (user story 31) and is only legal
     /// with a Local Repo — [`crate::Core::plan`] refuses it anywhere else.
     pub build_configuration: BuildConfiguration,
+    /// Mods in the MODS folder, or one baked Modpack in the game's DLC (ticket 11).
+    pub install_mode: InstallMode,
 }

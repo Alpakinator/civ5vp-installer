@@ -1,0 +1,28 @@
+[package]
+name = "civ5vp-modpack"
+description = "Modpack assembler for the Civ 5 VP Installer: merge the mods' database updates into copies of the game's base databases and dump them in the Modpack Maker format."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+# Why this crate exists at all: the Modpack's database merge needs a SQLite engine, which
+# rule 1's zero-dependency Core cannot hold — the same reason the Toolchain is its own crate.
+# The Core consumes it through the `ModpackAssembler` boundary (rule 2, amended by ticket 11).
+# Nothing here may depend on egui/eframe either — this crate is as headless as the Core.
+[dependencies]
+civ5vp-core = { path = "../core" }
+
+# The database engine. SQLite is not a choice here — it is the game's own storage format:
+# the Modpack bases *are* the game's cache/Civ5DebugDatabase.db and Localization-Merged.db.
+# `bundled` compiles SQLite's C source in (rule 17's one tolerated C dependency): it keeps
+# the deliverable a single static binary with no runtime SQLite to find, and it compiles
+# identically on the Windows cross-build.
+rusqlite = { version = "0.37", features = ["bundled"] }
+
+# GameData XML parsing for the mods' .xml updates. Pure Rust, no C toolchain (rule 17).
+quick-xml = "0.38"
+
+[dev-dependencies]
+# Temporary fixture-database and scratch directories for the tests.
+tempfile = "3.27"

@@ -2,4 +2,9 @@
   <Properties>
     <Name>(1) Community Patch</Name>
   </Properties>
+  <Actions>
+    <OnModActivated>
+      <UpdateDatabase>Core Files/Core Values/DefinesChanges.sql</UpdateDatabase>
+    </OnModActivated>
+  </Actions>
 </Mod>

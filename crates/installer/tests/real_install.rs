@@ -21,7 +21,7 @@ use std::path::PathBuf;
 use std::sync::mpsc;
 
 use civ5vp_core::{
-    BuildConfiguration, Flavor, FortyThreeCivs, GameFolders, InstallConfiguration,
+    BuildConfiguration, Flavor, FortyThreeCivs, GameFolders, InstallConfiguration, InstallMode,
     InstallationSource, ProgressReporter,
 };
 use civ5vp_installer::wiring;
@@ -75,6 +75,7 @@ fn a_fresh_machine_installs_the_newest_release_from_github() {
         flavor: Flavor::suggested(),
         forty_three_civs: FortyThreeCivs::Disabled,
         build_configuration: BuildConfiguration::Release,
+        install_mode: InstallMode::Mods,
     };
     let plan = core.plan(&configuration, &folders).unwrap_or_else(|error| {
         panic!("{}\n  detail: {}", error.user_message(), error.log_detail())
@@ -154,6 +155,7 @@ fn a_real_version_installs_end_to_end_with_a_genuinely_built_dll() {
         flavor: Flavor::CommunityPatch,
         forty_three_civs: FortyThreeCivs::Disabled,
         build_configuration: BuildConfiguration::Release,
+        install_mode: InstallMode::Mods,
     };
     let plan = core.plan(&configuration, &folders).unwrap_or_else(|error| {
         panic!("{}\n  detail: {}", error.user_message(), error.log_detail())

@@ -13,9 +13,9 @@ use std::sync::mpsc::{Receiver, TryRecvError, channel};
 
 use civ5vp_core::{
     AppDataStore, BuildConfiguration, Core, Eui, Flavor, FolderRejected, FortyThreeCivs,
-    GameFolders, InstallConfiguration, InstallError, InstallationSource, ProgressEvent,
-    ProgressReporter, SearchLocations, Settings, Version, VersionCatalog, resolve_game_folders,
-    start_up,
+    GameFolders, InstallConfiguration, InstallError, InstallMode, InstallationSource,
+    ProgressEvent, ProgressReporter, SearchLocations, Settings, Version, VersionCatalog,
+    resolve_game_folders, start_up,
 };
 
 use crate::{deco, placeholder, theme};
@@ -119,6 +119,7 @@ pub struct InstallerApp {
     flavor: Flavor,
     forty_three_civs: FortyThreeCivs,
     build_configuration: BuildConfiguration,
+    install_mode: InstallMode,
     activity: Vec<String>,
     status: Status,
     running: Option<RunningInstall>,
@@ -187,18 +188,21 @@ impl InstallerApp {
             _ => {}
         }
         // The remembered Flavor and toggles, or what the Core suggests to a new player.
-        let (flavor, forty_three_civs, build_configuration) = match &startup.configuration {
-            Some(configuration) => (
-                configuration.flavor.clone(),
-                configuration.forty_three_civs,
-                configuration.build_configuration,
-            ),
-            None => (
-                Flavor::suggested(),
-                FortyThreeCivs::Disabled,
-                BuildConfiguration::Release,
-            ),
-        };
+        let (flavor, forty_three_civs, build_configuration, install_mode) =
+            match &startup.configuration {
+                Some(configuration) => (
+                    configuration.flavor.clone(),
+                    configuration.forty_three_civs,
+                    configuration.build_configuration,
+                    configuration.install_mode,
+                ),
+                None => (
+                    Flavor::suggested(),
+                    FortyThreeCivs::Disabled,
+                    BuildConfiguration::Release,
+                    InstallMode::Mods,
+                ),
+            };
         let game_folder = startup
             .game_installation
             .as_deref()
@@ -228,6 +232,7 @@ impl InstallerApp {
             flavor,
             forty_three_civs,
             build_configuration,
+            install_mode,
             activity: Vec::new(),
             status: Status::Ready,
             running: None,
@@ -273,6 +278,7 @@ impl InstallerApp {
             flavor: Flavor::suggested(),
             forty_three_civs: FortyThreeCivs::Disabled,
             build_configuration: BuildConfiguration::Release,
+            install_mode: InstallMode::Mods,
             activity: Vec::new(),
             status: Status::Ready,
             running: None,
@@ -456,6 +462,34 @@ impl InstallerApp {
                 };
                 chosen = true;
             }
+            ui.add_space(4.0);
+            // How the selection reaches the game (ticket 11). Two radios, not a checkbox:
+            // "as mods" and "as a modpack" are both real things a player asks for by name.
+            chosen |= ui
+                .radio_value(
+                    &mut self.install_mode,
+                    InstallMode::Mods,
+                    "Install as mods — activate them in the game's Mods menu",
+                )
+                .changed();
+            chosen |= ui
+                .radio_value(
+                    &mut self.install_mode,
+                    InstallMode::Modpack,
+                    "Install as a modpack — loads automatically, works in multiplayer",
+                )
+                .changed();
+            if self.install_mode == InstallMode::Modpack {
+                ui.label(
+                    egui::RichText::new(
+                        "The modpack is baked into the game's DLC from a fresh copy of the \
+                         game's data. Anything already in your MODS folder stays untouched.",
+                    )
+                    .small()
+                    .color(theme::PARCHMENT_DIM),
+                );
+            }
+            ui.add_space(4.0);
             // Dev mode: pointing the installer at your own checkout is what makes you a mod
             // developer, and the Debug choice appears only then (user story 31). The Core is
             // the one that *refuses* Debug anywhere else — this is just not drawing a
@@ -735,7 +769,10 @@ impl InstallerApp {
                             Some(Version::Release(tag)) => Some(tag.as_str()),
                             _ => None,
                         };
-                        for tag in releases.iter().filter(|tag| Some(tag.as_str()) != newest_tag) {
+                        for tag in releases
+                            .iter()
+                            .filter(|tag| Some(tag.as_str()) != newest_tag)
+                        {
                             changed |= ui
                                 .selectable_value(
                                     &mut self.picked_version,
@@ -923,6 +960,7 @@ impl InstallerApp {
             source,
             flavor: self.flavor.clone(),
             forty_three_civs: self.forty_three_civs,
+            install_mode: self.install_mode,
             // Sent as chosen, even when Dev mode is off and the checkbox is not drawn:
             // which Build Configurations are legal with which sources is the Core's ruling
             // (rule 3), and it refuses an illegal pair with a sentence.

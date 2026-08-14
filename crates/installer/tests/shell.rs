@@ -21,8 +21,9 @@ use egui_kittest::kittest::Queryable as _;
 use egui_kittest::{Harness, SnapshotResults};
 
 /// The size the baselines are rendered at — the window's design minimum. It grew from 640
-/// when ticket 10 added the Version picker and the storage panel.
-const WINDOW: [f32; 2] = [900.0, 780.0];
+/// when ticket 10 added the Version picker and the storage panel, and again when
+/// ticket 11 added the install-mode choice.
+const WINDOW: [f32; 2] = [900.0, 860.0];
 
 /// The same miniature Community-Patch-DLL layout the Core-seam tests use. Shared rather
 /// than duplicated so there is one answer to "what does a repository look like".
@@ -322,6 +323,84 @@ fn picking_vox_populi_with_eui_installs_the_whole_thing() {
     );
 }
 
+/// Ticket 11: the Modpack mode radio drives a Modpack Deployment — the pack lands in the
+/// game's DLC, MODS is left alone, and the choice survives a relaunch.
+#[test]
+fn picking_the_modpack_mode_builds_a_modpack_and_is_remembered() {
+    let game = TempGame::new();
+    // What a Modpack build needs of the game: the base UI entry files and a pristine cache
+    // (the placeholder assembler reads the marker, exactly like the Core-seam fixture).
+    let expansion_ui = game.game_folder().join("Assets/DLC/Expansion2/UI/InGame");
+    fs::create_dir_all(expansion_ui.join("CityView")).unwrap();
+    fs::create_dir_all(expansion_ui.join("LeaderHead")).unwrap();
+    fs::write(expansion_ui.join("InGame.lua"), "-- base InGame\n").unwrap();
+    fs::write(
+        expansion_ui.join("CityView/CityView.lua"),
+        "-- base CityView\n",
+    )
+    .unwrap();
+    fs::write(
+        expansion_ui.join("LeaderHead/LeaderHeadRoot.lua"),
+        "-- base LeaderHeadRoot\n",
+    )
+    .unwrap();
+    let cache = game.documents_folder().join("cache");
+    fs::create_dir_all(&cache).unwrap();
+    fs::write(cache.join("Civ5DebugDatabase.db"), "pristine base").unwrap();
+    fs::write(cache.join("Localization-Merged.db"), "pristine text").unwrap();
+    // A mod install from an earlier day, which the Modpack Deployment must leave alone.
+    fs::create_dir_all(game.mods_folder().join("(2) Vox Populi")).unwrap();
+    fs::write(
+        game.mods_folder().join("(2) Vox Populi/existing.txt"),
+        "left alone",
+    )
+    .unwrap();
+
+    let mut harness = harness_over(game.launch(&game.locations()));
+    harness.step();
+    enter_dev_mode(&mut harness, &miniature_repo().display().to_string());
+    harness
+        .get_by_label("Vox Populi — the full overhaul")
+        .click();
+    harness
+        .get_by_label("Install as a modpack — loads automatically, works in multiplayer")
+        .click();
+    harness.get_by_label("Install").click();
+    wait_for_the_install_to_finish(&mut harness);
+
+    let pack = game.game_folder().join("Assets/DLC/VP_MODPACK");
+    assert!(
+        pack.join("MPModsPack.Civ5Pkg").is_file(),
+        "the modpack should be deployed into the game's DLC"
+    );
+    assert_eq!(
+        fs::read_to_string(pack.join("Mods/(1) Community Patch/CvGameCore_Expansion2.dll"))
+            .unwrap(),
+        placeholder::PLACEHOLDER_DLL_CONTENTS,
+    );
+    assert_eq!(
+        fs::read_to_string(pack.join("Override/CIV5Units.xml")).unwrap(),
+        placeholder::PLACEHOLDER_DUMP_CONTENTS,
+    );
+    assert_eq!(
+        fs::read_to_string(game.mods_folder().join("(2) Vox Populi/existing.txt")).unwrap(),
+        "left alone",
+        "a Modpack Deployment leaves MODS untouched"
+    );
+    assert!(
+        !game.mods_folder().join("(1) Community Patch").exists(),
+        "the mods go inside the pack, not into MODS"
+    );
+
+    // The mode is remembered like every other part of the configuration (user story 26).
+    let mut next = harness_over(game.launch(&game.nowhere()));
+    next.step();
+    assert!(is_ticked(
+        &mut next,
+        "Install as a modpack — loads automatically, works in multiplayer"
+    ));
+}
+
 /// The other half of the wiring: turning a toggle off again takes its folder away.
 #[test]
 fn switching_the_flavor_down_removes_what_no_longer_belongs() {
@@ -578,9 +657,7 @@ fn the_version_picker_defaults_to_the_newest_release_and_the_pick_is_remembered(
     // The open list names the newest release once — inside "Latest release — …" — and
     // never again as a bare entry; older releases keep their own rows.
     assert_eq!(
-        harness
-            .query_all_by_label_contains("Release-5.2")
-            .count(),
+        harness.query_all_by_label_contains("Release-5.2").count(),
         1,
         "the newest release must not be listed twice"
     );

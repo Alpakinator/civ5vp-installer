@@ -16,10 +16,11 @@ mod support;
 
 use civ5vp_core::{
     BuildConfiguration, ClaimedFolder, Core, Eui, Flavor, FortyThreeCivs, GameFolders,
-    InstallConfiguration, InstallationSource, ProgressReporter,
+    InstallConfiguration, InstallMode, InstallationSource, ProgressReporter,
 };
 use support::{
-    DLL_MARKER, FixtureSourceProvider, GameFixture, MarkerToolchainRunner, miniature_repo,
+    DLL_MARKER, FixtureModpackAssembler, FixtureSourceProvider, GameFixture, MarkerToolchainRunner,
+    miniature_repo,
 };
 
 // The file groups the matrix is composed from. Each is what one Claimed Folder contributes,
@@ -103,6 +104,7 @@ fn configuration(flavor: Flavor, forty_three_civs: FortyThreeCivs) -> InstallCon
         flavor,
         forty_three_civs,
         build_configuration: BuildConfiguration::Release,
+        install_mode: InstallMode::Mods,
     }
 }
 
@@ -110,6 +112,7 @@ fn core_over(game: &GameFixture) -> Core {
     Core::new(
         Box::new(FixtureSourceProvider::new(miniature_repo())),
         Box::new(MarkerToolchainRunner),
+        Box::new(FixtureModpackAssembler::ignored()),
         game.work_dir(),
     )
 }
@@ -462,6 +465,7 @@ fn a_source_missing_a_needed_folder_is_reported_and_nothing_is_installed() {
     let core = Core::new(
         Box::new(FixtureSourceProvider::new(incomplete)),
         Box::new(MarkerToolchainRunner),
+        Box::new(FixtureModpackAssembler::ignored()),
         game.work_dir(),
     );
     let plan = core
@@ -512,6 +516,7 @@ fn a_source_folder_with_none_of_the_files_it_should_have_is_refused_before_sync(
     let core = Core::new(
         Box::new(FixtureSourceProvider::new(source)),
         Box::new(MarkerToolchainRunner),
+        Box::new(FixtureModpackAssembler::ignored()),
         game.work_dir(),
     );
     let plan = core
@@ -596,6 +601,7 @@ fn a_version_that_uses_the_old_name_for_the_eui_folder_still_installs() {
     let core = Core::new(
         Box::new(FixtureSourceProvider::new(older)),
         Box::new(MarkerToolchainRunner),
+        Box::new(FixtureModpackAssembler::ignored()),
         game.work_dir(),
     );
     let plan = core
@@ -635,6 +641,7 @@ fn installing_the_new_name_over_the_old_one_leaves_only_one() {
     let old_core = Core::new(
         Box::new(FixtureSourceProvider::new(older)),
         Box::new(MarkerToolchainRunner),
+        Box::new(FixtureModpackAssembler::ignored()),
         game.work_dir(),
     );
     let plan = old_core.plan(&with_eui, &game.folders()).unwrap();

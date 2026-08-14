@@ -13,11 +13,12 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use civ5vp_core::{
-    BuildConfiguration, Core, Flavor, FortyThreeCivs, InstallConfiguration, InstallationSource,
-    ProgressReporter,
+    BuildConfiguration, Core, Flavor, FortyThreeCivs, InstallConfiguration, InstallMode,
+    InstallationSource, ProgressReporter,
 };
 use support::{
-    CountingToolchainRunner, DLL_MARKER, FixtureSourceProvider, GameFixture, miniature_repo,
+    CountingToolchainRunner, DLL_MARKER, FixtureModpackAssembler, FixtureSourceProvider,
+    GameFixture, miniature_repo,
 };
 
 /// A private, editable copy of the miniature repository.
@@ -48,6 +49,7 @@ fn configuration(repo: &Path, forty_three_civs: FortyThreeCivs) -> InstallConfig
         flavor: Flavor::CommunityPatch,
         forty_three_civs,
         build_configuration: BuildConfiguration::Release,
+        install_mode: InstallMode::Mods,
     }
 }
 
@@ -56,6 +58,7 @@ fn core_over(game: &GameFixture, repo: &Path, identity: &str) -> (Core, Arc<Atom
     let core = Core::new(
         Box::new(FixtureSourceProvider::new(repo.to_path_buf())),
         Box::new(runner),
+        Box::new(FixtureModpackAssembler::ignored()),
         game.work_dir(),
     );
     (core, builds)
@@ -221,6 +224,7 @@ fn the_debug_configuration_reaches_the_runner_and_has_its_own_fingerprint() {
     let core = Core::new(
         Box::new(FixtureSourceProvider::new(repo.clone())),
         Box::new(runner),
+        Box::new(FixtureModpackAssembler::ignored()),
         game.work_dir(),
     );
     let mut config = configuration(&repo, FortyThreeCivs::Disabled);
@@ -258,6 +262,7 @@ fn a_debug_build_outside_dev_mode_is_refused() {
         flavor: Flavor::CommunityPatch,
         forty_three_civs: FortyThreeCivs::Disabled,
         build_configuration: BuildConfiguration::Debug,
+        install_mode: InstallMode::Mods,
     };
 
     let refused = core.plan(&config, &game.folders()).unwrap_err();

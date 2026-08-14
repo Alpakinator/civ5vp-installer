@@ -3,7 +3,9 @@
 use std::path::{Path, PathBuf};
 
 use crate::BUILT_DLL_FILE_NAME;
-use crate::boundaries::{BuildRequest, MaterializedSource, SourceProvider, ToolchainRunner};
+use crate::boundaries::{
+    BuildRequest, MaterializedSource, ModpackAssembler, SourceProvider, ToolchainRunner,
+};
 use crate::claimed::{ClaimedFile, ClaimedFolder, GameFolders};
 use crate::configuration::InstallConfiguration;
 use crate::error::{InstallError, SourceItem};
@@ -41,6 +43,7 @@ pub struct UninstallOutcome {
 pub struct Core {
     source_provider: Box<dyn SourceProvider>,
     toolchain_runner: Box<dyn ToolchainRunner>,
+    modpack_assembler: Box<dyn ModpackAssembler>,
     work_dir: PathBuf,
 }
 
@@ -52,11 +55,13 @@ impl Core {
     pub fn new(
         source_provider: Box<dyn SourceProvider>,
         toolchain_runner: Box<dyn ToolchainRunner>,
+        modpack_assembler: Box<dyn ModpackAssembler>,
         work_dir: PathBuf,
     ) -> Self {
         Self {
             source_provider,
             toolchain_runner,
+            modpack_assembler,
             work_dir,
         }
     }
@@ -104,7 +109,30 @@ impl Core {
             Some(deployed) => deployed,
             None => self.build(plan, &source.root, progress)?,
         };
-        self.sync(plan, &source.root, &built_dll, &fingerprint, progress)
+        // In Modpack mode the whole pack is assembled in the App Data Store before Sync
+        // runs — rule 7's ordering again: the game is untouched until everything that can
+        // fail has succeeded.
+        let staged_modpack = if plan.modpack() {
+            let resolved = self.resolve_sources(plan, &source.root)?;
+            Some(crate::modpack::assemble(
+                plan,
+                &resolved,
+                &built_dll,
+                &self.work_dir,
+                self.modpack_assembler.as_ref(),
+                progress,
+            )?)
+        } else {
+            None
+        };
+        self.sync(
+            plan,
+            &source.root,
+            &built_dll,
+            staged_modpack.as_deref(),
+            &fingerprint,
+            progress,
+        )
     }
 
     /// The deployed DLL, brought back into the build directory — if and only if the recorded
@@ -116,30 +144,39 @@ impl Core {
         fingerprint: &BuildFingerprint,
         progress: &ProgressReporter,
     ) -> Result<Option<PathBuf>, InstallError> {
-        let folder = ClaimedFolder::CommunityPatch.path_in(&plan.folders);
-        let Ok(sidecar) = std::fs::read_to_string(folder.join(FINGERPRINT_FILE_NAME)) else {
-            return Ok(None);
-        };
-        let Some(promised_hash) = fingerprint.matches_sidecar(&sidecar) else {
-            return Ok(None);
-        };
-        let deployed = folder.join(BUILT_DLL_FILE_NAME);
-        if fnv1a64_of_file(&deployed) != Some(promised_hash) {
-            return Ok(None);
-        }
+        // Both homes a deployed DLL can have — the MODS install and inside a Modpack. The
+        // DLL is identical between the two modes (the mode changes packaging, not compile
+        // inputs), so either record can prove a rebuild unnecessary — which is what makes
+        // switching mode cheap.
+        for folder in [
+            deployed_dll_home(plan, crate::InstallMode::Mods),
+            deployed_dll_home(plan, crate::InstallMode::Modpack),
+        ] {
+            let Ok(sidecar) = std::fs::read_to_string(folder.join(FINGERPRINT_FILE_NAME)) else {
+                continue;
+            };
+            let Some(promised_hash) = fingerprint.matches_sidecar(&sidecar) else {
+                continue;
+            };
+            let deployed = folder.join(BUILT_DLL_FILE_NAME);
+            if fnv1a64_of_file(&deployed) != Some(promised_hash) {
+                continue;
+            }
 
-        // Copied out of the game folder before Sync starts deleting, so the skip path feeds
-        // Sync exactly the way a build would (rule 7's ordering is preserved: nothing in the
-        // game is touched yet).
-        let build_dir = self.work_dir.join("build");
-        tree::create_dir_all(&build_dir)?;
-        let output_path = build_dir.join(BUILT_DLL_FILE_NAME);
-        tree::copy_file(&deployed, &output_path)?;
-        progress.report(
-            Stage::Build,
-            "The DLL is already up to date — build skipped.",
-        );
-        Ok(Some(output_path))
+            // Copied out of the game folder before Sync starts deleting, so the skip path
+            // feeds Sync exactly the way a build would (rule 7's ordering is preserved:
+            // nothing in the game is touched yet).
+            let build_dir = self.work_dir.join("build");
+            tree::create_dir_all(&build_dir)?;
+            let output_path = build_dir.join(BUILT_DLL_FILE_NAME);
+            tree::copy_file(&deployed, &output_path)?;
+            progress.report(
+                Stage::Build,
+                "The DLL is already up to date — build skipped.",
+            );
+            return Ok(Some(output_path));
+        }
+        Ok(None)
     }
 
     /// One Claimed Folder and the folder in *this* Installation Source that fills it.
@@ -257,6 +294,7 @@ impl Core {
         plan: &Plan,
         source_root: &Path,
         built_dll: &Path,
+        staged_modpack: Option<&Path>,
         fingerprint: &BuildFingerprint,
         progress: &ProgressReporter,
     ) -> Result<InstallOutcome, InstallError> {
@@ -307,6 +345,11 @@ impl Core {
             let Some(deployment) = plan.deployments.get(index) else {
                 continue;
             };
+            // In Modpack mode the MODS-target folders were staged inside the pack instead
+            // of deploying here — and, deliberately, whatever is in MODS stays (ticket 11).
+            if !plan.deploys_directly(deployment) {
+                continue;
+            }
             let destination = deployment.claimed.path_in(&plan.folders);
             // Replace rather than merge: this is what makes Sync exact — no file from a
             // previous configuration can survive inside a Claimed Folder. Every *other* name
@@ -327,6 +370,20 @@ impl Core {
         }
         deployed.sort_unstable();
 
+        // The assembled Modpack, deployed whole. Verbatim: the stage is the Core's own
+        // work, Built DLL included, so the source-tree exclusions must not apply.
+        if let Some(stage) = staged_modpack {
+            let destination = ClaimedFolder::Modpack.path_in(&plan.folders);
+            tree::remove_if_present(&destination)?;
+            tree::copy_all(stage, &destination)?;
+            progress.report(
+                Stage::Sync,
+                format!("Installed {}.", ClaimedFolder::Modpack.folder_name()),
+            );
+            deployed.push(ClaimedFolder::Modpack);
+            deployed.sort_unstable();
+        }
+
         for file in &plan.files {
             tree::copy_file(
                 &source_root.join(file.source_path()),
@@ -336,12 +393,15 @@ impl Core {
         }
 
         // Every Flavor includes the Community Patch, and the Built DLL is the only DLL
-        // deployed — it goes at the root of `(1) Community Patch`.
-        let dll_destination = ClaimedFolder::CommunityPatch
-            .path_in(&plan.folders)
-            .join(BUILT_DLL_FILE_NAME);
-        tree::copy_file(built_dll, &dll_destination)?;
-        progress.report(Stage::Sync, "Installed the DLL.");
+        // deployed. In Mods mode it goes at the root of `(1) Community Patch`; in Modpack
+        // mode the assembly already placed it inside the pack, so it is deployed by now
+        // either way and only the sidecar's home differs.
+        let dll_home = deployed_dll_home(plan, plan.configuration.install_mode);
+        let dll_destination = dll_home.join(BUILT_DLL_FILE_NAME);
+        if staged_modpack.is_none() {
+            tree::copy_file(built_dll, &dll_destination)?;
+            progress.report(Stage::Sync, "Installed the DLL.");
+        }
 
         // The Build Fingerprint sidecar, beside the DLL it describes (both inside a Claimed
         // Folder, so rule 6 holds). Hashed from the deployed copy, so what is recorded is
@@ -349,9 +409,7 @@ impl Core {
         // rebuild, never a false skip, so it does not fail an otherwise complete
         // Deployment — but it is said out loud (rule 11): "it rebuilds every time" must be
         // diagnosable from what the user can show us.
-        let sidecar = ClaimedFolder::CommunityPatch
-            .path_in(&plan.folders)
-            .join(FINGERPRINT_FILE_NAME);
+        let sidecar = dll_home.join(FINGERPRINT_FILE_NAME);
         let recorded = match fnv1a64_of_file(&dll_destination) {
             Some(hash) => std::fs::write(&sidecar, fingerprint.sidecar_contents(hash)).is_ok(),
             None => false,
@@ -421,6 +479,18 @@ impl Core {
             removed,
             removed_files,
         })
+    }
+}
+
+/// Where the deployed DLL (and its fingerprint sidecar) lives for a given install mode:
+/// the root of `(1) Community Patch` — in MODS, or inside the Modpack.
+fn deployed_dll_home(plan: &Plan, mode: crate::InstallMode) -> PathBuf {
+    match mode {
+        crate::InstallMode::Mods => ClaimedFolder::CommunityPatch.path_in(&plan.folders),
+        crate::InstallMode::Modpack => ClaimedFolder::Modpack
+            .path_in(&plan.folders)
+            .join("Mods")
+            .join(ClaimedFolder::CommunityPatch.folder_name()),
     }
 }
 

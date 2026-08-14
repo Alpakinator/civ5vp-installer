@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 
 use civ5vp_core::{
     BoundaryError, BuildConfiguration, BuildRequest, Core, Eui, Flavor, FortyThreeCivs,
-    GameFolders, InstallConfiguration, InstallationSource, ProgressReporter, Stage,
+    GameFolders, InstallConfiguration, InstallMode, InstallationSource, ProgressReporter, Stage,
     ToolchainRunner, Version,
 };
 use civ5vp_sources::{InstallationSources, UPSTREAM_URL, UpstreamCache};
@@ -209,6 +209,7 @@ fn a_real_release_installs_end_to_end() {
             UPSTREAM_URL,
         ))),
         Box::new(MarkerToolchainRunner),
+        Box::new(UnusedModpackAssembler),
         root.join("work"),
     );
     let configuration = InstallConfiguration {
@@ -220,6 +221,7 @@ fn a_real_release_installs_end_to_end() {
         flavor: Flavor::VoxPopuli { eui: Eui::Enabled },
         forty_three_civs: FortyThreeCivs::Enabled,
         build_configuration: BuildConfiguration::Release,
+        install_mode: InstallMode::Mods,
     };
 
     let plan = core.plan(&configuration, &folders).unwrap();
@@ -266,5 +268,31 @@ impl ToolchainRunner for MarkerToolchainRunner {
 
     fn toolchain_identity(&self) -> String {
         "fake-toolchain-0".to_owned()
+    }
+}
+
+/// Ticket 11's boundary, for tests that never run a Modpack Deployment: refuses if asked.
+struct UnusedModpackAssembler;
+
+impl civ5vp_core::ModpackAssembler for UnusedModpackAssembler {
+    fn cache_state(
+        &self,
+        _gameplay_db: &std::path::Path,
+    ) -> Result<civ5vp_core::CacheState, civ5vp_core::BoundaryError> {
+        Err(civ5vp_core::BoundaryError::new(
+            "No modpack in this test.",
+            "UnusedModpackAssembler::cache_state called",
+        ))
+    }
+
+    fn merge_and_dump(
+        &self,
+        _job: &civ5vp_core::ModpackDatabaseJob,
+        _progress: &civ5vp_core::ProgressReporter,
+    ) -> Result<(), civ5vp_core::BoundaryError> {
+        Err(civ5vp_core::BoundaryError::new(
+            "No modpack in this test.",
+            "UnusedModpackAssembler::merge_and_dump called",
+        ))
     }
 }

@@ -16,6 +16,7 @@ path = "src/main.rs"
 
 [dependencies]
 civ5vp-core = { path = "../core" }
+civ5vp-modpack = { path = "../modpack" }
 # The two real boundaries, composed in `src/wiring.rs`. The shell itself never touches their
 # internals — the Core sees them only as its two traits (rule 2).
 civ5vp-sources = { path = "../sources" }

@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/core",
     "crates/installer",
+    "crates/modpack",
     "crates/sources",
     "crates/toolchain",
 ]
@@ -11,6 +12,7 @@ members = [
 default-members = [
     "crates/core",
     "crates/installer",
+    "crates/modpack",
     "crates/sources",
     "crates/toolchain",
 ]

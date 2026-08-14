@@ -1,7 +1,7 @@
-//! The two — and only two — boundaries injected into the Core (rule 2).
+//! The three — and only three — boundaries injected into the Core (rule 2).
 //!
-//! Everything else the installer does is concrete behind [`crate::Core`]. Adding a third
-//! trait here is an architectural change, not a refactor.
+//! Everything else the installer does is concrete behind [`crate::Core`]. Adding a trait
+//! here is an architectural change, not a refactor.
 
 use std::path::PathBuf;
 
@@ -119,4 +119,59 @@ pub trait ToolchainRunner: Send + Sync {
     ///
     /// Ticket 07 folds this into the Build Fingerprint; today it only appears in the log.
     fn toolchain_identity(&self) -> String;
+}
+
+/// Whether a game cache database can serve as the Modpack's base (ticket 11).
+///
+/// The Modpack build starts from the game's own merged vanilla database
+/// (`cache/Civ5DebugDatabase.db` after an unmodded launch). A launch with mods activated
+/// rewrites that file with the mods applied, and a Modpack built on top of it would bake
+/// everything in twice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CacheState {
+    /// The vanilla base+DLC merge — usable as the Modpack base.
+    Pristine,
+    /// A modded session wrote this file; the user must launch the game unmodded once.
+    Modded,
+}
+
+/// What the Core asks the modpack assembler to merge and dump (ticket 11).
+///
+/// The Core stages every file of the Modpack itself; the assembler only does the part that
+/// needs a database engine: apply the mods' updates to copies of the two base databases and
+/// write the two Override dumps the game will load instead of its own XML.
+#[derive(Debug, Clone)]
+pub struct ModpackDatabaseJob {
+    /// The pristine gameplay database snapshot (never written; the assembler copies it).
+    pub gameplay_base: PathBuf,
+    /// The pristine localization database snapshot (never written; the assembler copies it).
+    pub text_base: PathBuf,
+    /// The mods' database update files, in activation order — `.sql` executed as SQL,
+    /// `.xml` applied with the game's GameData semantics. `Language_*` tables route to the
+    /// localization database, everything else to the gameplay database, exactly as the game
+    /// routes them.
+    pub updates: Vec<PathBuf>,
+    /// Where the full gameplay dump is written (`Override/CIV5Units.xml` in the stage).
+    pub gameplay_dump: PathBuf,
+    /// Where the localization dump is written (`Override/CIV5Units_Mongol.xml`).
+    pub text_dump: PathBuf,
+    /// Scratch space owned by the assembler for the working database copies.
+    pub scratch_dir: PathBuf,
+}
+
+/// Boundary three: the Modpack's database merge (ticket 11).
+///
+/// A separate boundary for the same reason the toolchain is one: the work needs machinery —
+/// a SQLite engine — that rule 1 keeps out of the plain-std Core, and tests need to stand in
+/// a fake for it.
+pub trait ModpackAssembler: Send + Sync {
+    /// Whether `gameplay_db` is a usable Modpack base — see [`CacheState`].
+    fn cache_state(&self, gameplay_db: &std::path::Path) -> Result<CacheState, BoundaryError>;
+
+    /// Apply the updates to copies of the base databases and write both dumps.
+    fn merge_and_dump(
+        &self,
+        job: &ModpackDatabaseJob,
+        progress: &ProgressReporter,
+    ) -> Result<(), BoundaryError>;
 }

@@ -12,7 +12,8 @@ use std::path::PathBuf;
 
 use civ5vp_core::{
     BoundaryError, BuildConfiguration, BuildRequest, Core, Flavor, FortyThreeCivs, GameFolders,
-    InstallConfiguration, InstallationSource, ProgressReporter, Stage, ToolchainRunner, Version,
+    InstallConfiguration, InstallMode, InstallationSource, ProgressReporter, Stage,
+    ToolchainRunner, Version,
 };
 use civ5vp_sources::{InstallationSources, UpstreamCache};
 use support::UpstreamFixture;
@@ -72,6 +73,7 @@ fn a_release_from_the_upstream_cache_installs_end_to_end() {
             fixture.url(),
         ))),
         Box::new(MarkerToolchainRunner),
+        Box::new(UnusedModpackAssembler),
         app_data.join("work"),
     );
     let configuration = InstallConfiguration {
@@ -81,6 +83,7 @@ fn a_release_from_the_upstream_cache_installs_end_to_end() {
         flavor: Flavor::CommunityPatch,
         forty_three_civs: FortyThreeCivs::Disabled,
         build_configuration: BuildConfiguration::Release,
+        install_mode: InstallMode::Mods,
     };
 
     let plan = core.plan(&configuration, &game.folders()).unwrap();
@@ -114,6 +117,7 @@ fn switching_version_between_installs_removes_what_the_new_version_dropped() {
             fixture.url(),
         ))),
         Box::new(MarkerToolchainRunner),
+        Box::new(UnusedModpackAssembler),
         app_data.join("work"),
     );
     let install = |version: &str| {
@@ -124,6 +128,7 @@ fn switching_version_between_installs_removes_what_the_new_version_dropped() {
             flavor: Flavor::CommunityPatch,
             forty_three_civs: FortyThreeCivs::Disabled,
             build_configuration: BuildConfiguration::Release,
+            install_mode: InstallMode::Mods,
         };
         let plan = core.plan(&configuration, &game.folders()).unwrap();
         core.execute(&plan, &ProgressReporter::silent()).unwrap();
@@ -149,4 +154,30 @@ fn switching_version_between_installs_removes_what_the_new_version_dropped() {
         .unwrap(),
         "2.0"
     );
+}
+
+/// Ticket 11's boundary, for tests that never run a Modpack Deployment: refuses if asked.
+struct UnusedModpackAssembler;
+
+impl civ5vp_core::ModpackAssembler for UnusedModpackAssembler {
+    fn cache_state(
+        &self,
+        _gameplay_db: &std::path::Path,
+    ) -> Result<civ5vp_core::CacheState, civ5vp_core::BoundaryError> {
+        Err(civ5vp_core::BoundaryError::new(
+            "No modpack in this test.",
+            "UnusedModpackAssembler::cache_state called",
+        ))
+    }
+
+    fn merge_and_dump(
+        &self,
+        _job: &civ5vp_core::ModpackDatabaseJob,
+        _progress: &civ5vp_core::ProgressReporter,
+    ) -> Result<(), civ5vp_core::BoundaryError> {
+        Err(civ5vp_core::BoundaryError::new(
+            "No modpack in this test.",
+            "UnusedModpackAssembler::merge_and_dump called",
+        ))
+    }
 }

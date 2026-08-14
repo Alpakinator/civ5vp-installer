@@ -1,4 +1,4 @@
-//! Stand-ins for the Core's two boundaries, for the shell tests and screen previews.
+//! Stand-ins for the Core's three boundaries, for the shell tests and screen previews.
 //!
 //! The shipped binary wires [`crate::wiring`] instead. These exist so the `egui_kittest`
 //! suite can drive a whole install offline (rule 13):
@@ -7,24 +7,31 @@
 //!   — and refuses the Upstream Cache, which would need the network.
 //! * [`PlaceholderToolchainRunner`] writes a marker file instead of compiling, keeping the
 //!   2.4 GB Toolchain Bootstrap and the multi-minute compile out of the fast suite.
+//! * [`PlaceholderModpackAssembler`] writes marker dumps instead of merging databases,
+//!   keeping SQLite work out of the shell suite.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use civ5vp_core::{
-    BoundaryError, BuildRequest, Core, InstallationSource, MaterializedSource, ProgressReporter,
-    SourceProvider, Stage, ToolchainRunner,
+    BoundaryError, BuildRequest, CacheState, Core, InstallationSource, MaterializedSource,
+    ModpackAssembler, ModpackDatabaseJob, ProgressReporter, SourceProvider, Stage, ToolchainRunner,
 };
 
 /// What [`PlaceholderToolchainRunner`] writes where the Built DLL belongs.
 pub const PLACEHOLDER_DLL_CONTENTS: &str =
     "Civ 5 VP Installer placeholder. This is NOT a compiled DLL — ticket 06 replaces it.\n";
 
+/// What [`PlaceholderModpackAssembler`] writes where the database dumps belong.
+pub const PLACEHOLDER_DUMP_CONTENTS: &str =
+    "Civ 5 VP Installer placeholder. This is NOT a database dump.\n";
+
 /// A Core wired to the placeholder boundaries.
 pub fn core(work_dir: PathBuf) -> Core {
     Core::new(
         Box::new(DirectorySourceProvider),
         Box::new(PlaceholderToolchainRunner),
+        Box::new(PlaceholderModpackAssembler),
         work_dir,
     )
 }
@@ -129,5 +136,44 @@ impl ToolchainRunner for PlaceholderToolchainRunner {
 
     fn toolchain_identity(&self) -> String {
         "placeholder-toolchain-0".to_owned()
+    }
+}
+
+/// Believes any readable cache file is pristine unless it says "modded", and writes marker
+/// dumps — the same shape the Core-seam fixture uses, so a shell test can stage a Modpack
+/// without a database engine in the loop.
+pub struct PlaceholderModpackAssembler;
+
+impl ModpackAssembler for PlaceholderModpackAssembler {
+    fn cache_state(&self, gameplay_db: &Path) -> Result<CacheState, BoundaryError> {
+        let text = fs::read_to_string(gameplay_db).map_err(|err| {
+            BoundaryError::new(
+                "The game's database cache could not be read.",
+                format!("placeholder assembler: {err}"),
+            )
+        })?;
+        if text.contains("modded") {
+            Ok(CacheState::Modded)
+        } else {
+            Ok(CacheState::Pristine)
+        }
+    }
+
+    fn merge_and_dump(
+        &self,
+        job: &ModpackDatabaseJob,
+        progress: &ProgressReporter,
+    ) -> Result<(), BoundaryError> {
+        progress.report(Stage::Build, "Placeholder database merge.");
+        let write = |path: &Path| {
+            fs::write(path, PLACEHOLDER_DUMP_CONTENTS).map_err(|err| {
+                BoundaryError::new(
+                    "The Modpack databases could not be written.",
+                    format!("placeholder assembler: {err}"),
+                )
+            })
+        };
+        write(&job.gameplay_dump)?;
+        write(&job.text_dump)
     }
 }

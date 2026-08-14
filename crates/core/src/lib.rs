@@ -5,9 +5,10 @@
 //! and reports progress and results. It knows nothing about egui — that is enforced by the
 //! crate boundary rather than by convention (`CODING_STANDARDS.md` rule 1).
 //!
-//! Exactly two boundaries are injected into [`Core`]: the [`SourceProvider`] (where mod files
-//! and DLL sources come from) and the [`ToolchainRunner`] (which compiles the Built DLL).
-//! Everything else — planning, exclusions, Sync — is concrete behind this API (rule 2).
+//! Exactly three boundaries are injected into [`Core`]: the [`SourceProvider`] (where mod
+//! files and DLL sources come from), the [`ToolchainRunner`] (which compiles the Built DLL),
+//! and the [`ModpackAssembler`] (which merges and dumps the Modpack's databases). Everything
+//! else — planning, exclusions, Sync — is concrete behind this API (rule 2).
 //!
 //! Vocabulary is `CONTEXT.md`'s, exactly (rule 16).
 
@@ -28,6 +29,7 @@ mod detect;
 mod error;
 mod fingerprint;
 mod install;
+mod modpack;
 mod plan;
 mod progress;
 mod settings;
@@ -35,12 +37,13 @@ mod tree;
 mod versions;
 
 pub use boundaries::{
-    BoundaryError, BuildRequest, MaterializedSource, SourceProvider, ToolchainRunner,
+    BoundaryError, BuildRequest, CacheState, MaterializedSource, ModpackAssembler,
+    ModpackDatabaseJob, SourceProvider, ToolchainRunner,
 };
 pub use claimed::{ClaimedFile, ClaimedFolder, DeploymentTarget, GameFolders};
 pub use configuration::{
-    BuildConfiguration, Eui, Flavor, FortyThreeCivs, InstallConfiguration, InstallationSource,
-    Version,
+    BuildConfiguration, Eui, Flavor, FortyThreeCivs, InstallConfiguration, InstallMode,
+    InstallationSource, Version,
 };
 pub use detect::{
     DetectedGame, Detection, DocumentsFolder, FolderKind, FolderRejected, GameInstallation,

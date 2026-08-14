@@ -1,7 +1,7 @@
 //! Turning an Install Configuration into the list of folder operations it implies.
 
-use crate::claimed::{ClaimedFile, ClaimedFolder, GameFolders};
-use crate::configuration::{Eui, Flavor, FortyThreeCivs, InstallConfiguration};
+use crate::claimed::{ClaimedFile, ClaimedFolder, DeploymentTarget, GameFolders};
+use crate::configuration::{Eui, Flavor, FortyThreeCivs, InstallConfiguration, InstallMode};
 use crate::error::InstallError;
 
 /// The top-level `LUA` folder of `(1)` and `(2)`.
@@ -130,20 +130,52 @@ impl Plan {
             .collect()
     }
 
-    /// The Claimed Folders this Deployment will create or refresh, in a fixed order.
+    /// Is this a Modpack Deployment (ticket 11)?
+    pub(crate) fn modpack(&self) -> bool {
+        self.configuration.install_mode == InstallMode::Modpack
+    }
+
+    /// Does this deployment go straight into the game, rather than into the Modpack stage?
+    ///
+    /// In Mods mode, every deployment does. In Modpack mode the MODS-target folders are
+    /// staged inside the Modpack instead, while the DLC-target folders (VPUI, EUI's
+    /// `UI_bc1`) are still real DLC and deploy as usual.
+    pub(crate) fn deploys_directly(&self, deployment: &FolderDeployment) -> bool {
+        !self.modpack() || deployment.claimed.target() == DeploymentTarget::DlcFolder
+    }
+
+    /// The Claimed Folders this Deployment will create or refresh in the game, in a fixed
+    /// order. In Modpack mode that includes the Modpack itself and not the folders staged
+    /// inside it.
     pub(crate) fn deployed_folders(&self) -> Vec<ClaimedFolder> {
-        let mut folders: Vec<_> = self.deployments.iter().map(|d| d.claimed).collect();
+        let mut folders: Vec<_> = self
+            .deployments
+            .iter()
+            .filter(|d| self.deploys_directly(d))
+            .map(|d| d.claimed)
+            .collect();
+        if self.modpack() {
+            folders.push(ClaimedFolder::Modpack);
+        }
         folders.sort_unstable();
         folders
     }
 
     /// The Claimed Folders that do not belong to this configuration and will be removed if
     /// they are present. This is the Sync half that keeps a switched configuration clean.
+    ///
+    /// Two asymmetric rules from ticket 11, both deliberate:
+    /// - A Mods-mode Deployment removes the Modpack. A baked-in Modpack loads at every
+    ///   startup, so activating the same mods on top of it corrupts the game.
+    /// - A Modpack-mode Deployment does *not* remove the MODS folders. Inactive mods in the
+    ///   Mods menu conflict with nothing, and deleting them would destroy a working install
+    ///   the player may want to keep.
     pub(crate) fn removed_folders(&self) -> Vec<ClaimedFolder> {
         let deployed = self.deployed_folders();
         ClaimedFolder::ALL
             .into_iter()
             .filter(|folder| !deployed.contains(folder))
+            .filter(|folder| !(self.modpack() && folder.target() == DeploymentTarget::ModsFolder))
             .collect()
     }
 }

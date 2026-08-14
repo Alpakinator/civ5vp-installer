@@ -81,6 +81,11 @@ pub enum InstallError {
     },
     /// A configuration this build of the installer cannot deploy yet.
     UnsupportedConfiguration { message: String, detail: String },
+    /// The Modpack's base databases are not available yet (ticket 11): the game's cache is
+    /// missing or was written by a modded session, and no snapshot has been taken.
+    ModpackBaseUnavailable { detail: String },
+    /// The modpack assembler could not merge or dump the databases.
+    Modpack(BoundaryError),
 }
 
 impl InstallError {
@@ -140,6 +145,13 @@ impl InstallError {
                 ),
             },
             Self::UnsupportedConfiguration { message, .. } => message.clone(),
+            Self::ModpackBaseUnavailable { .. } => {
+                "Building a Modpack needs a fresh copy of the game's own data first. Start \
+                 Civilization V, wait for the main menu, quit the game, and try again. \
+                 (Don't activate any mods on the way.)"
+                    .to_owned()
+            }
+            Self::Modpack(err) => err.message().to_owned(),
         }
     }
 
@@ -172,6 +184,10 @@ impl InstallError {
                 path.display()
             ),
             Self::UnsupportedConfiguration { detail, .. } => detail.clone(),
+            Self::ModpackBaseUnavailable { detail } => {
+                format!("modpack base unavailable: {detail}")
+            }
+            Self::Modpack(err) => format!("modpack assembly failed: {}", err.detail()),
         }
     }
 }

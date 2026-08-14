@@ -12,9 +12,9 @@ The invariants that make this project's architecture hold. Each one traces to `d
 The Core is its own library crate, separate from the binary crate holding the egui shell. Its `Cargo.toml` does not list `egui`, `eframe`, or any windowing/graphics crate, so a UI type appearing in Core logic is a compile error rather than something a reviewer has to notice. If a Core type seems to need a colour or a rectangle, the design is wrong.
 _Spec: "a headless Core is the single primary seam… the egui layer is a thin shell over the Core."_
 
-**2. The Core has exactly two injected boundaries: the source provider and the toolchain runner.**
-These are traits, injected at construction. Everything else — detection, extraction, fingerprinting, Sync — is concrete behind the Core. Adding a third injection point is an architectural change: raise it, don't just do it.
-_Spec: "Inside the Core exactly two injected boundaries exist."_
+**2. The Core has exactly three injected boundaries: the source provider, the toolchain runner, and the modpack assembler.**
+These are traits, injected at construction. Everything else — detection, extraction, fingerprinting, Sync — is concrete behind the Core. Adding another injection point is an architectural change: raise it, don't just do it.
+_Spec: "Inside the Core exactly two injected boundaries exist." Amended by ticket 11: the Modpack's database merge needs a SQLite engine, which rule 1's zero-dependency Core cannot hold, and which tests must be able to fake — the same reasons the toolchain runner is a boundary. The seam is deliberately narrow: the Core stages every Modpack file itself; only "apply these update files to copies of these two databases and dump them" crosses._
 
 **3. The egui shell contains no logic beyond calling the Core and rendering what it returns.**
 No domain decisions in the UI layer: not which folders are Claimed, not whether EUI is legal with the chosen Flavor, not what order things happen in. The shell may own pure presentation state (which panel is open, scroll position). If a rule could be tested, it belongs in the Core.

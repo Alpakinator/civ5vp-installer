@@ -86,6 +86,27 @@ pub(crate) fn copy_selected(
     Ok(())
 }
 
+/// Copy `from` into `to` verbatim — no selection, no standard exclusions.
+///
+/// For trees the Core assembled itself (the Modpack stage, ticket 11): the exclusions exist
+/// to keep repository clutter out of the game, and everything in an assembled tree is there
+/// because the Core put it there — including the Built DLL, which `is_excluded` would strip.
+pub(crate) fn copy_all(from: &Path, to: &Path) -> Result<(), InstallError> {
+    create_dir_all(to)?;
+    for source in sorted_entries(from)? {
+        let Some(name) = source.file_name() else {
+            continue;
+        };
+        let destination = to.join(name);
+        if source.is_dir() {
+            copy_all(&source, &destination)?;
+        } else {
+            copy_file(&source, &destination)?;
+        }
+    }
+    Ok(())
+}
+
 /// Does this source folder hold anything `selection` would take?
 ///
 /// A named-entries selection matching nothing means the source is not shaped the way this

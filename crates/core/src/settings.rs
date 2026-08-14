@@ -14,8 +14,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::configuration::{
-    BuildConfiguration, Eui, Flavor, FortyThreeCivs, InstallConfiguration, InstallationSource,
-    Version,
+    BuildConfiguration, Eui, Flavor, FortyThreeCivs, InstallConfiguration, InstallMode,
+    InstallationSource, Version,
 };
 use crate::detect::{self, Detection, FolderRejected, SearchLocations};
 
@@ -252,6 +252,11 @@ impl Settings {
             "build-configuration",
             configuration.build_configuration.token(),
         );
+        write_line(
+            &mut text,
+            "install-mode",
+            configuration.install_mode.token(),
+        );
         text
     }
 
@@ -437,11 +442,19 @@ fn read_configuration(values: &Values) -> Option<InstallConfiguration> {
     } else {
         BuildConfiguration::Release
     };
+    // Anything but an explicit "modpack" — including a file from before the line existed —
+    // reads as the classic Mods install.
+    let install_mode = if values.get("install-mode") == Some("modpack") {
+        InstallMode::Modpack
+    } else {
+        InstallMode::Mods
+    };
     Some(InstallConfiguration {
         source,
         flavor,
         forty_three_civs,
         build_configuration,
+        install_mode,
     })
 }
 

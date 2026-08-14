@@ -2,4 +2,14 @@
   <Properties>
     <Name>(2) Vox Populi</Name>
   </Properties>
+  <Actions>
+    <OnModActivated>
+      <UpdateDatabase>Balance Changes/BalanceChanges.sql</UpdateDatabase>
+    </OnModActivated>
+  </Actions>
+  <EntryPoints>
+    <EntryPoint type="InGameUIAddin" file="LUA/PlotHelpManager.lua">
+      <Name>PlotHelpManager</Name>
+    </EntryPoint>
+  </EntryPoints>
 </Mod>

@@ -103,12 +103,16 @@ pub enum ClaimedFolder {
     SquadsForVoxPopuli,
     Vpui,
     UiBc1,
+    /// The generated Modpack (ticket 11). Unlike every other Claimed Folder it is not filled
+    /// from the Installation Source — the Core assembles it in the App Data Store and Sync
+    /// deploys the result.
+    Modpack,
 }
 
 impl ClaimedFolder {
     /// Every Claimed Folder, in a fixed order. Iterating this — rather than a `HashSet` — is
     /// what keeps Sync's file operations deterministic (rule 8).
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::CommunityPatch,
         Self::VoxPopuli,
         Self::EuiCompatibilityFiles,
@@ -116,6 +120,7 @@ impl ClaimedFolder {
         Self::SquadsForVoxPopuli,
         Self::Vpui,
         Self::UiBc1,
+        Self::Modpack,
     ];
 
     /// Every name this folder has been known by, the one in current use first.
@@ -141,6 +146,11 @@ impl ClaimedFolder {
             Self::SquadsForVoxPopuli => &["(4a) Squads for VP"],
             Self::Vpui => &["VPUI"],
             Self::UiBc1 => &["UI_bc1"],
+            // The name is the Community Patch DLL's own (`CvGame::CreateMPMP`), and the
+            // in-game Modpack Maker writes the same folder — so a Deployment that removes
+            // this also cleans up a modpack the player made by hand, which is exactly the
+            // conflict removal exists to prevent.
+            Self::Modpack => &["VP_MODPACK"],
         }
     }
 
@@ -161,7 +171,7 @@ impl ClaimedFolder {
             | Self::EuiCompatibilityFiles
             | Self::FortyThreeCivsCommunityPatch
             | Self::SquadsForVoxPopuli => DeploymentTarget::ModsFolder,
-            Self::Vpui | Self::UiBc1 => DeploymentTarget::DlcFolder,
+            Self::Vpui | Self::UiBc1 | Self::Modpack => DeploymentTarget::DlcFolder,
         }
     }
 

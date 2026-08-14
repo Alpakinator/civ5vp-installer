@@ -6,11 +6,11 @@ use std::path::{Path, PathBuf};
 
 use civ5vp_core::{
     BuildConfiguration, ClaimedFolder, Core, Eui, Flavor, FortyThreeCivs, GameFolders,
-    InstallConfiguration, InstallationSource, ProgressReporter, Stage,
+    InstallConfiguration, InstallMode, InstallationSource, ProgressReporter, Stage,
 };
 use support::{
-    DLL_MARKER, FailingSourceProvider, FailingToolchainRunner, FixtureSourceProvider, GameFixture,
-    MarkerToolchainRunner, miniature_repo,
+    DLL_MARKER, FailingSourceProvider, FailingToolchainRunner, FixtureModpackAssembler,
+    FixtureSourceProvider, GameFixture, MarkerToolchainRunner, miniature_repo,
 };
 
 fn community_patch_only() -> InstallConfiguration {
@@ -21,6 +21,7 @@ fn community_patch_only() -> InstallConfiguration {
         flavor: Flavor::CommunityPatch,
         forty_three_civs: FortyThreeCivs::Disabled,
         build_configuration: BuildConfiguration::Release,
+        install_mode: InstallMode::Mods,
     }
 }
 
@@ -28,6 +29,7 @@ fn core_over(game: &GameFixture) -> Core {
     Core::new(
         Box::new(FixtureSourceProvider::new(miniature_repo())),
         Box::new(MarkerToolchainRunner),
+        Box::new(FixtureModpackAssembler::ignored()),
         game.work_dir(),
     )
 }
@@ -291,6 +293,7 @@ fn a_failed_fetch_leaves_the_game_untouched() {
     let core = Core::new(
         Box::new(FailingSourceProvider),
         Box::new(MarkerToolchainRunner),
+        Box::new(FixtureModpackAssembler::ignored()),
         game.work_dir(),
     );
     let plan = core.plan(&community_patch_only(), &game.folders()).unwrap();
@@ -319,6 +322,7 @@ fn a_failed_build_leaves_the_game_untouched() {
     let core = Core::new(
         Box::new(FixtureSourceProvider::new(miniature_repo())),
         Box::new(FailingToolchainRunner),
+        Box::new(FixtureModpackAssembler::ignored()),
         game.work_dir(),
     );
     let plan = core.plan(&community_patch_only(), &game.folders()).unwrap();
