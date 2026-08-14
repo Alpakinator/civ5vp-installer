@@ -257,6 +257,11 @@ impl Settings {
             "install-mode",
             configuration.install_mode.token(),
         );
+        if !configuration.extra_mods.is_empty() {
+            // `|` cannot appear in a folder name the game accepts (Windows forbids it),
+            // so it is a safe separator for the one list-valued line.
+            write_line(&mut text, "extra-mods", &configuration.extra_mods.join("|"));
+        }
         text
     }
 
@@ -449,12 +454,23 @@ fn read_configuration(values: &Values) -> Option<InstallConfiguration> {
     } else {
         InstallMode::Mods
     };
+    let extra_mods = values
+        .get("extra-mods")
+        .map(|line| {
+            line.split('|')
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default();
     Some(InstallConfiguration {
         source,
         flavor,
         forty_three_civs,
         build_configuration,
         install_mode,
+        extra_mods,
     })
 }
 

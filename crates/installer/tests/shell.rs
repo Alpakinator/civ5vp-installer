@@ -355,6 +355,14 @@ fn picking_the_modpack_mode_builds_a_modpack_and_is_remembered() {
         "left alone",
     )
     .unwrap();
+    // The player's own mod, offered as an extra pick (ticket 12).
+    fs::create_dir_all(game.mods_folder().join("My Modmod")).unwrap();
+    fs::write(
+        game.mods_folder().join("My Modmod/My Modmod.modinfo"),
+        "<Mod id=\"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\" version=\"1\"/>",
+    )
+    .unwrap();
+    fs::write(game.mods_folder().join("My Modmod/tweak.lua"), "-- mine").unwrap();
 
     let mut harness = harness_over(game.launch(&game.locations()));
     harness.step();
@@ -365,6 +373,8 @@ fn picking_the_modpack_mode_builds_a_modpack_and_is_remembered() {
     harness
         .get_by_label("Install as a modpack — loads automatically, works in multiplayer")
         .click();
+    harness.step();
+    harness.get_by_label("My Modmod").click();
     harness.get_by_label("Install").click();
     wait_for_the_install_to_finish(&mut harness);
 
@@ -392,13 +402,23 @@ fn picking_the_modpack_mode_builds_a_modpack_and_is_remembered() {
         "the mods go inside the pack, not into MODS"
     );
 
-    // The mode is remembered like every other part of the configuration (user story 26).
-    let mut next = harness_over(game.launch(&game.nowhere()));
+    // The player's pick was baked in beside the managed set, and the original only read.
+    assert_eq!(
+        fs::read_to_string(pack.join("Mods/My Modmod/tweak.lua")).unwrap(),
+        "-- mine",
+    );
+    assert!(game.mods_folder().join("My Modmod/tweak.lua").is_file());
+
+    // The mode and the pick are remembered like every other part of the configuration
+    // (user story 26) — but the pick needs the mod to still be there, so this relaunch
+    // detects the same folders.
+    let mut next = harness_over(game.launch(&game.locations()));
     next.step();
     assert!(is_ticked(
         &mut next,
         "Install as a modpack — loads automatically, works in multiplayer"
     ));
+    assert!(is_ticked(&mut next, "My Modmod"));
 }
 
 /// The other half of the wiring: turning a toggle off again takes its folder away.

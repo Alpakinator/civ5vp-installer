@@ -50,6 +50,7 @@ fn local_repo(checkout: &Path) -> InstallConfiguration {
         forty_three_civs: FortyThreeCivs::Disabled,
         build_configuration: BuildConfiguration::Release,
         install_mode: InstallMode::Mods,
+        extra_mods: Vec::new(),
     }
 }
 

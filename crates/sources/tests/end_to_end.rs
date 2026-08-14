@@ -84,6 +84,7 @@ fn a_release_from_the_upstream_cache_installs_end_to_end() {
         forty_three_civs: FortyThreeCivs::Disabled,
         build_configuration: BuildConfiguration::Release,
         install_mode: InstallMode::Mods,
+        extra_mods: Vec::new(),
     };
 
     let plan = core.plan(&configuration, &game.folders()).unwrap();
@@ -129,6 +130,7 @@ fn switching_version_between_installs_removes_what_the_new_version_dropped() {
             forty_three_civs: FortyThreeCivs::Disabled,
             build_configuration: BuildConfiguration::Release,
             install_mode: InstallMode::Mods,
+            extra_mods: Vec::new(),
         };
         let plan = core.plan(&configuration, &game.folders()).unwrap();
         core.execute(&plan, &ProgressReporter::silent()).unwrap();

@@ -222,6 +222,7 @@ fn a_real_release_installs_end_to_end() {
         forty_three_civs: FortyThreeCivs::Enabled,
         build_configuration: BuildConfiguration::Release,
         install_mode: InstallMode::Mods,
+        extra_mods: Vec::new(),
     };
 
     let plan = core.plan(&configuration, &folders).unwrap();

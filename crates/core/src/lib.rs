@@ -54,6 +54,7 @@ pub use detect::{
 pub use error::{GameFolderProblem, InstallError, SourceItem};
 pub use fingerprint::dll_source_identity;
 pub use install::{Core, InstallOutcome, UninstallOutcome};
+pub use modpack::available_extra_mods;
 pub use plan::Plan;
 pub use progress::{ProgressEvent, ProgressReporter, Stage};
 pub use settings::{AppDataStore, Settings, SettingsError, Startup, start_up};

@@ -26,6 +26,7 @@ fn vox_populi_modpack() -> InstallConfiguration {
         forty_three_civs: FortyThreeCivs::Disabled,
         build_configuration: BuildConfiguration::Release,
         install_mode: InstallMode::Modpack,
+        extra_mods: Vec::new(),
     }
 }
 
@@ -249,6 +250,112 @@ fn a_second_modpack_deployment_runs_from_the_snapshot() {
     core.execute(&plan, &ProgressReporter::silent())
         .expect("the upgrade installs from the snapshot");
     assert!(game.game_root().join("DLC/VP_MODPACK").is_dir());
+}
+
+/// Ticket 12: a MODS folder with the player's own mods in it, for the extra-mod tests.
+fn plant_players_own_mods(game: &GameFixture) {
+    game.plant(
+        "MODS/Even More Bonuses/Even More Bonuses.modinfo",
+        "<Mod id=\"11111111-2222-3333-4444-555555555555\" version=\"3\">\n\
+         \t<Actions><OnModActivated>\n\
+         \t\t<UpdateDatabase>Data/MoreBonuses.sql</UpdateDatabase>\n\
+         \t</OnModActivated></Actions>\n\
+         </Mod>",
+    );
+    game.plant(
+        "MODS/Even More Bonuses/Data/MoreBonuses.sql",
+        "UPDATE Defines SET Value = 2;",
+    );
+    // Not a mod: no modinfo, so it is never offered.
+    game.plant("MODS/Screenshots/pretty.png", "not a mod");
+    // The in-game Modpack Maker, excluded by its ID the way it excludes itself.
+    game.plant(
+        "MODS/(5) Modpack Maker for VP/(5) Modpack Maker for VP (v 1).modinfo",
+        "<Mod id=\"eb8f6ed3-109d-4f2f-a81d-516c8d2f91c1\" version=\"1\"/>",
+    );
+}
+
+/// What the extra-mod picker offers: modinfo-bearing folders only, minus the managed set
+/// and the Modpack Maker.
+#[test]
+fn the_extra_mod_offer_lists_the_players_own_mods_only() {
+    let game = modpack_game();
+    plant_players_own_mods(&game);
+    // A managed folder sitting in MODS from an earlier Mods-mode install: not offered,
+    // the configuration governs it.
+    game.plant(
+        "MODS/(2) Vox Populi/(2) Vox Populi.modinfo",
+        "<Mod id=\"x\"/>",
+    );
+
+    let offered = civ5vp_core::available_extra_mods(&game.folders().mods);
+
+    assert_eq!(offered, vec!["Even More Bonuses".to_owned()]);
+}
+
+/// A picked extra mod is baked into the pack — copied inside, its database updates applied
+/// after the managed set's — and its MODS original is left exactly where it was.
+#[test]
+fn a_picked_extra_mod_is_baked_in_after_the_managed_set() {
+    let game = modpack_game();
+    plant_players_own_mods(&game);
+    let (assembler, jobs) = FixtureModpackAssembler::new();
+    let core = core_over(&game, assembler);
+
+    let mut configuration = vox_populi_modpack();
+    configuration.extra_mods = vec!["Even More Bonuses".to_owned()];
+    let plan = core.plan(&configuration, &game.folders()).unwrap();
+    core.execute(&plan, &ProgressReporter::silent()).unwrap();
+
+    assert!(
+        game.game_root()
+            .join("DLC/VP_MODPACK/Mods/Even More Bonuses/Data/MoreBonuses.sql")
+            .is_file(),
+        "the pick is copied inside the pack"
+    );
+    let jobs = jobs.lock().unwrap();
+    let updates: Vec<String> = jobs[0]
+        .updates
+        .iter()
+        .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(
+        updates,
+        [
+            "DefinesChanges.sql",
+            "BalanceChanges.sql",
+            "MoreBonuses.sql"
+        ],
+        "the modmod's changes land on top of Vox Populi's"
+    );
+    assert!(
+        game.game_root()
+            .join("MODS/Even More Bonuses/Data/MoreBonuses.sql")
+            .is_file(),
+        "the MODS original is only read"
+    );
+}
+
+/// A pick that has since vanished stops the Deployment before the game is touched.
+#[test]
+fn a_vanished_extra_mod_stops_the_deployment() {
+    let game = modpack_game();
+    let core = core_over(&game, FixtureModpackAssembler::ignored());
+
+    let mut configuration = vox_populi_modpack();
+    configuration.extra_mods = vec!["Even More Bonuses".to_owned()];
+    let before = game.files();
+    let plan = core.plan(&configuration, &game.folders()).unwrap();
+    let error = core
+        .execute(&plan, &ProgressReporter::silent())
+        .expect_err("a vanished pick cannot be baked in");
+
+    assert!(
+        error.user_message().contains("Even More Bonuses"),
+        "got: {}",
+        error.user_message()
+    );
+    assert_eq!(game.files(), before, "rule 7: the game is untouched");
 }
 
 /// Uninstall treats the Modpack as what it is: a Claimed Folder.

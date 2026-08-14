@@ -76,6 +76,50 @@ const BASE_UI_FILES: [(&str, &str); 3] = [
     ),
 ];
 
+/// The in-game Modpack Maker's own mod ID. Excluded from the extra-mod offer the same way
+/// that tool excludes itself from its packs: a hotkey listener for building modpacks is
+/// dead weight inside one.
+const MODPACK_MAKER_ID: &str = "eb8f6ed3-109d-4f2f-a81d-516c8d2f91c1";
+
+/// The player's own mods in the MODS folder that a Modpack could bake in (ticket 12):
+/// every folder holding a `.modinfo`, minus the Claimed Folders — those are the managed
+/// set, governed by the configuration — and the in-game Modpack Maker. Sorted; that is
+/// also the order they are applied in, after the managed set, which is what a modmod
+/// patching Vox Populi expects.
+pub fn available_extra_mods(mods_folder: &Path) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(mods_folder) else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            let name = entry.file_name().to_str()?.to_owned();
+            if !path.is_dir() || is_claimed_name(&name) {
+                return None;
+            }
+            let modinfo = modinfo::find(&path).ok()??;
+            let text = std::fs::read_to_string(&modinfo).ok()?;
+            if modinfo::mod_id(&text).is_some_and(|id| id.eq_ignore_ascii_case(MODPACK_MAKER_ID)) {
+                return None;
+            }
+            Some(name)
+        })
+        .collect();
+    names.sort_unstable();
+    names
+}
+
+/// Is this folder name one of the Claimed Folders, under any of its spellings?
+fn is_claimed_name(name: &str) -> bool {
+    ClaimedFolder::ALL.iter().any(|folder| {
+        folder
+            .folder_names()
+            .iter()
+            .any(|known| known.eq_ignore_ascii_case(name))
+    })
+}
+
 /// The game cache files a Modpack build starts from, and the snapshot they are kept under
 /// in the App Data Store. Snapshotted because the caches do not survive: Sync clears the
 /// game's cache folder, and once a Modpack is deployed every later launch rebuilds the
@@ -119,6 +163,39 @@ pub(crate) fn assemble(
         }
         let destination = mods_dir.join(deployment.claimed.folder_name());
         tree::copy_selected(from, &destination, &deployment.selection)?;
+        staged_mods.push(destination);
+    }
+
+    // The player's own picks from MODS (ticket 12), staged after the managed set so their
+    // database changes land on top of Vox Populi's, the way a modmod expects. MODS is only
+    // read — the copies live inside the pack.
+    for name in &plan.configuration.extra_mods {
+        if is_claimed_name(name) {
+            // A hand-edited configuration could name a managed folder; staging it twice
+            // would fight the managed copy, so it is dropped with a word.
+            progress.report(
+                Stage::Build,
+                format!("Skipped \"{name}\" — it is part of the install already."),
+            );
+            continue;
+        }
+        let from = plan.folders.mods.join(name);
+        if !from.is_dir() {
+            return Err(InstallError::UnsupportedConfiguration {
+                message: format!(
+                    "The mod \"{name}\" is no longer in your MODS folder — untick it, or \
+                     put it back and try again. Your game is unchanged."
+                ),
+                detail: format!("extra mod missing at {}", from.display()),
+            });
+        }
+        let destination = mods_dir.join(name);
+        tree::copy_selected(
+            &from,
+            &destination,
+            &crate::plan::SourceSelection::Everything,
+        )?;
+        progress.report(Stage::Build, format!("Baked {name} into the Modpack."));
         staged_mods.push(destination);
     }
 

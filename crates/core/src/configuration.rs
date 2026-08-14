@@ -145,4 +145,10 @@ pub struct InstallConfiguration {
     pub build_configuration: BuildConfiguration,
     /// Mods in the MODS folder, or one baked Modpack in the game's DLC (ticket 11).
     pub install_mode: InstallMode,
+    /// Folder names of the player's own MODS-folder mods to bake into the Modpack, applied
+    /// after the managed set in this order (ticket 12). Offered by
+    /// [`crate::available_extra_mods`]; meaningful only in Modpack mode and ignored
+    /// otherwise — in a Mods-mode install those mods are already in MODS and the game's
+    /// own Mods menu governs them.
+    pub extra_mods: Vec<String>,
 }

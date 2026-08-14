@@ -120,6 +120,11 @@ pub struct InstallerApp {
     forty_three_civs: FortyThreeCivs,
     build_configuration: BuildConfiguration,
     install_mode: InstallMode,
+    /// The player's own MODS-folder mods a Modpack could bake in (ticket 12): what the
+    /// Core found, and which of those are ticked. Recomputed when the folders resolve —
+    /// listing means reading every modinfo, not a per-frame job.
+    extra_mods_available: Vec<String>,
+    extra_mods_picked: Vec<String>,
     activity: Vec<String>,
     status: Status,
     running: Option<RunningInstall>,
@@ -188,19 +193,21 @@ impl InstallerApp {
             _ => {}
         }
         // The remembered Flavor and toggles, or what the Core suggests to a new player.
-        let (flavor, forty_three_civs, build_configuration, install_mode) =
+        let (flavor, forty_three_civs, build_configuration, install_mode, extra_mods_picked) =
             match &startup.configuration {
                 Some(configuration) => (
                     configuration.flavor.clone(),
                     configuration.forty_three_civs,
                     configuration.build_configuration,
                     configuration.install_mode,
+                    configuration.extra_mods.clone(),
                 ),
                 None => (
                     Flavor::suggested(),
                     FortyThreeCivs::Disabled,
                     BuildConfiguration::Release,
                     InstallMode::Mods,
+                    Vec::new(),
                 ),
             };
         let game_folder = startup
@@ -218,7 +225,7 @@ impl InstallerApp {
         let resolved = resolve(&game_folder, &documents_folder)
             .map_err(|rejected| startup.explanation(&rejected));
 
-        let app = Self {
+        let mut app = Self {
             core,
             store,
             source_choice,
@@ -233,6 +240,8 @@ impl InstallerApp {
             forty_three_civs,
             build_configuration,
             install_mode,
+            extra_mods_available: Vec::new(),
+            extra_mods_picked,
             activity: Vec::new(),
             status: Status::Ready,
             running: None,
@@ -246,6 +255,7 @@ impl InstallerApp {
         if app.resolved.is_ok() {
             app.remember();
         }
+        app.refresh_extra_mods();
         app
     }
 
@@ -279,6 +289,8 @@ impl InstallerApp {
             forty_three_civs: FortyThreeCivs::Disabled,
             build_configuration: BuildConfiguration::Release,
             install_mode: InstallMode::Mods,
+            extra_mods_available: Vec::new(),
+            extra_mods_picked: Vec::new(),
             activity: Vec::new(),
             status: Status::Ready,
             running: None,
@@ -488,6 +500,22 @@ impl InstallerApp {
                     .small()
                     .color(theme::PARCHMENT_DIM),
                 );
+                if !self.extra_mods_available.is_empty() {
+                    ui.add_space(4.0);
+                    ui.label("Also bake in your own mods from the MODS folder:");
+                    for name in self.extra_mods_available.clone() {
+                        let mut picked = self.extra_mods_picked.contains(&name);
+                        if ui.checkbox(&mut picked, &name).changed() {
+                            if picked {
+                                self.extra_mods_picked.push(name.clone());
+                                self.extra_mods_picked.sort_unstable();
+                            } else {
+                                self.extra_mods_picked.retain(|kept| kept != &name);
+                            }
+                            chosen = true;
+                        }
+                    }
+                }
             }
             ui.add_space(4.0);
             // Dev mode: pointing the installer at your own checkout is what makes you a mod
@@ -610,9 +638,20 @@ impl InstallerApp {
     fn folders_changed(&mut self) {
         self.resolved =
             resolve(&self.game_folder, &self.documents_folder).map_err(|r| r.user_message());
+        self.refresh_extra_mods();
         if self.resolved.is_ok() {
             self.remember();
         }
+    }
+
+    /// Re-list the player's own MODS-folder mods, and drop picks that no longer exist.
+    fn refresh_extra_mods(&mut self) {
+        self.extra_mods_available = match &self.resolved {
+            Ok(folders) => civ5vp_core::available_extra_mods(&folders.mods),
+            Err(_) => Vec::new(),
+        };
+        self.extra_mods_picked
+            .retain(|name| self.extra_mods_available.contains(name));
     }
 
     /// Hand the current state to the App Data Store, so the next launch starts here.
@@ -961,6 +1000,7 @@ impl InstallerApp {
             flavor: self.flavor.clone(),
             forty_three_civs: self.forty_three_civs,
             install_mode: self.install_mode,
+            extra_mods: self.extra_mods_picked.clone(),
             // Sent as chosen, even when Dev mode is off and the checkbox is not drawn:
             // which Build Configurations are legal with which sources is the Core's ruling
             // (rule 3), and it refuses an illegal pair with a sentence.

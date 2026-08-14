@@ -76,6 +76,7 @@ fn a_fresh_machine_installs_the_newest_release_from_github() {
         forty_three_civs: FortyThreeCivs::Disabled,
         build_configuration: BuildConfiguration::Release,
         install_mode: InstallMode::Mods,
+        extra_mods: Vec::new(),
     };
     let plan = core.plan(&configuration, &folders).unwrap_or_else(|error| {
         panic!("{}\n  detail: {}", error.user_message(), error.log_detail())
@@ -156,6 +157,7 @@ fn a_real_version_installs_end_to_end_with_a_genuinely_built_dll() {
         forty_three_civs: FortyThreeCivs::Disabled,
         build_configuration: BuildConfiguration::Release,
         install_mode: InstallMode::Mods,
+        extra_mods: Vec::new(),
     };
     let plan = core.plan(&configuration, &folders).unwrap_or_else(|error| {
         panic!("{}\n  detail: {}", error.user_message(), error.log_detail())

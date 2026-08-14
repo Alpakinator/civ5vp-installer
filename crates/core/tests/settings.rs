@@ -81,6 +81,7 @@ fn the_remembered_state_survives_the_round_trip() {
             // Debug in the round-trip: the Dev-mode choice must survive a relaunch too.
             build_configuration: BuildConfiguration::Debug,
             install_mode: InstallMode::Mods,
+            extra_mods: Vec::new(),
         },
         InstallConfiguration {
             source: InstallationSource::UpstreamCache {
@@ -90,6 +91,7 @@ fn the_remembered_state_survives_the_round_trip() {
             forty_three_civs: FortyThreeCivs::Enabled,
             build_configuration: BuildConfiguration::Release,
             install_mode: InstallMode::Mods,
+            extra_mods: Vec::new(),
         },
         InstallConfiguration {
             source: InstallationSource::UpstreamCache {
@@ -99,6 +101,7 @@ fn the_remembered_state_survives_the_round_trip() {
             forty_three_civs: FortyThreeCivs::Disabled,
             build_configuration: BuildConfiguration::Release,
             install_mode: InstallMode::Mods,
+            extra_mods: Vec::new(),
         },
         InstallConfiguration {
             source: InstallationSource::UpstreamCache {
@@ -108,6 +111,19 @@ fn the_remembered_state_survives_the_round_trip() {
             forty_three_civs: FortyThreeCivs::Enabled,
             build_configuration: BuildConfiguration::Release,
             install_mode: InstallMode::Mods,
+            extra_mods: Vec::new(),
+        },
+        // Modpack mode with extra picks (tickets 11 and 12) — names with spaces and
+        // parentheses, like real mod folders have.
+        InstallConfiguration {
+            source: InstallationSource::UpstreamCache {
+                version: Version::Release("Release-4.19.1".to_owned()),
+            },
+            flavor: Flavor::VoxPopuli { eui: Eui::Enabled },
+            forty_three_civs: FortyThreeCivs::Disabled,
+            build_configuration: BuildConfiguration::Release,
+            install_mode: InstallMode::Modpack,
+            extra_mods: vec!["Even More Bonuses (v 3)".to_owned(), "My Modmod".to_owned()],
         },
     ];
 
@@ -182,6 +198,7 @@ fn remembered_folders_pre_fill_the_next_launch() {
         forty_three_civs: FortyThreeCivs::Disabled,
         build_configuration: BuildConfiguration::Release,
         install_mode: InstallMode::Mods,
+        extra_mods: Vec::new(),
     };
 
     store
@@ -335,6 +352,7 @@ fn a_configuration_with_no_installation_source_still_remembers_its_flavor() {
                 forty_three_civs: FortyThreeCivs::Enabled,
                 build_configuration: BuildConfiguration::Release,
                 install_mode: InstallMode::Mods,
+                extra_mods: Vec::new(),
             }),
         })
         .unwrap();
@@ -368,6 +386,7 @@ fn a_remembered_upstream_version_survives_a_round_trip() {
                 forty_three_civs: FortyThreeCivs::Disabled,
                 build_configuration: BuildConfiguration::Release,
                 install_mode: InstallMode::Mods,
+                extra_mods: Vec::new(),
             }),
         })
         .unwrap();

@@ -105,6 +105,7 @@ fn configuration(flavor: Flavor, forty_three_civs: FortyThreeCivs) -> InstallCon
         forty_three_civs,
         build_configuration: BuildConfiguration::Release,
         install_mode: InstallMode::Mods,
+        extra_mods: Vec::new(),
     }
 }
 

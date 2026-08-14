@@ -29,6 +29,14 @@ pub(crate) fn find(mod_root: &Path) -> Result<Option<PathBuf>, InstallError> {
     Ok(None)
 }
 
+/// The `id="…"` of the root `<Mod>` element.
+pub(crate) fn mod_id(modinfo: &str) -> Option<String> {
+    let start = modinfo.find("<Mod")?;
+    let rest = &modinfo[start + "<Mod".len()..];
+    let end = rest.find('>')?;
+    attribute_value(&rest[..end], "id")
+}
+
 /// An `<EntryPoint>` of a modinfo: its addin type and the file it names.
 pub(crate) struct EntryPoint {
     pub(crate) addin_type: String,

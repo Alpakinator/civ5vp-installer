@@ -50,6 +50,7 @@ fn configuration(repo: &Path, forty_three_civs: FortyThreeCivs) -> InstallConfig
         forty_three_civs,
         build_configuration: BuildConfiguration::Release,
         install_mode: InstallMode::Mods,
+        extra_mods: Vec::new(),
     }
 }
 
@@ -263,6 +264,7 @@ fn a_debug_build_outside_dev_mode_is_refused() {
         forty_three_civs: FortyThreeCivs::Disabled,
         build_configuration: BuildConfiguration::Debug,
         install_mode: InstallMode::Mods,
+        extra_mods: Vec::new(),
     };
 
     let refused = core.plan(&config, &game.folders()).unwrap_err();

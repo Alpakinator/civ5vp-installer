@@ -22,6 +22,7 @@ fn community_patch_only() -> InstallConfiguration {
         forty_three_civs: FortyThreeCivs::Disabled,
         build_configuration: BuildConfiguration::Release,
         install_mode: InstallMode::Mods,
+        extra_mods: Vec::new(),
     }
 }
 

@@ -1,6 +1,9 @@
 # Ticket 11: Modpack install mode
 
-Status: in progress
+Status: done — confirmed working on the reference machine (real VP checkout, v151):
+user reports the modpack builds and installs. Merge fixes proven by the full-418-file
+dry run (see commit "survive first contact"). Remaining nice-to-have: diff our dumps
+against an in-game-generated modpack for byte-level confidence.
 
 ## What the user asked for
 
