@@ -31,7 +31,9 @@ use gix::remote::Direction;
 use gix::remote::fetch::{Shallow, Tags};
 
 use crate::error::{SourceError, chain};
-use crate::version::{RefTarget, VersionCatalog};
+use civ5vp_core::VersionCatalog;
+
+use crate::version::RefTarget;
 
 /// The one network source the installer has for mod files (`docs/pinned-artifacts.md` §6).
 pub const UPSTREAM_URL: &str = "https://github.com/LoneGazebo/Community-Patch-DLL.git";

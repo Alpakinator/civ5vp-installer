@@ -74,6 +74,15 @@ pub trait SourceProvider: Send + Sync {
         source: &InstallationSource,
         progress: &ProgressReporter,
     ) -> Result<MaterializedSource, BoundaryError>;
+
+    /// The Versions the Upstream Cache can offer right now — what the picker lists.
+    ///
+    /// One remote round trip in production; a fixture in the fast suite. Nothing is fetched
+    /// beyond ref names, so this is safe while the user is still deciding.
+    fn available_versions(
+        &self,
+        progress: &ProgressReporter,
+    ) -> Result<crate::VersionCatalog, BoundaryError>;
 }
 
 /// What the Core asks the toolchain runner to compile.

@@ -25,6 +25,38 @@ fn nowhere() -> SearchLocations {
     SearchLocations::default()
 }
 
+/// User story 25: the store answers "how big" and "make it go away", and clearing leaves a
+/// state a next install starts cleanly from.
+#[test]
+fn the_store_reports_its_size_and_clears_to_nothing() {
+    let temp = temp();
+    let store = store(&temp);
+    assert_eq!(store.size_on_disk(), 0, "an unwritten store is zero bytes");
+    store.save(&Settings::default()).unwrap();
+    // Something cache-shaped beside the settings, like the real store holds.
+    let cache = store.root().join("toolchain-cache");
+    std::fs::create_dir_all(&cache).unwrap();
+    std::fs::write(cache.join("blob"), vec![7u8; 4096]).unwrap();
+
+    let size = store.size_on_disk();
+    assert!(size >= 4096, "the cache bytes must be counted, got {size}");
+
+    store.clear().unwrap();
+    assert_eq!(store.size_on_disk(), 0);
+    assert_eq!(
+        std::fs::read_dir(store.root()).unwrap().count(),
+        0,
+        "the store is emptied, the directory itself stays"
+    );
+    // A cleared store reads back as a first run, not an error.
+    assert_eq!(store.load().unwrap(), Settings::default());
+    // Clearing twice, or clearing a store that never existed, is fine.
+    store.clear().unwrap();
+    AppDataStore::at(temp.path().join("never-created"))
+        .clear()
+        .unwrap();
+}
+
 #[test]
 fn a_first_run_has_nothing_remembered() {
     let temp = temp();

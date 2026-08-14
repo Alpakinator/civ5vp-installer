@@ -139,6 +139,44 @@ impl AppDataStore {
         Ok(Settings::parse(&text))
     }
 
+    /// Everything the store currently holds, in bytes — the Upstream Cache, the Toolchain
+    /// Cache, settings, logs (user story 25). Unreadable entries count as zero rather than
+    /// failing: the answer is for a label, not an audit.
+    pub fn size_on_disk(&self) -> u64 {
+        directory_size(&self.root)
+    }
+
+    /// Empty the App Data Store — and only the store; the game is never touched from here.
+    /// The directory itself stays. The next install re-bootstraps from nothing.
+    pub fn clear(&self) -> Result<(), SettingsError> {
+        let entries = match fs::read_dir(&self.root) {
+            Ok(entries) => entries,
+            // A store that does not exist is already clear.
+            Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(cause) => {
+                return Err(SettingsError::Io {
+                    action: "list",
+                    path: self.root.clone(),
+                    cause,
+                });
+            }
+        };
+        for entry in entries.filter_map(Result::ok) {
+            let path = entry.path();
+            let removed = if path.is_dir() && !path.is_symlink() {
+                fs::remove_dir_all(&path)
+            } else {
+                fs::remove_file(&path)
+            };
+            removed.map_err(|cause| SettingsError::Io {
+                action: "clear",
+                path,
+                cause,
+            })?;
+        }
+        Ok(())
+    }
+
     /// Write what to remember, creating the store if it is not there yet.
     pub fn save(&self, settings: &Settings) -> Result<(), SettingsError> {
         fs::create_dir_all(&self.root).map_err(|cause| SettingsError::Io {
@@ -405,6 +443,28 @@ fn read_configuration(values: &Values) -> Option<InstallConfiguration> {
         forty_three_civs,
         build_configuration,
     })
+}
+
+/// Recursive size of one directory; anything unreadable counts as zero. Symlinks are sized
+/// as themselves, not followed — a link into the store must not double-count, and a link out
+/// of it must not count someone else's data.
+fn directory_size(directory: &Path) -> u64 {
+    let Ok(entries) = fs::read_dir(directory) else {
+        return 0;
+    };
+    let mut total = 0;
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        let Ok(metadata) = fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if metadata.is_dir() {
+            total += directory_size(&path);
+        } else {
+            total += metadata.len();
+        }
+    }
+    total
 }
 
 fn on_off(enabled: bool) -> &'static str {

@@ -56,6 +56,18 @@ impl SourceProvider for FixtureSourceProvider {
             source_identity,
         })
     }
+
+    fn available_versions(
+        &self,
+        _progress: &ProgressReporter,
+    ) -> Result<civ5vp_core::VersionCatalog, BoundaryError> {
+        // The catalog a fixture upstream would advertise: two Releases and a master.
+        Ok(civ5vp_core::VersionCatalog::from_remote_refs([
+            ("refs/tags/Release-2.0", "b".repeat(40)),
+            ("refs/tags/Release-1.0", "a".repeat(40)),
+            ("refs/heads/master", "c".repeat(40)),
+        ]))
+    }
 }
 
 /// A source provider that always fails, for the abort-before-touch case.
@@ -69,6 +81,17 @@ impl SourceProvider for FailingSourceProvider {
     ) -> Result<MaterializedSource, BoundaryError> {
         Err(BoundaryError::new(
             "Could not download the mod files. Check your internet connection and try again.",
+            "fake provider: simulated network failure",
+        ))
+    }
+
+    fn available_versions(
+        &self,
+        _progress: &ProgressReporter,
+    ) -> Result<civ5vp_core::VersionCatalog, BoundaryError> {
+        Err(BoundaryError::new(
+            "Could not look up the available versions. Check your internet connection and \
+             try again.",
             "fake provider: simulated network failure",
         ))
     }

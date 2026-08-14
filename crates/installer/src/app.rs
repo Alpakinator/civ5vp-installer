@@ -14,7 +14,8 @@ use std::sync::mpsc::{Receiver, TryRecvError, channel};
 use civ5vp_core::{
     AppDataStore, BuildConfiguration, Core, Eui, Flavor, FolderRejected, FortyThreeCivs,
     GameFolders, InstallConfiguration, InstallError, InstallOutcome, InstallationSource,
-    ProgressEvent, ProgressReporter, SearchLocations, Settings, resolve_game_folders, start_up,
+    ProgressEvent, ProgressReporter, SearchLocations, Settings, Version, VersionCatalog,
+    resolve_game_folders, start_up,
 };
 
 use crate::{deco, placeholder, theme};
@@ -65,6 +66,36 @@ struct RunningInstall {
     result: Receiver<Result<InstallOutcome, InstallError>>,
 }
 
+/// Which kind of Installation Source the player is using. Presentation state — the Core
+/// receives a concrete [`InstallationSource`] either way and rules on it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SourceChoice {
+    /// The Upstream Cache: pick a Version, the installer downloads it.
+    GitHub,
+    /// Dev mode: a Local Repo, used as-is.
+    OwnCheckout,
+}
+
+/// Where the Version list currently is.
+enum VersionsState {
+    NotAsked,
+    /// The lookup thread's result lands here; `Err` is the sentence to show.
+    Fetching(Receiver<Result<VersionCatalog, String>>),
+    Ready(VersionCatalog),
+    Failed(String),
+}
+
+/// What the player picked in the Version combo box.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PickedVersion {
+    /// The default: whatever the newest Release turns out to be.
+    NewestRelease,
+    Release(String),
+    Development,
+    /// Any branch, tag, or commit — the advanced escape hatch.
+    Custom,
+}
+
 /// The whole installer UI.
 pub struct InstallerApp {
     core: Arc<Core>,
@@ -76,13 +107,10 @@ pub struct InstallerApp {
     /// out from them, or the sentence explaining why there are none. Recomputed whenever a
     /// folder is edited. The shell holds the answer; it never reaches one.
     resolved: Result<GameFolders, String>,
-    /// The Installation Source that was remembered, kept as-is until the player names a folder
-    /// of their own.
-    ///
-    /// This build has no Version picker, so the shell cannot draw an Upstream Cache selection
-    /// — but it must not destroy one either. Synthesising a Local Repo from an empty text field
-    /// and saving that would throw away a remembered Version the next release could still show.
-    remembered_source: InstallationSource,
+    source_choice: SourceChoice,
+    versions: VersionsState,
+    picked_version: PickedVersion,
+    custom_ref: String,
     flavor: Flavor,
     forty_three_civs: FortyThreeCivs,
     build_configuration: BuildConfiguration,
@@ -92,6 +120,13 @@ pub struct InstallerApp {
     /// Whether the art-deco theme has been installed on the context yet. Fonts and style
     /// are set once per context, not per frame — rebuilding the font atlas is not free.
     skinned: bool,
+    /// The App Data Store's measured size, when the storage panel is open. `None` between
+    /// looks — measuring a multi-gigabyte store is not a per-frame job.
+    store_size: Option<u64>,
+    /// The launch-time update ping's channel and answer (user story 27). Wired only by the
+    /// real binary — the shell tests and previews never open a socket.
+    update_check: Option<Receiver<String>>,
+    newer_installer: Option<String>,
 }
 
 /// The Flavor choices, as the player reads them.
@@ -123,13 +158,29 @@ impl InstallerApp {
             crate::log_detail(line);
         }
 
-        let source_folder = match &startup.configuration {
-            Some(InstallConfiguration {
-                source: InstallationSource::LocalRepo { path },
-                ..
-            }) => display_path(path),
-            _ => String::new(),
-        };
+        // The remembered Installation Source, translated into picker state. A new player
+        // starts on the GitHub path with the newest Release — the spec's default.
+        let mut source_choice = SourceChoice::GitHub;
+        let mut source_folder = String::new();
+        let mut picked_version = PickedVersion::NewestRelease;
+        let mut custom_ref = String::new();
+        match startup.configuration.as_ref().map(|c| &c.source) {
+            Some(InstallationSource::LocalRepo { path }) if !path.as_os_str().is_empty() => {
+                source_choice = SourceChoice::OwnCheckout;
+                source_folder = display_path(path);
+            }
+            Some(InstallationSource::UpstreamCache { version }) => match version {
+                Version::Release(tag) => picked_version = PickedVersion::Release(tag.clone()),
+                Version::LatestDevelopmentVersion => {
+                    picked_version = PickedVersion::Development;
+                }
+                Version::ArbitraryRef(reference) => {
+                    picked_version = PickedVersion::Custom;
+                    custom_ref = reference.clone();
+                }
+            },
+            _ => {}
+        }
         // The remembered Flavor and toggles, or what the Core suggests to a new player.
         let (flavor, forty_three_civs, build_configuration) = match &startup.configuration {
             Some(configuration) => (
@@ -161,10 +212,10 @@ impl InstallerApp {
         let app = Self {
             core,
             store,
-            remembered_source: startup
-                .configuration
-                .as_ref()
-                .map_or_else(InstallationSource::unchosen, |c| c.source.clone()),
+            source_choice,
+            versions: VersionsState::NotAsked,
+            picked_version,
+            custom_ref,
             source_folder,
             game_folder,
             documents_folder,
@@ -176,6 +227,9 @@ impl InstallerApp {
             status: Status::Ready,
             running: None,
             skinned: false,
+            store_size: None,
+            update_check: None,
+            newer_installer: None,
         };
         // Detected folders are worth remembering too: the next launch then starts from them
         // without searching (user story 26).
@@ -195,7 +249,15 @@ impl InstallerApp {
         let mut app = Self {
             core,
             store,
-            remembered_source: InstallationSource::unchosen(),
+            source_choice: SourceChoice::GitHub,
+            // A pre-loaded catalog: previews are pictures, they never open a socket.
+            versions: VersionsState::Ready(VersionCatalog::from_remote_refs([
+                ("refs/tags/Release-5.2", "b".repeat(40)),
+                ("refs/tags/Release-5.1", "a".repeat(40)),
+                ("refs/heads/master", "c".repeat(40)),
+            ])),
+            picked_version: PickedVersion::NewestRelease,
+            custom_ref: String::new(),
             source_folder: "/home/player/src/Community-Patch-DLL".to_owned(),
             game_folder: game.to_owned(),
             documents_folder: documents.to_owned(),
@@ -214,6 +276,9 @@ impl InstallerApp {
             status: Status::Ready,
             running: None,
             skinned: false,
+            store_size: None,
+            update_check: None,
+            newer_installer: None,
         };
         match screen {
             Screen::Ready => {}
@@ -300,12 +365,25 @@ impl InstallerApp {
         deco::header(ui, "Civ 5 VP Installer");
         ui.label(
             egui::RichText::new(
-                "Sources come from a local checkout of Community-Patch-DLL; the installer \
-                 compiles the mod's DLL itself with its own downloaded build tools.",
+                "Pick a version to download, or point the installer at your own checkout; \
+                 the installer compiles the mod's DLL itself with its own build tools.",
             )
             .small()
             .color(theme::PARCHMENT_DIM),
         );
+        if let Some(tag) = &self.newer_installer {
+            // User story 27: one sentence and a link, no auto-update machinery.
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(format!("A newer installer ({tag}) is available:"))
+                        .color(theme::GOLD_BRIGHT),
+                );
+                ui.hyperlink_to("download it from GitHub", crate::update::RELEASES_PAGE_URL);
+            });
+        }
+        ui.add_space(6.0);
+
+        self.source_section(ui);
         ui.add_space(6.0);
 
         let mut edited = false;
@@ -314,7 +392,6 @@ impl InstallerApp {
                 .num_columns(2)
                 .spacing([12.0, 4.0])
                 .show(ui, |ui| {
-                    folder_field(ui, "Community-Patch-DLL folder", &mut self.source_folder);
                     // The two folders the installer detects and the player can correct. The
                     // three Deployment targets are not editable, because they are not separate
                     // choices: the Core derives them from these two.
@@ -400,9 +477,10 @@ impl InstallerApp {
         }
 
         ui.add_space(8.0);
-        let busy = self.status == Status::Installing;
         let clicked = ui
-            .vertical_centered(|ui| deco::primary_button(ui, !busy, "Install").clicked())
+            .vertical_centered(|ui| {
+                deco::primary_button(ui, self.can_install(), "Install").clicked()
+            })
             .inner;
         if clicked {
             self.start_install();
@@ -430,9 +508,30 @@ impl InstallerApp {
             Status::Failed { .. } => {
                 deco::notice(ui, theme::EMBER, |ui| {
                     ui.label(line);
+                    // User story 20: the full detail is in the log file; these put it in
+                    // reach without raw compiler output ever entering the panel (rule 10).
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        if ui.button("Copy details").clicked() {
+                            ui.ctx().copy_text(self.log_text_for_report());
+                        }
+                        if ui.button("Open log").clicked() {
+                            self.open_log();
+                        }
+                        if let Some(path) = crate::log_file() {
+                            ui.label(
+                                egui::RichText::new(display_path(path))
+                                    .small()
+                                    .color(theme::PARCHMENT_DIM),
+                            );
+                        }
+                    });
                 });
             }
         }
+
+        ui.add_space(6.0);
+        self.storage_section(ui);
 
         if !self.activity.is_empty() {
             ui.add_space(6.0);
@@ -492,27 +591,301 @@ impl InstallerApp {
         }
     }
 
+    /// Attach the launch-time update ping's answer channel. Only the real binary calls
+    /// this; everything else never pings anything.
+    pub fn with_update_check(mut self, receiver: Receiver<String>) -> Self {
+        self.update_check = Some(receiver);
+        self
+    }
+
+    /// The Installation Source: the Version picker for the GitHub path, or the checkout
+    /// field for Dev mode. Which combinations are legal, and what a Version means, stay the
+    /// Core's business — this draws choices and reports the pick.
+    fn source_section(&mut self, ui: &mut egui::Ui) {
+        let mut chosen = false;
+        deco::panel(ui, Some("Install from"), |ui| {
+            chosen |= ui
+                .radio_value(
+                    &mut self.source_choice,
+                    SourceChoice::GitHub,
+                    "Download from GitHub — pick a version",
+                )
+                .changed();
+            chosen |= ui
+                .radio_value(
+                    &mut self.source_choice,
+                    SourceChoice::OwnCheckout,
+                    "My own Community-Patch-DLL checkout — Dev mode",
+                )
+                .changed();
+            ui.add_space(4.0);
+            match self.source_choice {
+                SourceChoice::GitHub => chosen |= self.version_picker(ui),
+                SourceChoice::OwnCheckout => {
+                    egui::Grid::new("own-checkout")
+                        .num_columns(2)
+                        .show(ui, |ui| {
+                            chosen |= folder_field(
+                                ui,
+                                "Community-Patch-DLL folder",
+                                &mut self.source_folder,
+                            );
+                        });
+                }
+            }
+        });
+        if chosen && self.resolved.is_ok() {
+            self.remember();
+        }
+    }
+
+    /// The Version combo and the states around it. Returns whether the pick changed.
+    fn version_picker(&mut self, ui: &mut egui::Ui) -> bool {
+        // The list is looked up once, lazily, on a thread — one round trip of ref names,
+        // nothing downloaded. Offline it fails into a sentence and a retry button.
+        if matches!(self.versions, VersionsState::NotAsked) {
+            let (sender, receiver) = channel();
+            let core = Arc::clone(&self.core);
+            std::thread::spawn(move || {
+                let looked_up = core
+                    .available_versions(&ProgressReporter::silent())
+                    .map_err(|error| {
+                        crate::log_detail(&error.log_detail());
+                        error.user_message()
+                    });
+                let _ = sender.send(looked_up);
+            });
+            self.versions = VersionsState::Fetching(receiver);
+        }
+        if let VersionsState::Fetching(receiver) = &self.versions {
+            match receiver.try_recv() {
+                Ok(Ok(catalog)) => self.versions = VersionsState::Ready(catalog),
+                Ok(Err(message)) => self.versions = VersionsState::Failed(message),
+                Err(TryRecvError::Empty) => {
+                    // Keep painting until the lookup lands.
+                    ui.ctx()
+                        .request_repaint_after(std::time::Duration::from_millis(100));
+                }
+                Err(TryRecvError::Disconnected) => {
+                    self.versions = VersionsState::Failed(
+                        "Could not look up the available versions. Check your internet \
+                         connection and try again."
+                            .to_owned(),
+                    );
+                }
+            }
+        }
+
+        let mut changed = false;
+        match &self.versions {
+            VersionsState::NotAsked | VersionsState::Fetching(_) => {
+                ui.label(
+                    egui::RichText::new("Looking up the available versions…")
+                        .small()
+                        .color(theme::PARCHMENT_DIM),
+                );
+            }
+            VersionsState::Failed(message) => {
+                let message = message.clone();
+                deco::notice(ui, theme::EMBER, |ui| {
+                    ui.label(message);
+                });
+                if ui.button("Try again").clicked() {
+                    self.versions = VersionsState::NotAsked;
+                }
+            }
+            VersionsState::Ready(catalog) => {
+                let newest = catalog.newest_release();
+                let selected_label = match &self.picked_version {
+                    PickedVersion::NewestRelease => match &newest {
+                        Some(Version::Release(tag)) => format!("Latest release — {tag}"),
+                        _ => "Latest release".to_owned(),
+                    },
+                    PickedVersion::Release(tag) => tag.clone(),
+                    PickedVersion::Development => "Latest development version".to_owned(),
+                    PickedVersion::Custom => "Custom branch, tag, or commit".to_owned(),
+                };
+                let releases: Vec<String> = catalog.releases().to_vec();
+                egui::ComboBox::from_label("Version")
+                    .selected_text(selected_label)
+                    .show_ui(ui, |ui| {
+                        if let Some(Version::Release(tag)) = &newest {
+                            changed |= ui
+                                .selectable_value(
+                                    &mut self.picked_version,
+                                    PickedVersion::NewestRelease,
+                                    format!("Latest release — {tag}"),
+                                )
+                                .changed();
+                        }
+                        changed |= ui
+                            .selectable_value(
+                                &mut self.picked_version,
+                                PickedVersion::Development,
+                                "Latest development version",
+                            )
+                            .changed();
+                        for tag in &releases {
+                            changed |= ui
+                                .selectable_value(
+                                    &mut self.picked_version,
+                                    PickedVersion::Release(tag.clone()),
+                                    tag,
+                                )
+                                .changed();
+                        }
+                        changed |= ui
+                            .selectable_value(
+                                &mut self.picked_version,
+                                PickedVersion::Custom,
+                                "Custom branch, tag, or commit",
+                            )
+                            .changed();
+                    });
+                if self.picked_version == PickedVersion::Custom {
+                    ui.horizontal(|ui| {
+                        ui.label("Ref:");
+                        changed |= ui.text_edit_singleline(&mut self.custom_ref).changed();
+                    });
+                }
+            }
+        }
+        changed
+    }
+
+    /// The concrete Version the picker means right now.
+    ///
+    /// `NewestRelease` needs the catalog; [`Self::can_install`] keeps the Install button
+    /// disabled until it is there, so the fallback below is never what actually installs.
+    fn effective_version(&self) -> Version {
+        match &self.picked_version {
+            PickedVersion::Release(tag) => Version::Release(tag.clone()),
+            PickedVersion::Development => Version::LatestDevelopmentVersion,
+            PickedVersion::Custom => Version::ArbitraryRef(self.custom_ref.trim().to_owned()),
+            PickedVersion::NewestRelease => match &self.versions {
+                VersionsState::Ready(catalog) => catalog
+                    .newest_release()
+                    .unwrap_or(Version::LatestDevelopmentVersion),
+                _ => Version::LatestDevelopmentVersion,
+            },
+        }
+    }
+
+    /// Whether the Install button means what the screen says it means.
+    fn can_install(&self) -> bool {
+        if self.status == Status::Installing {
+            return false;
+        }
+        // "Latest release" must not quietly install something else while the lookup is
+        // still out (or failed) — wait until the catalog says which release that is.
+        !(self.source_choice == SourceChoice::GitHub
+            && self.picked_version == PickedVersion::NewestRelease
+            && !matches!(&self.versions, VersionsState::Ready(_)))
+    }
+
+    /// The storage panel (user story 25): where the App Data Store is, how large it is, and
+    /// the one button that clears it. Everything it shows and does comes from
+    /// [`AppDataStore`]; the game is never involved.
+    fn storage_section(&mut self, ui: &mut egui::Ui) {
+        let location = display_path(self.store.root());
+        let response = egui::CollapsingHeader::new("Storage")
+            .default_open(false)
+            .show(ui, |ui| {
+                if self.store_size.is_none() {
+                    self.store_size = Some(self.store.size_on_disk());
+                }
+                ui.label(
+                    egui::RichText::new(format!(
+                        "The installer keeps its downloads, build files and settings in \
+                         {location} — currently {}.",
+                        human_size(self.store_size.unwrap_or(0)),
+                    ))
+                    .small(),
+                );
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    let busy = self.status == Status::Installing;
+                    if ui
+                        .add_enabled(!busy, egui::Button::new("Clear stored data"))
+                        .clicked()
+                    {
+                        match self.store.clear() {
+                            Ok(()) => {
+                                self.store_size = None;
+                                self.activity.push(
+                                    "Storage: Cleared the installer's stored data. The next \
+                                     install will download and set up everything again."
+                                        .to_owned(),
+                                );
+                            }
+                            Err(problem) => {
+                                crate::log_detail(&problem.log_detail());
+                                self.status = Status::Failed {
+                                    message: problem.user_message(),
+                                };
+                            }
+                        }
+                    }
+                    if ui.button("Recalculate size").clicked() {
+                        self.store_size = None;
+                    }
+                });
+                ui.label(
+                    egui::RichText::new(
+                        "Clearing never touches the game or its mods — only the installer's \
+                         own folder.",
+                    )
+                    .small()
+                    .color(theme::PARCHMENT_DIM),
+                );
+            });
+        // While the panel is closed the size is left unknown, so a 5 GB walk does not run
+        // just to draw a collapsed header — and a stale number never lingers either.
+        if response.body_response.is_none() {
+            self.store_size = None;
+        }
+    }
+
+    /// What "Copy details" puts on the clipboard: the sentence the user can see plus the
+    /// tail of the log file — enough for a useful report, small enough to paste anywhere.
+    fn log_text_for_report(&self) -> String {
+        let mut report = self.status_line();
+        if let Some(path) = crate::log_file()
+            && let Ok(contents) = std::fs::read_to_string(path)
+        {
+            let lines: Vec<&str> = contents.lines().collect();
+            let tail = lines.len().saturating_sub(120);
+            report.push_str("\n\n--- log tail ---\n");
+            for line in &lines[tail..] {
+                report.push_str(line);
+                report.push('\n');
+            }
+        }
+        report
+    }
+
+    fn open_log(&self) {
+        if let Some(path) = crate::log_file() {
+            crate::open_path(path);
+        }
+    }
+
     /// Dev mode is "building from your own checkout": a Local Repo has been named, in the
     /// field or remembered from last time. What Dev mode *permits* is the Core's ruling;
     /// this only decides which widgets are worth drawing.
     fn dev_mode(&self) -> bool {
-        if !self.source_folder.trim().is_empty() {
-            return true;
-        }
-        matches!(
-            &self.remembered_source,
-            InstallationSource::LocalRepo { path } if !path.as_os_str().is_empty()
-        )
+        self.source_choice == SourceChoice::OwnCheckout
     }
 
     /// What the player has chosen, as the Core wants it.
     fn configuration(&self) -> InstallConfiguration {
-        let source = if self.source_folder.trim().is_empty() {
-            self.remembered_source.clone()
-        } else {
-            InstallationSource::LocalRepo {
+        let source = match self.source_choice {
+            SourceChoice::OwnCheckout => InstallationSource::LocalRepo {
                 path: PathBuf::from(self.source_folder.trim()),
-            }
+            },
+            SourceChoice::GitHub => InstallationSource::UpstreamCache {
+                version: self.effective_version(),
+            },
         };
         InstallConfiguration {
             source,
@@ -565,6 +938,12 @@ impl InstallerApp {
 
     /// Drain whatever the worker thread has produced since the last frame.
     fn poll(&mut self) {
+        if let Some(check) = &self.update_check
+            && let Ok(tag) = check.try_recv()
+        {
+            self.newer_installer = Some(tag);
+            self.update_check = None;
+        }
         let Some(run) = self.running.take() else {
             return;
         };
@@ -648,6 +1027,17 @@ fn resolve(game_folder: &str, documents_folder: &str) -> Result<GameFolders, Fol
         Path::new(documents_folder.trim()),
     )
     .inspect_err(|rejected| crate::log_detail(&rejected.log_detail()))
+}
+
+/// Bytes as a player reads them. One decimal place, the unit that keeps the number small.
+fn human_size(bytes: u64) -> String {
+    const UNITS: [(&str, u64); 3] = [("GB", 1 << 30), ("MB", 1 << 20), ("KB", 1 << 10)];
+    for (unit, size) in UNITS {
+        if bytes >= size {
+            return format!("{:.1} {unit}", bytes as f64 / size as f64);
+        }
+    }
+    format!("{bytes} bytes")
 }
 
 fn display_path(path: &Path) -> String {

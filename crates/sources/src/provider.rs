@@ -36,4 +36,11 @@ impl SourceProvider for InstallationSources {
         }
         .map_err(Into::into)
     }
+
+    fn available_versions(
+        &self,
+        progress: &ProgressReporter,
+    ) -> Result<civ5vp_core::VersionCatalog, BoundaryError> {
+        self.upstream.list_versions(progress).map_err(Into::into)
+    }
 }

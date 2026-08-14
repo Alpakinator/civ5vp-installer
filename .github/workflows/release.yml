@@ -1,0 +1,48 @@
+# Ticket 10: CI builds the two single-file binaries from a clean checkout.
+#
+# The Linux binary is also verified locally on every change (AGENTS.md); the Windows binary
+# is built here and verified later, per the spec's platform constraint ("Windows and
+# other-distro verification is currently unavailable locally; it arrives later via CI
+# runners"). The fast suite runs on the Linux job — it needs `git` for the fixture
+# repositories (a property of the fixtures, not of the installer; AGENTS.md), which the
+# runners have.
+#
+# `--ignored` tests (real downloads, real compiles) never run here.
+
+name: build
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain (pinned by rust-toolchain.toml)
+        run: rustup show
+      - name: Fast suite
+        run: cargo test --workspace --locked
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Build
+        run: cargo build --release --locked -p civ5vp-installer
+      - uses: actions/upload-artifact@v4
+        with:
+          name: civ5vp-installer-linux-x86_64
+          path: target/release/civ5vp-installer
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain (pinned by rust-toolchain.toml)
+        run: rustup show
+      - name: Build
+        run: cargo build --release --locked -p civ5vp-installer
+      - uses: actions/upload-artifact@v4
+        with:
+          name: civ5vp-installer-windows-x86_64
+          path: target/release/civ5vp-installer.exe

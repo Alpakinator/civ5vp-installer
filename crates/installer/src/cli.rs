@@ -14,14 +14,14 @@ USAGE:
 
 OPTIONS:
     --screenshot <dir>   Directory to write the PNGs into (created if missing)
-    --size <WxH>         Window size in points, e.g. 900x640. Repeat for several sizes.
-                         Default: 900x640
+    --size <WxH>         Window size in points, e.g. 900x780. Repeat for several sizes.
+                         Default: 900x780
     --scale <factor>     DPI scale, e.g. 1.5. Repeat for several scales. Default: 1
     -h, --help           Show this message
 ";
 
 /// The default window size, in points.
-pub const DEFAULT_SIZE: [f32; 2] = [900.0, 640.0];
+pub const DEFAULT_SIZE: [f32; 2] = [900.0, 780.0];
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScreenshotOptions {
@@ -57,7 +57,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Command, String> 
             "--size" => {
                 let value = args
                     .next()
-                    .ok_or_else(|| "--size needs a value like 900x640".to_owned())?;
+                    .ok_or_else(|| "--size needs a value like 900x780".to_owned())?;
                 sizes.push(parse_size(&value)?);
             }
             "--scale" => {
@@ -90,7 +90,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Command, String> 
 fn parse_size(value: &str) -> Result<[f32; 2], String> {
     let (width, height) = value
         .split_once(['x', 'X'])
-        .ok_or_else(|| format!("expected a size like 900x640, got {value}"))?;
+        .ok_or_else(|| format!("expected a size like 900x780, got {value}"))?;
     let width: f32 = width
         .trim()
         .parse()

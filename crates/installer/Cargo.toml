@@ -20,6 +20,9 @@ civ5vp-core = { path = "../core" }
 # internals — the Core sees them only as its two traits (rule 2).
 civ5vp-sources = { path = "../sources" }
 civ5vp-toolchain = { path = "../toolchain" }
+# The launch-time new-version ping (user story 27) — the same HTTP client the toolchain
+# already brings, so this adds no new tree.
+ureq = { version = "3.3", default-features = false, features = ["rustls"] }
 # ADR-0002: egui, hand-themed, no webview. Default features give us wgpu + AccessKit, and
 # AccessKit is what egui_kittest drives the shell through.
 eframe = "0.35"

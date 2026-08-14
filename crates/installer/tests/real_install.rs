@@ -26,6 +26,92 @@ use civ5vp_core::{
 };
 use civ5vp_installer::wiring;
 
+/// Ticket 10's fresh-machine walkthrough: a clean App Data Store, empty game folders, and
+/// the exact path a new player takes — list the versions, pick the newest Release, fetch it
+/// from the real GitHub, build the DLL, Sync into the game.
+///
+/// The one concession: `CIV5VP_TOOLCHAIN_CACHE`, when set, is symlinked in as the Toolchain
+/// Cache so the run does not re-download 2.4 GB from archive.org every time — that download
+/// path has its own proof (`real_bootstrap.rs`, ticket 05). Everything else starts from
+/// nothing, including the ~600 MB upstream fetch.
+#[test]
+#[ignore = "fetches ~600 MB from GitHub and compiles the real DLL; slow"]
+fn a_fresh_machine_installs_the_newest_release_from_github() {
+    let store_root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("fresh-machine-store");
+    let _ = fs::remove_dir_all(&store_root);
+    fs::create_dir_all(&store_root).unwrap();
+    if let Some(cache) = std::env::var_os("CIV5VP_TOOLCHAIN_CACHE") {
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(PathBuf::from(cache), store_root.join("toolchain-cache"))
+            .unwrap();
+    }
+    let game_root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("fresh-machine-game");
+    let _ = fs::remove_dir_all(&game_root);
+    let folders = GameFolders {
+        mods: game_root.join("Documents/MODS"),
+        dlc: game_root.join("Game/Assets/DLC"),
+        text: game_root.join("Documents/Text"),
+    };
+    for dir in [&folders.mods, &folders.dlc, &folders.text] {
+        fs::create_dir_all(dir).unwrap();
+    }
+
+    let core = wiring::core_at(&store_root);
+    let (progress, printer) = printing_progress();
+
+    // What the picker does at launch: list, take the newest Release.
+    let newest = core
+        .available_versions(&progress)
+        .unwrap_or_else(|error| {
+            panic!("{}\n  detail: {}", error.user_message(), error.log_detail())
+        })
+        .newest_release()
+        .expect("upstream always has releases");
+    println!("newest release: {newest:?}");
+
+    let configuration = InstallConfiguration {
+        source: InstallationSource::UpstreamCache { version: newest },
+        // The suggested default is Vox Populi with EUI — the full first-run experience.
+        flavor: Flavor::suggested(),
+        forty_three_civs: FortyThreeCivs::Disabled,
+        build_configuration: BuildConfiguration::Release,
+    };
+    let plan = core.plan(&configuration, &folders).unwrap_or_else(|error| {
+        panic!("{}\n  detail: {}", error.user_message(), error.log_detail())
+    });
+    let started = std::time::Instant::now();
+    let outcome = core.execute(&plan, &progress).unwrap_or_else(|error| {
+        panic!("{}\n  detail: {}", error.user_message(), error.log_detail())
+    });
+    drop(progress);
+    let _ = printer.join();
+    println!("fresh install finished in {:?}", started.elapsed());
+
+    let dll = fs::read(&outcome.built_dll).unwrap();
+    assert_eq!(&dll[..2], b"MZ");
+    assert!(dll.len() > 5_000_000);
+    for expected in [
+        "(1) Community Patch",
+        "(2) Vox Populi",
+        "(4a) Squads for VP",
+    ] {
+        assert!(folders.mods.join(expected).is_dir(), "{expected} missing");
+    }
+    assert!(folders.dlc.join("VPUI").is_dir());
+    assert!(folders.dlc.join("UI_bc1").is_dir());
+    assert!(folders.text.join("VPUI_tips_en_us.xml").is_file());
+}
+
+fn printing_progress() -> (ProgressReporter, std::thread::JoinHandle<()>) {
+    let (sender, receiver) = mpsc::channel::<civ5vp_core::ProgressEvent>();
+    let printer = std::thread::spawn(move || {
+        for event in receiver {
+            println!("[{:?}] {}", event.stage, event.message);
+        }
+    });
+    (ProgressReporter::to_channel(sender), printer)
+}
+
 #[test]
 #[ignore = "needs CIV5VP_DLL_SOURCE_ROOT and a populated Toolchain Cache; compiles the real DLL"]
 fn a_real_version_installs_end_to_end_with_a_genuinely_built_dll() {

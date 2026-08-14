@@ -42,8 +42,19 @@ fn run_app() -> Result<(), String> {
         eprintln!("[civ5vp-installer] {}", problem.log_detail());
         problem.user_message()
     })?;
+    // The log file joins the settings in the App Data Store (user story 20); everything
+    // `log_detail` receives from here on is on disk as well as stderr.
+    civ5vp_installer::init_log_file(store.root().join("installer.log"));
     let core = Arc::new(wiring::core(&store));
     let locations = SearchLocations::for_this_platform();
+    // The update ping (user story 27): fired once, in the background, entirely best-effort.
+    // Offline or failing, nothing arrives and nothing is shown — launch never waits on it.
+    let (newer_sender, newer_receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        if let Some(tag) = civ5vp_installer::update::check_for_newer_release() {
+            let _ = newer_sender.send(tag);
+        }
+    });
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Civ 5 VP Installer")
@@ -56,7 +67,11 @@ fn run_app() -> Result<(), String> {
     eframe::run_native(
         "civ5vp-installer",
         native_options,
-        Box::new(move |_cc| Ok(Box::new(InstallerApp::launch(core, store, &locations)))),
+        Box::new(move |_cc| {
+            Ok(Box::new(
+                InstallerApp::launch(core, store, &locations).with_update_check(newer_receiver),
+            ))
+        }),
     )
     .map_err(|err| format!("could not open the installer window: {err}"))
 }

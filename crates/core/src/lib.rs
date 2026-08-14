@@ -32,6 +32,7 @@ mod plan;
 mod progress;
 mod settings;
 mod tree;
+mod versions;
 
 pub use boundaries::{
     BoundaryError, BuildRequest, MaterializedSource, SourceProvider, ToolchainRunner,
@@ -52,6 +53,7 @@ pub use install::{Core, InstallOutcome, UninstallOutcome};
 pub use plan::Plan;
 pub use progress::{ProgressEvent, ProgressReporter, Stage};
 pub use settings::{AppDataStore, Settings, SettingsError, Startup, start_up};
+pub use versions::VersionCatalog;
 
 /// The file name of the Built DLL, in the game's MODS Folder and in the build directory.
 pub const BUILT_DLL_FILE_NAME: &str = "CvGameCore_Expansion2.dll";

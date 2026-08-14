@@ -20,15 +20,67 @@ pub mod deco;
 pub mod placeholder;
 pub mod screenshot;
 pub mod theme;
+pub mod update;
 pub mod wiring;
 
 pub use app::{InstallerApp, Screen};
 
+/// Where the log file lives once [`init_log_file`] has run — inside the App Data Store.
+static LOG_FILE: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+
+/// Point the log at its real file (user story 20). Called once at startup with the App Data
+/// Store resolved; until then — and always, additionally — detail goes to stderr.
+pub fn init_log_file(path: std::path::PathBuf) {
+    let _ = LOG_FILE.set(path);
+}
+
+/// The log file's path, for the "Open log" button and the failure panel.
+pub fn log_file() -> Option<&'static std::path::Path> {
+    LOG_FILE.get().map(std::path::PathBuf::as_path)
+}
+
+/// Show `path` to the user with the platform's opener — the "Open log" button.
+///
+/// This is rule 5's second permitted exception (see CODING_STANDARDS.md): a best-effort
+/// convenience that invokes the desktop's own opener, never anything the user must install
+/// for the installer to work. If it fails, the path is on screen to copy and the log has the
+/// reason — no install is ever affected.
+pub fn open_path(path: &std::path::Path) {
+    #[cfg(target_os = "windows")]
+    let opener = "explorer";
+    #[cfg(target_os = "macos")]
+    let opener = "open";
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let opener = "xdg-open";
+    if let Err(err) = std::process::Command::new(opener).arg(path).spawn() {
+        log_detail(&format!(
+            "could not open {} with {opener}: {err}",
+            path.display()
+        ));
+    }
+}
+
 /// Where the detail behind a user-facing error goes.
 ///
 /// Rule 11 wants everything a user might report in a log file, and rule 10 keeps that detail
-/// out of the UI. Ticket 10 gives this a real file with copy/open buttons; until then it goes
-/// to stderr, which is at least somewhere a developer can look.
+/// out of the UI. Appended to the log file in the App Data Store (and echoed to stderr); a
+/// log line that cannot be written is not worth interrupting anything over — stderr still
+/// has it.
 pub fn log_detail(detail: &str) {
+    if let Some(path) = LOG_FILE.get() {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_secs())
+            .unwrap_or(0);
+        let line = format!("[{timestamp}] {detail}\n");
+        let written = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .and_then(|mut file| std::io::Write::write_all(&mut file, line.as_bytes()));
+        if written.is_err() {
+            eprintln!("[civ5vp-installer] could not write {}", path.display());
+        }
+    }
     eprintln!("[civ5vp-installer] {detail}");
 }

@@ -31,7 +31,7 @@ mod provider;
 mod upstream;
 mod version;
 
+pub use civ5vp_core::VersionCatalog;
 pub use error::{LocalRepoProblem, SourceError};
 pub use provider::InstallationSources;
 pub use upstream::{UPSTREAM_URL, UpstreamCache};
-pub use version::VersionCatalog;

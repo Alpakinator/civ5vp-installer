@@ -697,6 +697,7 @@ dependencies = [
  "egui_kittest",
  "image",
  "tempfile",
+ "ureq",
 ]
 
 [[package]]

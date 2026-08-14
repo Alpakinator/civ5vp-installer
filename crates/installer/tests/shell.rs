@@ -20,8 +20,9 @@ use civ5vp_installer::{InstallerApp, Screen, placeholder};
 use egui_kittest::kittest::Queryable as _;
 use egui_kittest::{Harness, SnapshotResults};
 
-/// The size the baselines are rendered at. Ticket 09 adds more.
-const WINDOW: [f32; 2] = [900.0, 640.0];
+/// The size the baselines are rendered at — the window's design minimum. It grew from 640
+/// when ticket 10 added the Version picker and the storage panel.
+const WINDOW: [f32; 2] = [900.0, 780.0];
 
 /// The same miniature Community-Patch-DLL layout the Core-seam tests use. Shared rather
 /// than duplicated so there is one answer to "what does a repository look like".
@@ -113,6 +114,10 @@ impl TempGame {
     fn launch(&self, locations: &SearchLocations) -> InstallerApp {
         InstallerApp::launch(self.core(), self.store(), locations)
     }
+
+    fn temp_path(&self) -> &Path {
+        self.temp.path()
+    }
 }
 
 /// Step the UI until `text` shows up somewhere in the accessibility tree.
@@ -171,6 +176,16 @@ fn is_ticked(harness: &mut Harness<'_, InstallerApp>, label: &str) -> bool {
 }
 
 #[track_caller]
+/// Switch the Installation Source to Dev mode and name the checkout — the picker's radio
+/// must be clicked first, because the folder field only exists in Dev mode.
+fn enter_dev_mode(harness: &mut Harness<'_, InstallerApp>, checkout: &str) {
+    harness
+        .get_by_label("My own Community-Patch-DLL checkout — Dev mode")
+        .click();
+    harness.step();
+    set_text(harness, "Community-Patch-DLL folder", checkout);
+}
+
 fn set_text(harness: &mut Harness<'_, InstallerApp>, label: &str, value: &str) {
     let field = harness.get_by_label(label);
     field.focus();
@@ -230,11 +245,7 @@ fn clicking_install_deploys_the_community_patch() {
         "the shell should start out idle",
     );
 
-    set_text(
-        &mut harness,
-        "Community-Patch-DLL folder",
-        &miniature_repo().display().to_string(),
-    );
+    enter_dev_mode(&mut harness, &miniature_repo().display().to_string());
     harness.get_by_label("Community Patch only").click();
     harness.get_by_label("Install").click();
     wait_for_the_install_to_finish(&mut harness);
@@ -280,11 +291,7 @@ fn picking_vox_populi_with_eui_installs_the_whole_thing() {
     let game = TempGame::new();
     let mut harness = harness_over(game.launch(&game.locations()));
     harness.step();
-    set_text(
-        &mut harness,
-        "Community-Patch-DLL folder",
-        &miniature_repo().display().to_string(),
-    );
+    enter_dev_mode(&mut harness, &miniature_repo().display().to_string());
 
     harness
         .get_by_label("Vox Populi with EUI — adds the Enhanced User Interface")
@@ -321,11 +328,7 @@ fn switching_the_flavor_down_removes_what_no_longer_belongs() {
     let game = TempGame::new();
     let mut harness = harness_over(game.launch(&game.locations()));
     harness.step();
-    set_text(
-        &mut harness,
-        "Community-Patch-DLL folder",
-        &miniature_repo().display().to_string(),
-    );
+    enter_dev_mode(&mut harness, &miniature_repo().display().to_string());
 
     harness
         .get_by_label("Vox Populi with EUI — adds the Enhanced User Interface")
@@ -364,11 +367,7 @@ fn what_one_launch_settles_the_next_launch_starts_from() {
     let game = TempGame::new();
     let mut harness = harness_over(game.launch(&game.locations()));
     harness.step();
-    set_text(
-        &mut harness,
-        "Community-Patch-DLL folder",
-        &miniature_repo().display().to_string(),
-    );
+    enter_dev_mode(&mut harness, &miniature_repo().display().to_string());
     harness.get_by_label("Install").click();
     wait_for_the_install_to_finish(&mut harness);
 
@@ -523,11 +522,7 @@ fn a_bad_source_folder_is_explained_and_nothing_is_installed() {
     let game = TempGame::new();
     let mut harness = harness_over(game.launch(&game.locations()));
     harness.step();
-    set_text(
-        &mut harness,
-        "Community-Patch-DLL folder",
-        "/no/such/checkout",
-    );
+    enter_dev_mode(&mut harness, "/no/such/checkout");
 
     harness.get_by_label("Install").click();
     wait_for_label(&mut harness, "There is no folder at");
@@ -554,11 +549,7 @@ fn the_debug_choice_appears_only_in_dev_mode() {
         "no Local Repo named yet, so no Debug choice"
     );
 
-    set_text(
-        &mut harness,
-        "Community-Patch-DLL folder",
-        &miniature_repo().display().to_string(),
-    );
+    enter_dev_mode(&mut harness, &miniature_repo().display().to_string());
     harness.step();
 
     assert!(
@@ -567,6 +558,74 @@ fn the_debug_choice_appears_only_in_dev_mode() {
             .next()
             .is_some(),
         "a named checkout is Dev mode, and Dev mode has the Debug choice"
+    );
+}
+
+/// Ticket 10: a new player lands on the GitHub path with the newest Release pre-picked, and
+/// the Version they choose instead survives a relaunch.
+#[test]
+fn the_version_picker_defaults_to_the_newest_release_and_the_pick_is_remembered() {
+    let game = TempGame::new();
+    let mut harness = harness_over(game.launch(&game.locations()));
+    // The list arrives from a lookup thread — a fixture catalog here, never a socket. The
+    // combo exposes its selection as its accessibility *value*, the way a screen reader
+    // reads a closed dropdown.
+    wait_for_combo_value(&mut harness, "Latest release — Release-5.2");
+
+    // Pick the Latest Development Version through the combo, as a player would.
+    harness.get_by_label("Version").click();
+    harness.step();
+    harness.get_by_label("Latest development version").click();
+    harness.step();
+    harness.step();
+
+    // A second launch with nowhere to detect: the pick can only have been remembered.
+    let mut next = harness_over(game.launch(&game.nowhere()));
+    wait_for_combo_value(&mut next, "Latest development version");
+}
+
+/// Step until the Version combo's selection reads `text`.
+#[track_caller]
+fn wait_for_combo_value(harness: &mut Harness<'_, InstallerApp>, text: &str) {
+    for _ in 0..200 {
+        harness.step();
+        if harness
+            .query_all_by_label("Version")
+            .any(|node| node.value().unwrap_or_default().contains(text))
+        {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    panic!("the Version combo never read {text:?}");
+}
+
+/// Ticket 10 / user story 25: the storage panel's clear button empties the App Data Store —
+/// and only the store; the game folders are not part of it.
+#[test]
+fn clear_stored_data_empties_the_app_data_store() {
+    let game = TempGame::new();
+    let mut harness = harness_over(game.launch(&game.locations()));
+    harness.step();
+    let store_root = game.temp_path().join("app-data");
+    assert!(
+        std::fs::read_dir(&store_root).unwrap().count() > 0,
+        "the launch remembered settings, so the store is not empty"
+    );
+
+    harness.get_by_label("Storage").click();
+    harness.step();
+    harness.get_by_label("Clear stored data").click();
+    harness.step();
+
+    assert_eq!(
+        std::fs::read_dir(&store_root).unwrap().count(),
+        0,
+        "the store is emptied"
+    );
+    assert!(
+        game.game_folder().join("CivilizationV.exe").exists(),
+        "the game is untouched"
     );
 }
 

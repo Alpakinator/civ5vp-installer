@@ -61,6 +61,16 @@ impl Core {
         }
     }
 
+    /// What the Version picker lists, straight from the source-provider boundary.
+    pub fn available_versions(
+        &self,
+        progress: &ProgressReporter,
+    ) -> Result<crate::VersionCatalog, InstallError> {
+        self.source_provider
+            .available_versions(progress)
+            .map_err(InstallError::Fetch)
+    }
+
     /// Work out what this configuration implies. Rejects configurations that cannot be
     /// deployed before anything at all has happened.
     pub fn plan(
