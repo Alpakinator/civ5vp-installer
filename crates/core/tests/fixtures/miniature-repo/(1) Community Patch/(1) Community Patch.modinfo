@@ -2,6 +2,13 @@
   <Properties>
     <Name>(1) Community Patch</Name>
   </Properties>
+  <Files>
+    <File md5="00000000000000000000000000000000" import="0">Core Files\Core Values\DefinesChanges.sql</File>
+    <File md5="00000000000000000000000000000000" import="0">Core Files\LUA\CoreHelper.lua</File>
+    <File md5="00000000000000000000000000000000" import="0">CvGameCore_Expansion2.dll</File>
+    <File md5="00000000000000000000000000000000" import="0">Kit\ReadMe.txt</File>
+    <File md5="00000000000000000000000000000000" import="1">LUA\CityView.lua</File>
+  </Files>
   <Actions>
     <OnModActivated>
       <UpdateDatabase>Core Files/Core Values/DefinesChanges.sql</UpdateDatabase>

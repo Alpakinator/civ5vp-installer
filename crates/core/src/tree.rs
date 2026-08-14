@@ -37,7 +37,7 @@ const EXCLUDED_NAMES: &[&str] = &[
 ///
 /// The checked-in DLL is the load-bearing one: ADR-0001 says the repository's DLL is stale
 /// outside release commits and is never deployed. The Built DLL replaces it.
-fn is_excluded(name: &str) -> bool {
+pub(crate) fn is_excluded(name: &str) -> bool {
     if name.eq_ignore_ascii_case(BUILT_DLL_FILE_NAME) {
         return true;
     }

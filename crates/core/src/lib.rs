@@ -29,6 +29,7 @@ mod detect;
 mod error;
 mod fingerprint;
 mod install;
+mod modinfo;
 mod modpack;
 mod plan;
 mod progress;

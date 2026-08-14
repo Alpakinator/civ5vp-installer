@@ -228,7 +228,28 @@ impl Core {
 
         // Check everything the plan needs is actually there before the build burns minutes —
         // and, more importantly, before Sync starts deleting (rule 7).
-        self.resolve_sources(plan, &source.root)?;
+        let resolved = self.resolve_sources(plan, &source.root)?;
+
+        // Dev mode only: hold the checkout against each mod's own .modinfo manifest. A
+        // listed-but-gone file fails here; unlisted extras warn and continue (the split is
+        // explained at `validate_dev_manifest`). Upstream Versions are not checked — they
+        // ship what upstream released, and the player cannot act on a difference.
+        if matches!(
+            plan.configuration.source,
+            crate::InstallationSource::LocalRepo { .. }
+        ) {
+            for (index, path) in &resolved {
+                let Some(deployment) = plan.deployments.get(*index) else {
+                    continue;
+                };
+                crate::modinfo::validate_dev_manifest(
+                    deployment.claimed.folder_name(),
+                    path,
+                    progress,
+                )?;
+            }
+        }
+
         for file in &plan.files {
             let path = source.root.join(file.source_path());
             if !path.is_file() {

@@ -2,6 +2,10 @@
   <Properties>
     <Name>(2) Vox Populi</Name>
   </Properties>
+  <Files>
+    <File md5="00000000000000000000000000000000" import="0">Balance Changes\BalanceChanges.sql</File>
+    <File md5="00000000000000000000000000000000" import="1">LUA\PlotHelpManager.lua</File>
+  </Files>
   <Actions>
     <OnModActivated>
       <UpdateDatabase>Balance Changes/BalanceChanges.sql</UpdateDatabase>

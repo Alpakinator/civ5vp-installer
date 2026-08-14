@@ -16,6 +16,7 @@ use crate::BUILT_DLL_FILE_NAME;
 use crate::boundaries::{CacheState, ModpackAssembler, ModpackDatabaseJob};
 use crate::claimed::{ClaimedFolder, GameFolders};
 use crate::error::InstallError;
+use crate::modinfo;
 use crate::plan::Plan;
 use crate::progress::{ProgressReporter, Stage};
 use crate::tree;
@@ -253,11 +254,11 @@ fn stage_ui(
     // hooks into. Skipped when the target file does not exist (the Modpack Maker does the
     // same — an addin type nothing provides a base file for is dropped with a log line).
     for staged in staged_mods {
-        let Some(modinfo) = find_modinfo(staged)? else {
+        let Some(modinfo) = modinfo::find(staged)? else {
             continue;
         };
         let text = read_file(&modinfo)?;
-        for point in entry_points(&text) {
+        for point in modinfo::entry_points(&text) {
             let Some((_, target)) = UI_ENTRY_FILES
                 .iter()
                 .find(|(_, addin_type)| addin_type.eq_ignore_ascii_case(&point.addin_type))
@@ -342,12 +343,12 @@ fn collect_database_updates(
     staged_mod: &Path,
     updates: &mut Vec<PathBuf>,
 ) -> Result<(), InstallError> {
-    let Some(modinfo) = find_modinfo(staged_mod)? else {
+    let Some(modinfo) = modinfo::find(staged_mod)? else {
         return Ok(());
     };
     let text = read_file(&modinfo)?;
-    for relative in update_database_entries(&text) {
-        let Some(path) = resolve_case_insensitive(staged_mod, &relative) else {
+    for relative in modinfo::update_database_entries(&text) {
+        let Some(path) = modinfo::resolve_case_insensitive(staged_mod, &relative) else {
             return Err(InstallError::UnsupportedConfiguration {
                 message: format!(
                     "The mod files reference \"{relative}\", which is not among them — this \
@@ -362,126 +363,6 @@ fn collect_database_updates(
         updates.push(path);
     }
     Ok(())
-}
-
-/// The mod's `.modinfo`, at the mod root — the only place the game looks for one.
-fn find_modinfo(mod_root: &Path) -> Result<Option<PathBuf>, InstallError> {
-    for entry in sorted_dir(mod_root)? {
-        if let Some(name) = entry.file_name().and_then(|name| name.to_str())
-            && name.to_ascii_lowercase().ends_with(".modinfo")
-            && entry.is_file()
-        {
-            return Ok(Some(entry));
-        }
-    }
-    Ok(None)
-}
-
-/// An `<EntryPoint>` of a modinfo: its addin type and the file it names.
-struct EntryPoint {
-    addin_type: String,
-    file: String,
-}
-
-/// Every `<EntryPoint type="..." file="...">` in document order.
-///
-/// A scanning parser, like the toolchain's vcxproj reader: modinfos are
-/// machine-written XML, and the two attributes are all that is needed.
-fn entry_points(modinfo: &str) -> Vec<EntryPoint> {
-    let mut points = Vec::new();
-    let mut rest = modinfo;
-    while let Some(start) = rest.find("<EntryPoint") {
-        rest = &rest[start + "<EntryPoint".len()..];
-        let Some(end) = rest.find('>') else {
-            break;
-        };
-        let attributes = &rest[..end];
-        if let (Some(addin_type), Some(file)) = (
-            attribute_value(attributes, "type"),
-            attribute_value(attributes, "file"),
-        ) {
-            points.push(EntryPoint { addin_type, file });
-        }
-        rest = &rest[end + 1..];
-    }
-    points
-}
-
-/// Every `<UpdateDatabase>…</UpdateDatabase>` payload in document order.
-fn update_database_entries(modinfo: &str) -> Vec<String> {
-    let mut entries = Vec::new();
-    let mut rest = modinfo;
-    while let Some(start) = rest.find("<UpdateDatabase>") {
-        rest = &rest[start + "<UpdateDatabase>".len()..];
-        let Some(end) = rest.find("</UpdateDatabase>") else {
-            break;
-        };
-        let payload = unescape_xml(rest[..end].trim());
-        if !payload.is_empty() {
-            entries.push(payload);
-        }
-        rest = &rest[end..];
-    }
-    entries
-}
-
-/// The value of `name="…"` (either quote style) inside a tag's attribute list.
-fn attribute_value(attributes: &str, name: &str) -> Option<String> {
-    let mut rest = attributes;
-    loop {
-        let start = rest.find(name)?;
-        let after = &rest[start + name.len()..];
-        // Guard against matching the tail of a longer attribute name.
-        let preceded_ok = start == 0
-            || rest[..start]
-                .chars()
-                .next_back()
-                .is_some_and(|c| c.is_whitespace());
-        let after_eq = after.trim_start();
-        if preceded_ok && let Some(quoted) = after_eq.strip_prefix('=') {
-            let quoted = quoted.trim_start();
-            let quote = quoted.chars().next()?;
-            if quote == '"' || quote == '\'' {
-                let inner = &quoted[1..];
-                let end = inner.find(quote)?;
-                return Some(unescape_xml(&inner[..end]));
-            }
-        }
-        rest = &rest[start + name.len()..];
-    }
-}
-
-fn unescape_xml(text: &str) -> String {
-    text.replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&apos;", "'")
-        .replace("&amp;", "&")
-}
-
-/// `relative` resolved under `root`, matching each segment without case — modinfo paths are
-/// written for Windows, where case never mattered, and the staged copy keeps the
-/// repository's spelling.
-fn resolve_case_insensitive(root: &Path, relative: &str) -> Option<PathBuf> {
-    let mut current = root.to_path_buf();
-    for segment in relative
-        .split(['/', '\\'])
-        .filter(|segment| !segment.is_empty())
-    {
-        let next = current.join(segment);
-        if next.exists() {
-            current = next;
-            continue;
-        }
-        let found = std::fs::read_dir(&current).ok()?.flatten().find(|entry| {
-            entry
-                .file_name()
-                .to_str()
-                .is_some_and(|name| name.eq_ignore_ascii_case(segment))
-        })?;
-        current = found.path();
-    }
-    current.is_file().then_some(current)
 }
 
 /// Every file under `dir` (recursively, sorted walk) whose name matches one of `names`.
@@ -506,7 +387,7 @@ fn find_files_named(
 /// platform, and case-insensitively, because the game's own files are cased however the
 /// installation shipped them.
 fn join_relative(root: &Path, relative: &str) -> PathBuf {
-    resolve_case_insensitive(root, relative).unwrap_or_else(|| {
+    modinfo::resolve_case_insensitive(root, relative).unwrap_or_else(|| {
         relative
             .split('/')
             .fold(root.to_path_buf(), |p, s| p.join(s))

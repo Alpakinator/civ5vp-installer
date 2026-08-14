@@ -84,6 +84,13 @@ pub enum InstallError {
     /// The Modpack's base databases are not available yet (ticket 11): the game's cache is
     /// missing or was written by a modded session, and no snapshot has been taken.
     ModpackBaseUnavailable { detail: String },
+    /// A Local Repo mod folder is missing files its own `.modinfo` lists — deploying it
+    /// would install a mod the game cannot load whole. Dev mode only: an Upstream Cache
+    /// Version ships what upstream released, and a player cannot act on the difference.
+    ModManifestMismatch {
+        folder_name: String,
+        missing: Vec<String>,
+    },
     /// The modpack assembler could not merge or dump the databases.
     Modpack(BoundaryError),
 }
@@ -151,6 +158,24 @@ impl InstallError {
                  (Don't activate any mods on the way.)"
                     .to_owned()
             }
+            Self::ModManifestMismatch {
+                folder_name,
+                missing,
+            } => {
+                let mut named: Vec<&str> = missing.iter().take(3).map(String::as_str).collect();
+                let more = missing.len().saturating_sub(named.len());
+                let listed = if more > 0 {
+                    named.push("…");
+                    format!("{} and {more} more", named.join(", "))
+                } else {
+                    named.join(", ")
+                };
+                format!(
+                    "Your checkout's \"{folder_name}\" no longer has {listed}, but its \
+                     .modinfo still lists it — the game would refuse the mod. Restore the \
+                     file or regenerate the .modinfo, then try again. Your game is unchanged."
+                )
+            }
             Self::Modpack(err) => err.message().to_owned(),
         }
     }
@@ -187,6 +212,13 @@ impl InstallError {
             Self::ModpackBaseUnavailable { detail } => {
                 format!("modpack base unavailable: {detail}")
             }
+            Self::ModManifestMismatch {
+                folder_name,
+                missing,
+            } => format!(
+                "dev manifest: {folder_name} modinfo lists missing files: {}",
+                missing.join(", ")
+            ),
             Self::Modpack(err) => format!("modpack assembly failed: {}", err.detail()),
         }
     }
