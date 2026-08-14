@@ -36,3 +36,7 @@
 # submodules or a committed MCP server config.
 /.gitmodules
 /.mcp.json
+
+# Local working notes and reference images — not part of the published repository.
+/.scratch/
+/docs/ui-reference/art_for_inspiration/
