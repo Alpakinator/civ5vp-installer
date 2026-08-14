@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Walking skeleton.
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Every URL, checksum, ISO member and fix-up this ticket needs is recorded in `docs/pinned-artifacts.md`.** Read it first. Two things there override older prose: the VC9 CRT ships **inside the same Windows SDK ISO** (`Setup/vc_stdx86/`), so there is exactly one mandatory download, not two; and the proven compiler is **clang 18** targeting `i386-pc-windows-msvc`. Do not take build settings from upstream `master` — its Release configuration produces a DLL the game rejects.
 

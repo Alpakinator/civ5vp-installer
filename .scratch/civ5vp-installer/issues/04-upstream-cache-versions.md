@@ -6,7 +6,7 @@
 
 **Status:** ready-for-agent
 
-- [ ] Version picker lists real Releases and latest master from the upstream repository; arbitrary ref accepted via advanced input — **the Core half is done and proven against the real upstream (194 Releases listed, arbitrary ref by commit id), but there is no picker in the UI**: the shell cannot depend on `civ5vp-sources` yet and still hardcodes a Local Repo. The user-facing half of this criterion is not met
+- [x] Version picker lists real Releases and latest master from the upstream repository; arbitrary ref accepted via advanced input — **the UI half arrived with ticket 10**: `available_versions` joined the source-provider boundary, and the shell's picker lists every Release (newest pre-picked), the latest development version, and a custom-ref field. Proven end-to-end by the fresh-machine walkthrough (listed, picked Release-5.4.3, installed)
 - [x] First materialization transfers under 200 MB on the wire, against ~4.5 GB of full history; a subsequent Version switch transfers under 50 MB. Both are measured, not estimated. Measured 2026-08-03: **147.7 MiB** first materialization, **32.7 MiB** for `master` → `Release-4.15`
 - [x] Checkout of the selected Version feeds the Core's source-provider boundary; a real Release installs end-to-end (fake toolchain still supplying the DLL)
 - [ ] Network failure mid-fetch leaves the cache consistent and the game untouched; retry succeeds — **partial**: an unreachable host and an unknown ref are tested, and both retry cleanly, but that is a failure *before* the transfer. A connection severed part-way through a pack — the case that could leave a half-written pack behind — needs a fault-injecting transport and is untested

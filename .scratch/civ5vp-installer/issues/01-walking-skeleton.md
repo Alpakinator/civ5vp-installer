@@ -6,7 +6,7 @@ The tracer bullet also establishes how the UI is **seen**, not just how it is te
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] Rust workspace of (at least) two crates — a Core **library** crate and a binary crate holding the egui shell — building one binary. The Core crate's `Cargo.toml` must not list `egui`/`eframe`, so the seam is a compile error to cross, not a convention
 - [x] The egui shell contains no logic beyond calling the Core and rendering what it returns
