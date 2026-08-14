@@ -83,6 +83,16 @@ pub trait SourceProvider: Send + Sync {
         &self,
         progress: &ProgressReporter,
     ) -> Result<crate::VersionCatalog, BoundaryError>;
+
+    /// Every commit after `newest_release` (a `Release-*` tag name), oldest first — what
+    /// the picker lists as unofficial versions (ticket 13). One small HTTP round trip for
+    /// the Upstream Cache; a Local Repo has no notion of this and returns an error saying
+    /// so.
+    fn unofficial_versions(
+        &self,
+        newest_release: &str,
+        progress: &ProgressReporter,
+    ) -> Result<Vec<crate::UnofficialVersion>, BoundaryError>;
 }
 
 /// What the Core asks the toolchain runner to compile.

@@ -97,6 +97,35 @@ impl SourceProvider for DirectorySourceProvider {
     ) -> Result<civ5vp_core::VersionCatalog, BoundaryError> {
         Ok(fixture_version_catalog())
     }
+
+    fn unofficial_versions(
+        &self,
+        newest_release: &str,
+        _progress: &ProgressReporter,
+    ) -> Result<Vec<civ5vp_core::UnofficialVersion>, BoundaryError> {
+        Ok(fixture_unofficial_versions(newest_release))
+    }
+}
+
+/// The unofficial list every offline surface shares (ticket 13): two changes after the
+/// newest Release, the second with a summary far too long for any dropdown — the shape the
+/// shell has to cope with (rule 13: no socket in the fast suite).
+pub fn fixture_unofficial_versions(newest_release: &str) -> Vec<civ5vp_core::UnofficialVersion> {
+    let base = newest_release.trim_start_matches("Release-").to_owned();
+    vec![
+        civ5vp_core::UnofficialVersion {
+            label: format!("{base}.01"),
+            summary: "Fix a promotion".to_owned(),
+            commit: "c".repeat(40),
+        },
+        civ5vp_core::UnofficialVersion {
+            label: format!("{base}.02"),
+            summary: "A very long commit message that certainly does not fit into the \
+                      width of any dropdown a version picker could reasonably draw"
+                .to_owned(),
+            commit: "d".repeat(40),
+        },
+    ]
 }
 
 /// The catalog every offline surface shares — the fake provider, the screen previews — so

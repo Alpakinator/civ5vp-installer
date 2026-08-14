@@ -717,7 +717,9 @@ version = "0.1.0"
 dependencies = [
  "civ5vp-core",
  "gix",
+ "serde_json",
  "tempfile",
+ "ureq",
 ]
 
 [[package]]

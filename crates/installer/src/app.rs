@@ -96,9 +96,25 @@ enum PickedVersion {
     /// The default: whatever the newest Release turns out to be.
     NewestRelease,
     Release(String),
+    /// No longer offered by the picker (ticket 13) — kept so a configuration remembered
+    /// before that still restores and installs.
     Development,
+    /// One commit after the newest Release, from the unofficial list (ticket 13).
+    Unofficial {
+        label: String,
+        commit: String,
+    },
     /// Any branch, tag, or commit — the advanced escape hatch.
     Custom,
+}
+
+/// The unofficial-versions lookup (ticket 13) — same life cycle as [`VersionsState`], but
+/// started only when the toggle is on and the catalog has named the newest Release.
+enum UnofficialState {
+    NotAsked,
+    Fetching(Receiver<Result<Vec<civ5vp_core::UnofficialVersion>, String>>),
+    Ready(Vec<civ5vp_core::UnofficialVersion>),
+    Failed(String),
 }
 
 /// The whole installer UI.
@@ -115,6 +131,10 @@ pub struct InstallerApp {
     source_choice: SourceChoice,
     versions: VersionsState,
     picked_version: PickedVersion,
+    /// Ticket 13: whether the picker also lists every change since the newest Release.
+    /// Off by default — official Releases are the offer; this is the opt-in.
+    show_unofficial: bool,
+    unofficial: UnofficialState,
     custom_ref: String,
     flavor: Flavor,
     forty_three_civs: FortyThreeCivs,
@@ -138,6 +158,16 @@ pub struct InstallerApp {
     /// real binary — the shell tests and previews never open a socket.
     update_check: Option<Receiver<String>>,
     newer_installer: Option<String>,
+}
+
+/// The first `max` characters of a commit summary, with an ellipsis when it was cut —
+/// dropdown rows are narrow and commit messages are not (ticket 13).
+fn truncated(summary: &str, max: usize) -> String {
+    let mut taken: String = summary.chars().take(max).collect();
+    if summary.chars().count() > max {
+        taken.push('…');
+    }
+    taken
 }
 
 /// The Flavor choices, as the player reads them.
@@ -180,6 +210,7 @@ impl InstallerApp {
         if let Some(path) = &startup.dev_checkout {
             source_folder = display_path(path);
         }
+        let mut show_unofficial = false;
         match startup.configuration.as_ref().map(|c| &c.source) {
             Some(InstallationSource::LocalRepo { path }) if !path.as_os_str().is_empty() => {
                 source_choice = SourceChoice::OwnCheckout;
@@ -193,6 +224,14 @@ impl InstallerApp {
                 Version::ArbitraryRef(reference) => {
                     picked_version = PickedVersion::Custom;
                     custom_ref = reference.clone();
+                }
+                Version::UnofficialBuild { label, commit } => {
+                    picked_version = PickedVersion::Unofficial {
+                        label: label.clone(),
+                        commit: commit.clone(),
+                    };
+                    // A remembered unofficial pick means the player uses the toggle.
+                    show_unofficial = true;
                 }
             },
             _ => {}
@@ -236,6 +275,8 @@ impl InstallerApp {
             source_choice,
             versions: VersionsState::NotAsked,
             picked_version,
+            show_unofficial,
+            unofficial: UnofficialState::NotAsked,
             custom_ref,
             source_folder,
             game_folder,
@@ -278,6 +319,8 @@ impl InstallerApp {
             // A pre-loaded catalog: previews are pictures, they never open a socket.
             versions: VersionsState::Ready(placeholder::fixture_version_catalog()),
             picked_version: PickedVersion::NewestRelease,
+            show_unofficial: false,
+            unofficial: UnofficialState::NotAsked,
             custom_ref: String::new(),
             source_folder: "/home/player/src/Community-Patch-DLL".to_owned(),
             game_folder: game.to_owned(),
@@ -771,6 +814,44 @@ impl InstallerApp {
             }
         }
 
+        // The unofficial lookup (ticket 13): started once the toggle is on and the catalog
+        // has named the newest Release, polled like the catalog's own lookup.
+        if self.show_unofficial
+            && matches!(self.unofficial, UnofficialState::NotAsked)
+            && let VersionsState::Ready(catalog) = &self.versions
+            && let Some(Version::Release(tag)) = catalog.newest_release()
+        {
+            let (sender, receiver) = channel();
+            let core = Arc::clone(&self.core);
+            std::thread::spawn(move || {
+                let found = core
+                    .unofficial_versions(&tag, &ProgressReporter::silent())
+                    .map_err(|error| {
+                        crate::log_detail(&error.log_detail());
+                        error.user_message()
+                    });
+                let _ = sender.send(found);
+            });
+            self.unofficial = UnofficialState::Fetching(receiver);
+        }
+        if let UnofficialState::Fetching(receiver) = &self.unofficial {
+            match receiver.try_recv() {
+                Ok(Ok(list)) => self.unofficial = UnofficialState::Ready(list),
+                Ok(Err(message)) => self.unofficial = UnofficialState::Failed(message),
+                Err(TryRecvError::Empty) => {
+                    ui.ctx()
+                        .request_repaint_after(std::time::Duration::from_millis(100));
+                }
+                Err(TryRecvError::Disconnected) => {
+                    self.unofficial = UnofficialState::Failed(
+                        "Could not look up the changes since the newest release. Check \
+                         your internet connection and try again."
+                            .to_owned(),
+                    );
+                }
+            }
+        }
+
         let mut changed = false;
         match &self.versions {
             VersionsState::NotAsked | VersionsState::Fetching(_) => {
@@ -799,8 +880,15 @@ impl InstallerApp {
                     },
                     PickedVersion::Release(tag) => tag.clone(),
                     PickedVersion::Development => "Latest development version".to_owned(),
+                    PickedVersion::Unofficial { label, .. } => label.clone(),
                     PickedVersion::Custom => "Custom branch, tag, or commit".to_owned(),
                 };
+                // Cloned out so the combo's closure can mutate the pick freely.
+                let unofficial: Vec<civ5vp_core::UnofficialVersion> =
+                    match (&self.show_unofficial, &self.unofficial) {
+                        (true, UnofficialState::Ready(list)) => list.clone(),
+                        _ => Vec::new(),
+                    };
                 let releases: Vec<String> = catalog.releases().to_vec();
                 egui::ComboBox::from_label("Version")
                     .selected_text(selected_label)
@@ -814,13 +902,27 @@ impl InstallerApp {
                                 )
                                 .changed();
                         }
-                        changed |= ui
-                            .selectable_value(
-                                &mut self.picked_version,
-                                PickedVersion::Development,
-                                "Latest development version",
-                            )
-                            .changed();
+                        // Unofficial versions (ticket 13), newest first — the top entry is
+                        // what "latest development version" used to mean. The whole commit
+                        // message never fits a dropdown row, so the row truncates and the
+                        // full message is the hover text.
+                        for build in unofficial.iter().rev() {
+                            changed |= ui
+                                .selectable_value(
+                                    &mut self.picked_version,
+                                    PickedVersion::Unofficial {
+                                        label: build.label.clone(),
+                                        commit: build.commit.clone(),
+                                    },
+                                    format!("{} — {}", build.label, truncated(&build.summary, 44)),
+                                )
+                                .on_hover_text(format!(
+                                    "{}\n{}",
+                                    build.summary,
+                                    &build.commit[..build.commit.len().min(12)]
+                                ))
+                                .changed();
+                        }
                         // The newest release is already the "Latest release — …" entry.
                         let newest_tag = match &newest {
                             Some(Version::Release(tag)) => Some(tag.as_str()),
@@ -852,6 +954,21 @@ impl InstallerApp {
                         changed |= ui.text_edit_singleline(&mut self.custom_ref).changed();
                     });
                 }
+                ui.checkbox(
+                    &mut self.show_unofficial,
+                    "Unofficial versions — every change since the newest release",
+                );
+                if self.show_unofficial
+                    && let UnofficialState::Failed(message) = &self.unofficial
+                {
+                    let message = message.clone();
+                    deco::notice(ui, theme::EMBER, |ui| {
+                        ui.label(&message);
+                    });
+                    if ui.button("Try again").clicked() {
+                        self.unofficial = UnofficialState::NotAsked;
+                    }
+                }
             }
         }
         changed
@@ -865,6 +982,10 @@ impl InstallerApp {
         match &self.picked_version {
             PickedVersion::Release(tag) => Version::Release(tag.clone()),
             PickedVersion::Development => Version::LatestDevelopmentVersion,
+            PickedVersion::Unofficial { label, commit } => Version::UnofficialBuild {
+                label: label.clone(),
+                commit: commit.clone(),
+            },
             PickedVersion::Custom => Version::ArbitraryRef(self.custom_ref.trim().to_owned()),
             PickedVersion::NewestRelease => match &self.versions {
                 VersionsState::Ready(catalog) => catalog

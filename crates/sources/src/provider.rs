@@ -43,4 +43,14 @@ impl SourceProvider for InstallationSources {
     ) -> Result<civ5vp_core::VersionCatalog, BoundaryError> {
         self.upstream.list_versions(progress).map_err(Into::into)
     }
+
+    fn unofficial_versions(
+        &self,
+        newest_release: &str,
+        progress: &ProgressReporter,
+    ) -> Result<Vec<civ5vp_core::UnofficialVersion>, BoundaryError> {
+        self.upstream
+            .list_unofficial(newest_release, progress)
+            .map_err(Into::into)
+    }
 }

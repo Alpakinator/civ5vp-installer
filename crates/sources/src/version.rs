@@ -54,6 +54,13 @@ impl RefTarget {
                 local: format!("refs/civ5vp/arbitrary/{}", sanitize(reference)),
                 label: reference.clone(),
             },
+            // The unofficial-versions list (ticket 13) recorded the commit when it was
+            // fetched, so the label stays honest however far upstream has moved since.
+            Version::UnofficialBuild { label, commit } => Self {
+                remote: commit.clone(),
+                local: format!("refs/civ5vp/unofficial/{}", sanitize(commit)),
+                label: label.clone(),
+            },
         }
     }
 }

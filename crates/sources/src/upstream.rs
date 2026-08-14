@@ -63,6 +63,9 @@ static NEVER_INTERRUPTED: AtomicBool = AtomicBool::new(false);
 pub struct UpstreamCache {
     root: PathBuf,
     url: String,
+    /// Where the unofficial-versions list comes from (ticket 13): a GitHub-compare-shaped
+    /// endpoint, derived from `url` unless overridden.
+    compare_api: Option<String>,
 }
 
 impl UpstreamCache {
@@ -75,7 +78,92 @@ impl UpstreamCache {
         Self {
             root: root.into(),
             url: url.into(),
+            compare_api: None,
         }
+    }
+
+    /// Point the unofficial-versions listing at a different compare endpoint — a mirror,
+    /// or a test's fixture server. The default is derived from the repository URL:
+    /// `https://github.com/OWNER/REPO(.git)` → `https://api.github.com/repos/OWNER/REPO/compare`.
+    pub fn with_compare_api(mut self, endpoint: impl Into<String>) -> Self {
+        self.compare_api = Some(endpoint.into());
+        self
+    }
+
+    /// The compare endpoint in use — the override, or the one the repository URL implies.
+    fn compare_api(&self) -> Result<String, SourceError> {
+        if let Some(endpoint) = &self.compare_api {
+            return Ok(endpoint.clone());
+        }
+        let rest = self
+            .url
+            .strip_prefix("https://github.com/")
+            .or_else(|| self.url.strip_prefix("http://github.com/"));
+        match rest {
+            Some(path) => {
+                let path = path.trim_end_matches('/').trim_end_matches(".git");
+                Ok(format!("https://api.github.com/repos/{path}/compare"))
+            }
+            None => Err(SourceError::UpstreamUnreachable {
+                url: self.url.clone(),
+                detail: "unofficial versions need a GitHub upstream (no compare endpoint)"
+                    .to_owned(),
+            }),
+        }
+    }
+
+    /// Every commit after `newest_release`, oldest first, labelled `X.Y.Z.NN` (ticket 13).
+    ///
+    /// One GitHub compare call — the Upstream Cache is a shallow clone with no history to
+    /// walk locally. The endpoint reports at most 250 commits per page; if upstream is
+    /// further ahead than that, the newest are missing until the next Release, and the
+    /// progress line says so.
+    pub fn list_unofficial(
+        &self,
+        newest_release: &str,
+        progress: &ProgressReporter,
+    ) -> Result<Vec<civ5vp_core::UnofficialVersion>, SourceError> {
+        progress.report(
+            Stage::Fetch,
+            "Looking up the changes since the newest release.",
+        );
+        let tag = if newest_release.starts_with("Release-") {
+            newest_release.to_owned()
+        } else {
+            format!("Release-{newest_release}")
+        };
+        let url = format!("{}/{tag}...master?per_page=250", self.compare_api()?);
+        let unreachable = |detail: String| SourceError::UpstreamUnreachable {
+            url: url.clone(),
+            detail,
+        };
+        let mut response = ureq::get(&url)
+            // GitHub's API refuses requests without a User-Agent.
+            .header("User-Agent", "civ5vp-installer")
+            .header("Accept", "application/vnd.github+json")
+            .call()
+            .map_err(|error| unreachable(error.to_string()))?;
+        let body = response
+            .body_mut()
+            .read_to_string()
+            .map_err(|error| unreachable(error.to_string()))?;
+        let (versions, total) =
+            parse_compare(&body, tag.trim_start_matches("Release-")).map_err(unreachable)?;
+        if total > versions.len() as u64 {
+            progress.report(
+                Stage::Fetch,
+                format!(
+                    "Upstream is {total} changes ahead — listing the oldest {}.",
+                    versions.len()
+                ),
+            );
+        } else {
+            progress.report(
+                Stage::Fetch,
+                format!("Found {} changes since {tag}.", versions.len()),
+            );
+        }
+        Ok(versions)
     }
 
     /// What the Version picker lists: every Release upstream offers, and `master`'s HEAD.
@@ -365,5 +453,86 @@ impl UpstreamCache {
             url: self.url.clone(),
             detail: chain(error),
         }
+    }
+}
+
+/// The compare response, reduced to what the picker needs: the commits after the base tag
+/// in chronological order, labelled `<base>.NN`, plus the total upstream reported (which
+/// exceeds the listed count when upstream is further ahead than one page).
+fn parse_compare(
+    body: &str,
+    base: &str,
+) -> Result<(Vec<civ5vp_core::UnofficialVersion>, u64), String> {
+    let parsed: serde_json::Value = serde_json::from_str(body)
+        .map_err(|error| format!("compare response was not JSON: {error}"))?;
+    let commits = parsed
+        .get("commits")
+        .and_then(|commits| commits.as_array())
+        .ok_or_else(|| "compare response had no commits list".to_owned())?;
+    let mut versions = Vec::new();
+    for (index, entry) in commits.iter().enumerate() {
+        let Some(sha) = entry.get("sha").and_then(|sha| sha.as_str()) else {
+            continue;
+        };
+        let message = entry
+            .pointer("/commit/message")
+            .and_then(|message| message.as_str())
+            .unwrap_or("");
+        versions.push(civ5vp_core::UnofficialVersion {
+            label: format!("{base}.{:02}", index + 1),
+            summary: message.lines().next().unwrap_or("").trim().to_owned(),
+            commit: sha.to_owned(),
+        });
+    }
+    let total = parsed
+        .get("total_commits")
+        .and_then(|total| total.as_u64())
+        .unwrap_or(versions.len() as u64);
+    Ok((versions, total))
+}
+
+#[cfg(test)]
+// The crate-level deny is for code the UI can reach; a unit test may unwrap like the
+// integration tests (separate crates) already do.
+#[allow(clippy::unwrap_used)]
+mod unofficial_tests {
+    use super::parse_compare;
+
+    /// A trimmed-down GitHub compare response: two commits, the second with a multi-line
+    /// message full of the escapes a hand parser would fumble.
+    const COMPARE: &str = r#"{
+        "total_commits": 5,
+        "commits": [
+            {"sha": "aaaa000000000000000000000000000000000000",
+             "commit": {"message": "Fix a promotion"}},
+            {"sha": "bbbb000000000000000000000000000000000000",
+             "commit": {"message": "Say \"hello\" to <everyone>\n\nDetails follow."}}
+        ]
+    }"#;
+
+    #[test]
+    fn commits_become_numbered_versions_in_order() {
+        let (versions, total) = parse_compare(COMPARE, "5.4.3").unwrap();
+        assert_eq!(total, 5);
+        assert_eq!(versions.len(), 2);
+        assert_eq!(versions[0].label, "5.4.3.01");
+        assert_eq!(versions[0].summary, "Fix a promotion");
+        assert_eq!(
+            versions[0].commit,
+            "aaaa000000000000000000000000000000000000"
+        );
+        assert_eq!(versions[1].label, "5.4.3.02");
+    }
+
+    #[test]
+    fn the_summary_is_the_first_line_with_escapes_resolved() {
+        let (versions, _) = parse_compare(COMPARE, "5.4.3").unwrap();
+        assert_eq!(versions[1].summary, "Say \"hello\" to <everyone>");
+    }
+
+    #[test]
+    fn a_response_that_is_not_a_compare_is_an_error() {
+        assert!(parse_compare("[]", "5.4.3").is_err());
+        assert!(parse_compare("not json", "5.4.3").is_err());
     }
 }

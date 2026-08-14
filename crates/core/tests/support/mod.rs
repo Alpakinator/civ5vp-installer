@@ -68,6 +68,30 @@ impl SourceProvider for FixtureSourceProvider {
             ("refs/heads/master", "c".repeat(40)),
         ]))
     }
+
+    fn unofficial_versions(
+        &self,
+        newest_release: &str,
+        _progress: &ProgressReporter,
+    ) -> Result<Vec<civ5vp_core::UnofficialVersion>, BoundaryError> {
+        // Two changes after the newest Release, the second with a summary far too long for
+        // any dropdown — the shape the shell has to cope with.
+        let base = newest_release.trim_start_matches("Release-").to_owned();
+        Ok(vec![
+            civ5vp_core::UnofficialVersion {
+                label: format!("{base}.01"),
+                summary: "Fix a promotion".to_owned(),
+                commit: "c".repeat(40),
+            },
+            civ5vp_core::UnofficialVersion {
+                label: format!("{base}.02"),
+                summary: "A very long commit message that certainly does not fit into the \
+                          width of any dropdown a version picker could reasonably draw"
+                    .to_owned(),
+                commit: "d".repeat(40),
+            },
+        ])
+    }
 }
 
 /// A source provider that always fails, for the abort-before-touch case.
@@ -92,6 +116,18 @@ impl SourceProvider for FailingSourceProvider {
         Err(BoundaryError::new(
             "Could not look up the available versions. Check your internet connection and \
              try again.",
+            "fake provider: simulated network failure",
+        ))
+    }
+
+    fn unofficial_versions(
+        &self,
+        _newest_release: &str,
+        _progress: &ProgressReporter,
+    ) -> Result<Vec<civ5vp_core::UnofficialVersion>, BoundaryError> {
+        Err(BoundaryError::new(
+            "Could not look up the changes since the newest release. Check your internet \
+             connection and try again.",
             "fake provider: simulated network failure",
         ))
     }

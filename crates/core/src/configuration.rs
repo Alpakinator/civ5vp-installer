@@ -82,6 +82,10 @@ pub enum Version {
     LatestDevelopmentVersion,
     /// Any branch, tag, or commit. Advanced users only.
     ArbitraryRef(String),
+    /// One commit after the newest Release, from the unofficial-versions list (ticket 13):
+    /// `label` reads like `5.4.3.07`, `commit` is the full hash the label stood for when
+    /// the list was fetched — the label alone would drift as upstream moves.
+    UnofficialBuild { label: String, commit: String },
 }
 
 /// Where the mod files and DLL sources come from.
@@ -106,6 +110,7 @@ impl InstallationSource {
                 Version::Release(tag) => tag.clone(),
                 Version::LatestDevelopmentVersion => "master".to_owned(),
                 Version::ArbitraryRef(reference) => reference.clone(),
+                Version::UnofficialBuild { label, .. } => label.clone(),
             },
             Self::LocalRepo { .. } => "Local".to_owned(),
         }

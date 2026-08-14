@@ -58,7 +58,7 @@ pub use modpack::available_extra_mods;
 pub use plan::Plan;
 pub use progress::{ProgressEvent, ProgressReporter, Stage};
 pub use settings::{AppDataStore, Settings, SettingsError, Startup, start_up};
-pub use versions::VersionCatalog;
+pub use versions::{UnofficialVersion, VersionCatalog};
 
 /// The file name of the Built DLL, in the game's MODS Folder and in the build directory.
 pub const BUILT_DLL_FILE_NAME: &str = "CvGameCore_Expansion2.dll";

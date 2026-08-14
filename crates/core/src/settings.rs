@@ -400,6 +400,7 @@ fn version_value(version: &Version) -> String {
         Version::Release(tag) => format!("release:{tag}"),
         Version::LatestDevelopmentVersion => "latest-development".to_owned(),
         Version::ArbitraryRef(reference) => format!("ref:{reference}"),
+        Version::UnofficialBuild { label, commit } => format!("unofficial:{commit}:{label}"),
     }
 }
 
@@ -412,6 +413,17 @@ fn read_version(value: &str) -> Option<Version> {
         Some(("ref", reference)) if !reference.is_empty() => {
             Some(Version::ArbitraryRef(reference.to_owned()))
         }
+        // `unofficial:<commit>:<label>` — the commit first because a hash never contains a
+        // colon, so the label may (even though today's labels never do).
+        Some(("unofficial", rest)) => match rest.split_once(':') {
+            Some((commit, label)) if !commit.is_empty() && !label.is_empty() => {
+                Some(Version::UnofficialBuild {
+                    label: label.to_owned(),
+                    commit: commit.to_owned(),
+                })
+            }
+            _ => None,
+        },
         _ => None,
     }
 }

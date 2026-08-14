@@ -23,7 +23,7 @@ use egui_kittest::{Harness, SnapshotResults};
 /// The size the baselines are rendered at — the window's design minimum. It grew from 640
 /// when ticket 10 added the Version picker and the storage panel, and again when
 /// ticket 11 added the install-mode choice.
-const WINDOW: [f32; 2] = [900.0, 860.0];
+const WINDOW: [f32; 2] = [900.0, 900.0];
 
 /// The same miniature Community-Patch-DLL layout the Core-seam tests use. Shared rather
 /// than duplicated so there is one answer to "what does a repository look like".
@@ -671,7 +671,7 @@ fn the_version_picker_defaults_to_the_newest_release_and_the_pick_is_remembered(
     // reads a closed dropdown.
     wait_for_combo_value(&mut harness, "Latest release — Release-5.2");
 
-    // Pick the Latest Development Version through the combo, as a player would.
+    // Pick an older Release through the combo, as a player would.
     harness.get_by_label("Version").click();
     harness.step();
     // The open list names the newest release once — inside "Latest release — …" — and
@@ -681,17 +681,89 @@ fn the_version_picker_defaults_to_the_newest_release_and_the_pick_is_remembered(
         1,
         "the newest release must not be listed twice"
     );
-    assert!(
-        harness.query_all_by_label("Release-5.1").next().is_some(),
-        "older releases keep their own entries"
-    );
-    harness.get_by_label("Latest development version").click();
+    harness.get_by_label("Release-5.1").click();
     harness.step();
     harness.step();
 
     // A second launch with nowhere to detect: the pick can only have been remembered.
     let mut next = harness_over(game.launch(&game.nowhere()));
-    wait_for_combo_value(&mut next, "Latest development version");
+    wait_for_combo_value(&mut next, "Release-5.1");
+}
+
+/// Ticket 13: the picker offers official Releases only, until the unofficial toggle brings
+/// in the changes since the newest one — truncated to fit, newest first — and a picked
+/// build is remembered like any other Version.
+#[test]
+fn the_unofficial_toggle_lists_the_changes_since_the_newest_release() {
+    use egui_kittest::kittest::NodeT as _;
+    let game = TempGame::new();
+    let mut harness = harness_over(game.launch(&game.locations()));
+    wait_for_combo_value(&mut harness, "Latest release — Release-5.2");
+
+    // Off by default — and "latest development version" is no longer an offer either.
+    harness.get_by_label("Version").click();
+    harness.step();
+    assert!(
+        harness
+            .query_all_by_label("Latest development version")
+            .next()
+            .is_none(),
+        "development is not offered by default"
+    );
+    assert!(
+        harness
+            .query_all_by_label_contains("5.2.01")
+            .next()
+            .is_none(),
+        "unofficial versions are not offered by default"
+    );
+    harness.get_by_label("Version").click();
+    harness.step();
+
+    harness
+        .get_by_label("Unofficial versions — every change since the newest release")
+        .click();
+    harness.step();
+    harness.get_by_label("Version").click();
+    for _ in 0..100 {
+        harness.step();
+        if harness
+            .query_all_by_label_contains("5.2.01")
+            .next()
+            .is_some()
+        {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    // The long commit message is truncated in the row, with an ellipsis.
+    let row_label = harness
+        .query_all_by_label_contains("5.2.02")
+        .next()
+        .expect("the second unofficial build is listed")
+        .accesskit_node()
+        .label()
+        .unwrap_or_default();
+    assert!(row_label.contains('…'), "got: {row_label}");
+    assert!(
+        row_label.chars().count() < 60,
+        "the row must be truncated, got {} chars",
+        row_label.chars().count()
+    );
+
+    harness.get_by_label_contains("5.2.01").click();
+    harness.step();
+    harness.step();
+    wait_for_combo_value(&mut harness, "5.2.01");
+
+    // Remembered across a relaunch — and the toggle comes back on with it.
+    let mut next = harness_over(game.launch(&game.nowhere()));
+    wait_for_combo_value(&mut next, "5.2.01");
+    assert!(is_ticked(
+        &mut next,
+        "Unofficial versions — every change since the newest release"
+    ));
 }
 
 /// Step until the Version combo's selection reads `text`.

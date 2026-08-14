@@ -113,6 +113,20 @@ fn the_remembered_state_survives_the_round_trip() {
             install_mode: InstallMode::Mods,
             extra_mods: Vec::new(),
         },
+        // An unofficial build (ticket 13): the label and the commit both survive.
+        InstallConfiguration {
+            source: InstallationSource::UpstreamCache {
+                version: Version::UnofficialBuild {
+                    label: "5.4.3.07".to_owned(),
+                    commit: "a".repeat(40),
+                },
+            },
+            flavor: Flavor::VoxPopuli { eui: Eui::Disabled },
+            forty_three_civs: FortyThreeCivs::Disabled,
+            build_configuration: BuildConfiguration::Release,
+            install_mode: InstallMode::Mods,
+            extra_mods: Vec::new(),
+        },
         // Modpack mode with extra picks (tickets 11 and 12) — names with spaces and
         // parentheses, like real mod folders have.
         InstallConfiguration {

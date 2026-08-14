@@ -6,7 +6,7 @@ Glossary for the Vox Populi installer for Civilization V. Terms only — no impl
 
 **Installation Source** — where the mod files and DLL sources come from. Exactly two kinds: the **Upstream Cache** (a local cached clone of `LoneGazebo/Community-Patch-DLL`) or a **Local Repo** (a developer's own checkout, used as-is, including uncommitted changes).
 
-**Version** — the ref of the Community-Patch-DLL repository being installed. Three selectable tiers: a **Release** (a `Release-*` tag), the **Latest Development Version** (upstream `master` HEAD), or an **Arbitrary Ref** (any branch/tag/commit, advanced users only). A Local Repo's version is whatever its working tree currently contains.
+**Version** — the ref of the Community-Patch-DLL repository being installed. Three selectable tiers: a **Release** (a `Release-*` tag), the **Latest Development Version** (upstream `master` HEAD), or an **Arbitrary Ref** (any branch/tag/commit, advanced users only). A Local Repo's version is whatever its working tree currently contains. Ticket 13 added a fourth tier, the **Unofficial Build**: one commit after the newest Release, labelled `X.Y.Z.NN` by its position (`5.4.3.07` is the seventh change since `Release-5.4.3`), offered by the picker's unofficial-versions toggle and pinned to the commit hash it named when listed. The Latest Development Version is no longer offered by the picker — the newest Unofficial Build is that commit, with an honest name.
 
 **Flavor** — the base choice of what to install: **Community Patch only** (`(1)`) or **Vox Populi** (`(1)` + `(2)` + Squads + VPUI). Vox Populi implies Community Patch.
 

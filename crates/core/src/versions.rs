@@ -86,3 +86,15 @@ fn release_order(tag: &str) -> (Vec<u64>, String) {
         .collect();
     (numbers, tag.to_owned())
 }
+
+/// One commit after the newest Release, as the unofficial-versions list offers it
+/// (ticket 13).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnofficialVersion {
+    /// `5.4.3.07` — the newest Release's numbers plus this commit's position after it.
+    pub label: String,
+    /// The commit message's first line, however long — the shell decides how to fit it.
+    pub summary: String,
+    /// The full commit hash, which is what actually gets installed.
+    pub commit: String,
+}

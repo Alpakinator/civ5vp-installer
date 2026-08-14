@@ -76,6 +76,17 @@ impl Core {
             .map_err(InstallError::Fetch)
     }
 
+    /// The unofficial versions after `newest_release` (ticket 13), from the same boundary.
+    pub fn unofficial_versions(
+        &self,
+        newest_release: &str,
+        progress: &ProgressReporter,
+    ) -> Result<Vec<crate::UnofficialVersion>, InstallError> {
+        self.source_provider
+            .unofficial_versions(newest_release, progress)
+            .map_err(InstallError::Fetch)
+    }
+
     /// Work out what this configuration implies. Rejects configurations that cannot be
     /// deployed before anything at all has happened.
     pub fn plan(

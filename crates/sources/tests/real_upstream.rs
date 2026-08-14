@@ -297,3 +297,58 @@ impl civ5vp_core::ModpackAssembler for UnusedModpackAssembler {
         ))
     }
 }
+
+/// Ticket 13, live: the compare endpoint answers, the labels are numbered off the newest
+/// Release, and the newest unofficial build really materializes by its recorded commit.
+#[test]
+#[ignore = "talks to the real GitHub API and clones the real upstream repository"]
+fn the_unofficial_versions_list_and_install_for_real() {
+    let root = scratch("real-unofficial");
+    let cache = UpstreamCache::new(&root, UPSTREAM_URL);
+
+    let newest = cache
+        .list_versions(&ProgressReporter::silent())
+        .unwrap()
+        .newest_release()
+        .expect("upstream always has releases");
+    let Version::Release(tag) = &newest else {
+        panic!("newest_release always names a Release");
+    };
+    let unofficial = cache
+        .list_unofficial(tag, &ProgressReporter::silent())
+        .unwrap();
+    println!("{} unofficial versions since {tag}", unofficial.len());
+    let base = tag.trim_start_matches("Release-");
+    for build in unofficial.iter().take(3) {
+        println!(
+            "  {} — {} ({})",
+            build.label,
+            build.summary,
+            &build.commit[..10]
+        );
+        assert!(build.label.starts_with(base), "label {}", build.label);
+        assert_eq!(build.commit.len(), 40);
+        assert!(!build.summary.is_empty());
+    }
+    let Some(newest_build) = unofficial.last() else {
+        println!("upstream has no commits since {tag} right now — nothing to install");
+        return;
+    };
+
+    let materialized = cache
+        .materialize(
+            &Version::UnofficialBuild {
+                label: newest_build.label.clone(),
+                commit: newest_build.commit.clone(),
+            },
+            &ProgressReporter::silent(),
+        )
+        .unwrap()
+        .root;
+    assert!(materialized.join("(1) Community Patch").is_dir());
+    println!(
+        "materialized {} at {}",
+        newest_build.label,
+        &newest_build.commit[..10]
+    );
+}
