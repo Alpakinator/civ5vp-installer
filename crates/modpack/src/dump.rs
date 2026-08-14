@@ -293,9 +293,13 @@ pub(crate) fn dump_text(conn: &Connection, path: &Path) -> Result<(), BoundaryEr
 }
 
 fn table_exists(conn: &Connection, table: &str) -> Result<bool, String> {
+    // Views count: in the game's merged localization database the active language is a
+    // *view* over `LocalizedText` (with INSTEAD OF triggers carrying writes into it), and
+    // the in-game Modpack Maker dumps straight through it. Only the never-loaded
+    // languages are plain — and empty — tables.
     let count: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+            "SELECT COUNT(*) FROM sqlite_master WHERE type IN ('table', 'view') AND name = ?1",
             [table],
             |row| row.get(0),
         )

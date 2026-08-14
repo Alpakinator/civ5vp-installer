@@ -151,6 +151,38 @@ fn sql_updates_run_against_the_gameplay_database() {
     );
 }
 
+/// The Community Patch's FixTypeConstraints.sql rebuilds tables via CREATE `_FIX` /
+/// DROP / ALTER RENAME, and the rebuilt tables carry `REFERENCES Language_en_US` clauses
+/// that dangle by design — text lives in the other database and the game never enforces
+/// foreign keys. Modern SQLite re-validates the whole schema on a rename and would abort;
+/// the merge must run with the game's legacy rename semantics instead.
+#[test]
+fn a_rebuild_with_dangling_language_references_merges_like_the_games_own_sqlite() {
+    let merged = run_merge(
+        "CREATE TABLE Calendars (Type text, Description text);
+         INSERT INTO Calendars VALUES ('CALENDAR_DEFAULT', 'TXT_KEY_DEFAULT');",
+        "",
+        &[(
+            "FixTypeConstraints.sql",
+            "CREATE TABLE Calendars_FIX (
+                 Type text NOT NULL UNIQUE,
+                 Description text REFERENCES Language_en_US (Tag)
+             );
+             INSERT INTO Calendars_FIX SELECT * FROM Calendars;
+             DROP TABLE Calendars;
+             ALTER TABLE Calendars_FIX RENAME TO Calendars;",
+        )],
+    )
+    .expect("the game's own SQL must merge");
+
+    assert!(merged.gameplay.contains("<Type>CALENDAR_DEFAULT</Type>"));
+    assert!(
+        merged
+            .gameplay
+            .contains("<Description>TXT_KEY_DEFAULT</Description>")
+    );
+}
+
 #[test]
 fn a_table_element_creates_the_table_with_its_constraints() {
     let merged = run_merge(

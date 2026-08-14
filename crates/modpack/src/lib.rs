@@ -82,6 +82,14 @@ impl ModpackAssembler for SqliteModpackAssembler {
         let mut gameplay = open_scratch(&gameplay_copy)?;
         let mut text = open_scratch(&text_copy)?;
 
+        // The game runs mod SQL against a gameplay connection with the localization
+        // database attached, and Vox Populi leans on it: whole .sql files write
+        // `Language_*` tables directly (CoreDiplomacyResponseTextChanges.sql and friends).
+        // An unqualified table name that is not in `main` resolves to the attached
+        // database, so those writes land in the localization copy — while an unqualified
+        // CREATE TABLE still lands in `main`, exactly as it does in the game.
+        attach_text(&gameplay, &text_copy)?;
+
         for update in &job.updates {
             apply::apply_update(update, &mut gameplay, &mut text, progress)?;
         }
@@ -90,6 +98,24 @@ impl ModpackAssembler for SqliteModpackAssembler {
         dump::dump_text(&text, &job.text_dump)?;
         Ok(())
     }
+}
+
+/// Attach the localization scratch copy to the gameplay connection, under the name the
+/// merge uses nowhere else — mods address the tables unqualified, never the schema.
+fn attach_text(gameplay: &Connection, text_copy: &Path) -> Result<(), BoundaryError> {
+    gameplay
+        .execute(
+            "ATTACH DATABASE ?1 AS localization",
+            [text_copy.to_string_lossy().as_ref()],
+        )
+        .map(|_| ())
+        .map_err(|error| {
+            BoundaryError::new(
+                "Opening the Modpack's working databases failed — check free disk space \
+                 and try again.",
+                format!("attach {}: {error}", text_copy.display()),
+            )
+        })
 }
 
 /// Rule 10's two halves for a scratch-space failure: a sentence for the user, the raw IO
@@ -141,6 +167,15 @@ fn open_scratch(path: &Path) -> Result<Connection, BoundaryError> {
         .map_err(|error| failure(format!("open {}: {error}", path.display())))?;
     conn.pragma_update(None, "journal_mode", "MEMORY")
         .and_then(|()| conn.pragma_update(None, "synchronous", "OFF"))
+        // Match the game's 2010-era SQLite, which the Community Patch's SQL is written
+        // against. Its tables carry *dangling* `REFERENCES Language_en_US` clauses by
+        // design — text lives in the other database — and the game neither enforces
+        // foreign keys nor re-validates the schema on ALTER TABLE RENAME. The bundled
+        // modern SQLite does both by default (rusqlite builds with foreign keys ON),
+        // and either one aborts VP's FixTypeConstraints.sql rebuild pattern
+        // (CREATE _FIX / INSERT / DROP / RENAME) with "no such table: Language_en_US".
+        .and_then(|()| conn.pragma_update(None, "foreign_keys", "OFF"))
+        .and_then(|()| conn.pragma_update(None, "legacy_alter_table", "ON"))
         .map_err(|error| failure(format!("tune {}: {error}", path.display())))?;
     Ok(conn)
 }
