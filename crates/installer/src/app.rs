@@ -376,7 +376,13 @@ impl InstallerApp {
             // Fill the window rather than shrink-wrapping the widgets, so the page
             // background covers the whole surface.
             ui.set_min_size(ui.available_size());
-            self.contents(ui);
+            // The whole page scrolls: the extra-mod list (ticket 12) and a long activity
+            // log can outgrow any window, and on small screens even the base layout does.
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    self.contents(ui);
+                });
         });
     }
 
