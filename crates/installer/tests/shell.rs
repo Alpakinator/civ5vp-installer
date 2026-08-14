@@ -629,6 +629,35 @@ fn clear_stored_data_empties_the_app_data_store() {
     );
 }
 
+/// User story 24: the Uninstall button returns an unmodded game — Claimed Folders gone,
+/// everything else (the game itself, ModUserData) untouched.
+#[test]
+fn clicking_uninstall_restores_an_unmodded_game() {
+    let game = TempGame::new();
+    let mut harness = harness_over(game.launch(&game.locations()));
+    harness.step();
+    enter_dev_mode(&mut harness, &miniature_repo().display().to_string());
+    harness.get_by_label("Install").click();
+    wait_for_the_install_to_finish(&mut harness);
+    assert!(game.mods_folder().join("(1) Community Patch").is_dir());
+
+    harness.get_by_label("Uninstall").click();
+    wait_for_label(&mut harness, "back to how it was");
+
+    assert!(
+        !game.mods_folder().join("(1) Community Patch").exists(),
+        "the Claimed Folders are removed"
+    );
+    assert!(
+        game.game_folder().join("CivilizationV.exe").exists(),
+        "the game itself is untouched"
+    );
+    assert!(
+        game.documents_folder().join("ModUserData").exists(),
+        "ModUserData survives an Uninstall"
+    );
+}
+
 /// Every screen has a baseline. Reviewed before committing — an updated baseline nobody
 /// looked at proves nothing (rule 15).
 #[test]

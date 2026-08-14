@@ -13,7 +13,7 @@ use std::sync::mpsc::{Receiver, TryRecvError, channel};
 
 use civ5vp_core::{
     AppDataStore, BuildConfiguration, Core, Eui, Flavor, FolderRejected, FortyThreeCivs,
-    GameFolders, InstallConfiguration, InstallError, InstallOutcome, InstallationSource,
+    GameFolders, InstallConfiguration, InstallError, InstallationSource,
     ProgressEvent, ProgressReporter, SearchLocations, Settings, Version, VersionCatalog,
     resolve_game_folders, start_up,
 };
@@ -61,9 +61,11 @@ impl Screen {
     }
 }
 
+/// A Deployment or an Uninstall on the worker thread. The result is the finished sentence —
+/// built by the worker from the Core's outcome — so both operations share one shape.
 struct RunningInstall {
     progress: Receiver<ProgressEvent>,
-    result: Receiver<Result<InstallOutcome, InstallError>>,
+    result: Receiver<Result<String, InstallError>>,
 }
 
 /// Which kind of Installation Source the player is using. Presentation state — the Core
@@ -475,13 +477,27 @@ impl InstallerApp {
         }
 
         ui.add_space(8.0);
-        let clicked = ui
+        let busy = self.status == Status::Installing;
+        let (install_clicked, uninstall_clicked) = ui
             .vertical_centered(|ui| {
-                deco::primary_button(ui, self.can_install(), "Install").clicked()
+                ui.horizontal(|ui| {
+                    // Centre the pair by hand: total width = primary + gap + uninstall.
+                    let free = ui.available_width();
+                    ui.add_space((free - 220.0).max(0.0) / 2.0);
+                    let install = deco::primary_button(ui, self.can_install(), "Install").clicked();
+                    let uninstall = ui
+                        .add_enabled(!busy, egui::Button::new("Uninstall"))
+                        .clicked();
+                    (install, uninstall)
+                })
+                .inner
             })
             .inner;
-        if clicked {
+        if install_clicked {
             self.start_install();
+        }
+        if uninstall_clicked {
+            self.start_uninstall();
         }
 
         ui.add_space(6.0);
@@ -934,7 +950,57 @@ impl InstallerApp {
         let core = Arc::clone(&self.core);
         std::thread::spawn(move || {
             let reporter = ProgressReporter::to_channel(progress_sender);
-            let _ = result_sender.send(core.execute(&plan, &reporter));
+            let finished = core.execute(&plan, &reporter).map(|outcome| {
+                let names: Vec<_> = outcome
+                    .deployed
+                    .iter()
+                    .map(|folder| folder.folder_name())
+                    .collect();
+                format!("Installed {}.", names.join(", "))
+            });
+            let _ = result_sender.send(finished);
+        });
+
+        self.activity.clear();
+        self.status = Status::Installing;
+        self.running = Some(RunningInstall { progress, result });
+    }
+
+    /// User story 24: back to an unmodded game in one click. Same worker shape as an
+    /// install; what gets removed is the Core's ruling.
+    fn start_uninstall(&mut self) {
+        let folders = match &self.resolved {
+            Ok(folders) => folders.clone(),
+            Err(explanation) => {
+                self.status = Status::Failed {
+                    message: explanation.clone(),
+                };
+                return;
+            }
+        };
+
+        let (progress_sender, progress) = channel();
+        let (result_sender, result) = channel();
+        let core = Arc::clone(&self.core);
+        std::thread::spawn(move || {
+            let reporter = ProgressReporter::to_channel(progress_sender);
+            let finished = core.uninstall(&folders, &reporter).map(|outcome| {
+                if outcome.removed.is_empty() && outcome.removed_files.is_empty() {
+                    "Nothing of Vox Populi was installed — your game is already unmodded."
+                        .to_owned()
+                } else {
+                    let names: Vec<_> = outcome
+                        .removed
+                        .iter()
+                        .map(|folder| folder.folder_name())
+                        .collect();
+                    format!(
+                        "Removed {}. Your game is back to how it was.",
+                        names.join(", ")
+                    )
+                }
+            });
+            let _ = result_sender.send(finished);
         });
 
         self.activity.clear();
@@ -960,15 +1026,8 @@ impl InstallerApp {
         }
 
         let finished = match run.result.try_recv() {
-            Ok(Ok(outcome)) => {
-                let names: Vec<_> = outcome
-                    .deployed
-                    .iter()
-                    .map(|folder| folder.folder_name())
-                    .collect();
-                self.status = Status::Installed {
-                    summary: format!("Installed {}.", names.join(", ")),
-                };
+            Ok(Ok(summary)) => {
+                self.status = Status::Installed { summary };
                 // The configuration that worked is the one worth starting from next time.
                 self.remember();
                 true
@@ -985,7 +1044,7 @@ impl InstallerApp {
             // this is the one message the shell has to author itself.
             Err(TryRecvError::Disconnected) => {
                 self.status = Status::Failed {
-                    message: "The install stopped unexpectedly. Your game has not been changed."
+                    message: "This stopped unexpectedly — check the log for what happened."
                         .to_owned(),
                 };
                 true
