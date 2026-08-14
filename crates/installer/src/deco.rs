@@ -118,7 +118,10 @@ pub fn header(ui: &mut egui::Ui, title: &str) {
                 .rect
         })
         .inner;
-    ui.add_space(3.0);
+    // The heading's layout rect already ends with descender room below the glyphs, which
+    // reads as blank space; pulling the rule up makes the gap under the text match the one
+    // above it inside the frame.
+    ui.add_space(-3.0);
     let rule_rect = diamond_rule(ui);
     ui.painter()
         .set(crest, crowned_portal(title_rect, rule_rect));
