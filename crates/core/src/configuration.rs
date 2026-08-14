@@ -39,6 +39,17 @@ pub enum BuildConfiguration {
     Debug,
 }
 
+impl BuildConfiguration {
+    /// The one lowercase token used everywhere this is written down — the settings file and
+    /// the Build Fingerprint — so the two can never drift apart.
+    pub(crate) fn token(self) -> &'static str {
+        match self {
+            Self::Release => "release",
+            Self::Debug => "debug",
+        }
+    }
+}
+
 /// The ref of the Community-Patch-DLL repository being installed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Version {

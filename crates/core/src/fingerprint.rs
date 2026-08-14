@@ -61,21 +61,24 @@ impl BuildFingerprint {
         forty_three_civs: FortyThreeCivs,
         toolchain_identity: &str,
     ) -> Self {
-        let configuration = match configuration {
-            BuildConfiguration::Release => "release",
-            BuildConfiguration::Debug => "debug",
-        };
+        let configuration = configuration.token();
         let forty_three = match forty_three_civs {
             FortyThreeCivs::Enabled => "on",
             FortyThreeCivs::Disabled => "off",
         };
         // One line per input, in a fixed order (rule 8: same input, same fingerprint, byte
         // for byte). `v1` is the format's own version: a future installer whose fingerprint
-        // means something different must not skip on a sidecar it does not understand.
+        // means something different must not skip on a sidecar it does not understand. The
+        // installer version rides along because the compiler flags are *derived by this
+        // code* from the other lines — a release that changes the derivation must
+        // invalidate old sidecars, and a version bump is the one thing a release reliably
+        // does. The cost is one rebuild per installer upgrade, which is also the honest
+        // thing to do.
+        let installer = env!("CARGO_PKG_VERSION");
         let rendered = format!(
-            "fingerprint v1\nsource {source_identity}\nlabel {version_label}\n\
-             configuration {configuration}\nforty-three-civs {forty_three}\n\
-             toolchain {toolchain_identity}\n"
+            "fingerprint v1\ninstaller {installer}\nsource {source_identity}\n\
+             label {version_label}\nconfiguration {configuration}\n\
+             forty-three-civs {forty_three}\ntoolchain {toolchain_identity}\n"
         );
         Self { rendered }
     }
@@ -98,30 +101,41 @@ impl BuildFingerprint {
     }
 }
 
-/// FNV-1a, 64-bit.
-pub fn fnv1a64(bytes: &[u8]) -> u64 {
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for &byte in bytes {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+/// FNV-1a, 64-bit, incremental — the one hash everything here uses.
+struct Fnv1a(u64);
+
+impl Fnv1a {
+    fn new() -> Self {
+        Self(0xcbf2_9ce4_8422_2325)
     }
-    hash
+
+    fn update(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.0 ^= u64::from(byte);
+            self.0 = self.0.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+}
+
+/// FNV-1a, 64-bit, of one buffer.
+pub fn fnv1a64(bytes: &[u8]) -> u64 {
+    let mut hash = Fnv1a::new();
+    hash.update(bytes);
+    hash.0
 }
 
 /// Hash a file's contents without reading it into memory at once (the DLL is ~10 MB).
+/// `None` for any IO failure — to every caller that means "cannot be trusted: rebuild".
 pub fn fnv1a64_of_file(path: &Path) -> Option<u64> {
     let mut file = fs::File::open(path).ok()?;
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut hash = Fnv1a::new();
     let mut buffer = [0u8; 64 * 1024];
     loop {
         let read = file.read(&mut buffer).ok()?;
         if read == 0 {
-            return Some(hash);
+            return Some(hash.0);
         }
-        for &byte in &buffer[..read] {
-            hash ^= u64::from(byte);
-            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-        }
+        hash.update(&buffer[..read]);
     }
 }
 
@@ -170,7 +184,9 @@ fn hash_directory(
     paths.sort();
     for path in paths {
         let relative = path.strip_prefix(relative_to).unwrap_or(&path);
-        mix(fnv1a64(relative.to_string_lossy().as_bytes()));
+        // The OS bytes, not a lossy string: two names that differ only outside UTF-8 must
+        // not hash alike (rule 8 — and a false skip is exactly what that would risk).
+        mix(fnv1a64(relative.as_os_str().as_encoded_bytes()));
         if path.is_dir() {
             hash_directory(&path, relative_to, mix)?;
         } else {

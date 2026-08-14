@@ -54,9 +54,9 @@ pub struct MaterializedSource {
     /// A stable identity of the DLL build inputs in this tree — equal identities mean the
     /// build would read identical bytes.
     ///
-    /// For a checked-out Version this derives from the git commit; for a Local Repo, from
-    /// the working files under [`crate::DLL_SOURCE_INPUT_ROOTS`]
-    /// (see [`crate::dll_source_identity`]). It is the source half of the Build Fingerprint.
+    /// For a checked-out Version this derives from the git tree; for a Local Repo, from the
+    /// working files under the DLL's input roots (see [`crate::dll_source_identity`]). It is
+    /// the source half of the Build Fingerprint.
     pub source_identity: String,
 }
 

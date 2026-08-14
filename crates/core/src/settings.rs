@@ -212,10 +212,7 @@ impl Settings {
         write_line(
             &mut text,
             "build-configuration",
-            match configuration.build_configuration {
-                BuildConfiguration::Release => "release",
-                BuildConfiguration::Debug => "debug",
-            },
+            configuration.build_configuration.token(),
         );
         text
     }

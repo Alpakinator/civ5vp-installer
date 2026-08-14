@@ -66,6 +66,31 @@ restored; deleted sidecar → rebuild; deleted deployed DLL → rebuild. Plus a 
 test that the Upstream Cache's identity is the checked-out commit, stable across repeats and
 different across Versions.
 
+### Post-review hardening
+
+`/code-review` (both axes) drove five corrections after the ticket first closed:
+
+- **The installer's own version joined the fingerprint.** The reviewers found the one real
+  false-skip vector: the compiler flags are *derived by installer code* from the fingerprint's
+  other lines, so a release that changes the derivation could have skipped against an old
+  sidecar. The `installer <version>` line makes every release invalidate old sidecars — one
+  honest rebuild per upgrade.
+- **The Upstream Cache identity is now the commit's *tree* id** (`git-tree:<oid>`), so an
+  amend or rebase to an identical tree no longer forces a needless rebuild — and it is the
+  acceptance criterion's wording, taken literally.
+- **A failed sidecar write is said out loud** (rule 11): a progress line names the path and
+  says the next install will rebuild instead of skipping. Still never fails the Deployment —
+  the failure mode stays "rebuild", never "false skip".
+- **Path hashing uses OS bytes**, not a lossy string, so names differing only outside UTF-8
+  cannot hash alike.
+- The FNV step and the `release`/`debug` token each live in one place now.
+
+Two reviewer observations recorded as accepted limitations: hand-editing files inside the
+installer-managed Upstream Cache working tree is not detected (the cache is installer-owned
+and "safe to delete, not to edit"; detecting it would mean re-hashing every install, undoing
+the git-tree derivation's point), and the fingerprint's flag coverage remains by-derivation
+plus installer version, not a literal flag-vector hash.
+
 ### The Debug/Release qualifier
 
 `BuildConfiguration` is folded into the fingerprint and `BuildRequest`, but the Core still

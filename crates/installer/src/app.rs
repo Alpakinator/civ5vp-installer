@@ -518,14 +518,10 @@ impl InstallerApp {
             source,
             flavor: self.flavor.clone(),
             forty_three_civs: self.forty_three_civs,
-            // Debug can only have been chosen in Dev mode; if the source stopped being a
-            // Local Repo since, hand the Core Release rather than a configuration it will
-            // refuse.
-            build_configuration: if self.dev_mode() {
-                self.build_configuration
-            } else {
-                BuildConfiguration::Release
-            },
+            // Sent as chosen, even when Dev mode is off and the checkbox is not drawn:
+            // which Build Configurations are legal with which sources is the Core's ruling
+            // (rule 3), and it refuses an illegal pair with a sentence.
+            build_configuration: self.build_configuration,
         }
     }
 

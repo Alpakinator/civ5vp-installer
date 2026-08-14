@@ -54,6 +54,15 @@ outside Dev mode with nothing fetched, built, or written; Debug reaching the bou
 Debug-only-in-Dev-mode in the shell's accessibility tree (`installer/tests/shell.rs`).
 The `#[ignore]`d real tests as measured above.
 
+### Post-review correction
+
+`/code-review` flagged the shell's silent Debug→Release substitution in `configuration()` as
+a rule-3 breach — deciding which Build Configuration is legal is the Core's ruling, not the
+shell's. The shell now always sends the stored choice; the Core's `plan` refusal is the one
+place the rule lives. (Every state reachable through the UI still behaves identically — the
+checkbox only exists in Dev mode — so this was about where the decision lives, not what
+users see.)
+
 ### Notes
 
 - **No running-game guard** is a fact to preserve, not code to write: no code path asks

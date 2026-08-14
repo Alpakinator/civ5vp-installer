@@ -47,7 +47,7 @@ pub use detect::{
     validate_documents_folder, validate_game_installation,
 };
 pub use error::{GameFolderProblem, InstallError, SourceItem};
-pub use fingerprint::{DLL_SOURCE_INPUT_ROOTS, FINGERPRINT_FILE_NAME, dll_source_identity};
+pub use fingerprint::dll_source_identity;
 pub use install::{Core, InstallOutcome, UninstallOutcome};
 pub use plan::Plan;
 pub use progress::{ProgressEvent, ProgressReporter, Stage};

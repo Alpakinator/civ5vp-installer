@@ -133,9 +133,10 @@ impl UpstreamCache {
     /// objects it did get and no ref pointing at a half-written state, and a checkout is only
     /// recorded as done once every file is written.
     ///
-    /// The `source_identity` is the checked-out commit — this is what "the Fingerprint for a
-    /// checked-out Version derives from the git tree" means: the commit names the tree, so no
-    /// file content has to be re-hashed.
+    /// The `source_identity` is the checked-out commit's *tree* id — "the Fingerprint for a
+    /// checked-out Version derives from the git tree", literally: no file content is
+    /// re-hashed, and two refs pointing at identical trees (an amend, a rebase) share an
+    /// identity instead of forcing a needless rebuild.
     pub fn materialize(
         &self,
         version: &Version,
@@ -163,10 +164,20 @@ impl UpstreamCache {
             })?
             .detach();
 
+        let tree = (|| -> Result<String, String> {
+            let object = repo.find_object(commit).map_err(|err| chain(&err))?;
+            let found = object.peel_to_commit().map_err(|err| chain(&err))?;
+            Ok(found.tree_id().map_err(|err| chain(&err))?.to_string())
+        })()
+        .map_err(|detail| SourceError::CheckoutFailed {
+            version: target.label.clone(),
+            detail,
+        })?;
+
         self.checkout(&repo, commit, &target.label, progress)?;
         Ok(MaterializedSource {
             root: self.root.clone(),
-            source_identity: format!("git:{commit}"),
+            source_identity: format!("git-tree:{tree}"),
         })
     }
 

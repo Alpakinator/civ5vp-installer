@@ -335,14 +335,26 @@ impl Core {
 
         // The Build Fingerprint sidecar, beside the DLL it describes (both inside a Claimed
         // Folder, so rule 6 holds). Hashed from the deployed copy, so what is recorded is
-        // what a later launch will re-hash. A DLL that cannot be hashed cannot be skipped
-        // for — worst case is a needless rebuild, never a false skip — so a failed write
-        // here is not worth failing an otherwise complete Deployment over.
-        if let Some(hash) = fnv1a64_of_file(&dll_destination) {
-            let sidecar = ClaimedFolder::CommunityPatch
-                .path_in(&plan.folders)
-                .join(FINGERPRINT_FILE_NAME);
-            let _ = std::fs::write(&sidecar, fingerprint.sidecar_contents(hash));
+        // what a later launch will re-hash. A failure on this path only ever costs a
+        // rebuild, never a false skip, so it does not fail an otherwise complete
+        // Deployment — but it is said out loud (rule 11): "it rebuilds every time" must be
+        // diagnosable from what the user can show us.
+        let sidecar = ClaimedFolder::CommunityPatch
+            .path_in(&plan.folders)
+            .join(FINGERPRINT_FILE_NAME);
+        let recorded = match fnv1a64_of_file(&dll_destination) {
+            Some(hash) => std::fs::write(&sidecar, fingerprint.sidecar_contents(hash)).is_ok(),
+            None => false,
+        };
+        if !recorded {
+            progress.report(
+                Stage::Sync,
+                format!(
+                    "Could not record the build fingerprint at {} — the next install will \
+                     rebuild instead of skipping.",
+                    sidecar.display()
+                ),
+            );
         }
 
         clear_game_cache(&plan.folders, progress)?;

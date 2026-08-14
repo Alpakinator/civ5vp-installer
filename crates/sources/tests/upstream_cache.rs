@@ -40,9 +40,9 @@ fn version_picker_reports_the_latest_development_version() {
 }
 
 /// Ticket 07: for a checked-out Version the Build Fingerprint's source half derives from the
-/// git tree — the commit names it, so nothing is re-hashed.
+/// git tree — the tree id itself, so nothing is re-hashed and identical trees share it.
 #[test]
-fn the_source_identity_is_the_checked_out_commit() {
+fn the_source_identity_is_the_checked_out_tree() {
     let fixture = UpstreamFixture::new();
     let cache = UpstreamCache::new(fixture.cache_root(), fixture.url());
     let old = Version::Release("Release-1.0".to_owned());
@@ -58,8 +58,8 @@ fn the_source_identity_is_the_checked_out_commit() {
         .materialize(&new, &ProgressReporter::silent())
         .unwrap();
 
-    assert!(first.source_identity.starts_with("git:"));
-    assert_eq!(first.source_identity.len(), "git:".len() + 40);
+    assert!(first.source_identity.starts_with("git-tree:"));
+    assert_eq!(first.source_identity.len(), "git-tree:".len() + 40);
     assert_eq!(first.source_identity, again.source_identity);
     assert_ne!(first.source_identity, newer.source_identity);
 }
