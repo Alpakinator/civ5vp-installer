@@ -20,6 +20,8 @@ pub enum LocalRepoProblem {
     NotAbsolute,
     /// Nothing there, or there but not a directory.
     NotADirectory,
+    /// A directory, but not a Community-Patch-DLL checkout.
+    NotACheckout,
     /// A DLL source file could not be read while deriving the Build Fingerprint identity.
     UnreadableSourceFile,
 }
@@ -74,6 +76,12 @@ impl SourceError {
                 LocalRepoProblem::NotADirectory => format!(
                     "There is no folder at {}. Pick your copy of the Community-Patch-DLL \
                      repository again.",
+                    path.display()
+                ),
+                LocalRepoProblem::NotACheckout => format!(
+                    "The folder at {} is not a Community-Patch-DLL repository — it has no \
+                     CvGameCoreDLL_Expansion2 folder inside it. Pick the root of your \
+                     checkout.",
                     path.display()
                 ),
                 LocalRepoProblem::UnreadableSourceFile => format!(

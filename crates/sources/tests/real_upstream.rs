@@ -21,8 +21,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use civ5vp_core::{
-    BoundaryError, BuildRequest, Core, Eui, Flavor, FortyThreeCivs, GameFolders,
-    InstallConfiguration, InstallationSource, ProgressReporter, Stage, ToolchainRunner, Version,
+    BoundaryError, BuildConfiguration, BuildRequest, Core, Eui, Flavor, FortyThreeCivs,
+    GameFolders, InstallConfiguration, InstallationSource, ProgressReporter, Stage,
+    ToolchainRunner, Version,
 };
 use civ5vp_sources::{InstallationSources, UPSTREAM_URL, UpstreamCache};
 
@@ -218,6 +219,7 @@ fn a_real_release_installs_end_to_end() {
         // really be present at that Release.
         flavor: Flavor::VoxPopuli { eui: Eui::Enabled },
         forty_three_civs: FortyThreeCivs::Enabled,
+        build_configuration: BuildConfiguration::Release,
     };
 
     let plan = core.plan(&configuration, &folders).unwrap();

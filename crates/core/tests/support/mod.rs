@@ -109,6 +109,8 @@ impl ToolchainRunner for MarkerToolchainRunner {
 pub struct CountingToolchainRunner {
     pub builds: std::sync::Arc<std::sync::atomic::AtomicUsize>,
     pub identity: String,
+    /// Every Build Configuration the boundary was asked for, in order.
+    pub configurations: std::sync::Arc<std::sync::Mutex<Vec<civ5vp_core::BuildConfiguration>>>,
 }
 
 impl CountingToolchainRunner {
@@ -118,6 +120,7 @@ impl CountingToolchainRunner {
             Self {
                 builds: std::sync::Arc::clone(&builds),
                 identity: identity.to_owned(),
+                configurations: std::sync::Arc::default(),
             },
             builds,
         )
@@ -132,6 +135,9 @@ impl ToolchainRunner for CountingToolchainRunner {
     ) -> Result<(), BoundaryError> {
         self.builds
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if let Ok(mut seen) = self.configurations.lock() {
+            seen.push(request.build_configuration);
+        }
         MarkerToolchainRunner.build_dll(request, progress)
     }
 

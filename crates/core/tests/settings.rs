@@ -6,8 +6,8 @@ mod steam;
 use std::path::PathBuf;
 
 use civ5vp_core::{
-    AppDataStore, Eui, Flavor, FortyThreeCivs, InstallConfiguration, InstallationSource,
-    SearchLocations, Settings, Version, start_up,
+    AppDataStore, BuildConfiguration, Eui, Flavor, FortyThreeCivs, InstallConfiguration,
+    InstallationSource, SearchLocations, Settings, Version, start_up,
 };
 
 fn temp() -> tempfile::TempDir {
@@ -46,6 +46,8 @@ fn the_remembered_state_survives_the_round_trip() {
             },
             flavor: Flavor::CommunityPatch,
             forty_three_civs: FortyThreeCivs::Disabled,
+            // Debug in the round-trip: the Dev-mode choice must survive a relaunch too.
+            build_configuration: BuildConfiguration::Debug,
         },
         InstallConfiguration {
             source: InstallationSource::UpstreamCache {
@@ -53,6 +55,7 @@ fn the_remembered_state_survives_the_round_trip() {
             },
             flavor: Flavor::VoxPopuli { eui: Eui::Enabled },
             forty_three_civs: FortyThreeCivs::Enabled,
+            build_configuration: BuildConfiguration::Release,
         },
         InstallConfiguration {
             source: InstallationSource::UpstreamCache {
@@ -60,6 +63,7 @@ fn the_remembered_state_survives_the_round_trip() {
             },
             flavor: Flavor::VoxPopuli { eui: Eui::Disabled },
             forty_three_civs: FortyThreeCivs::Disabled,
+            build_configuration: BuildConfiguration::Release,
         },
         InstallConfiguration {
             source: InstallationSource::UpstreamCache {
@@ -67,6 +71,7 @@ fn the_remembered_state_survives_the_round_trip() {
             },
             flavor: Flavor::CommunityPatch,
             forty_three_civs: FortyThreeCivs::Enabled,
+            build_configuration: BuildConfiguration::Release,
         },
     ];
 
@@ -139,6 +144,7 @@ fn remembered_folders_pre_fill_the_next_launch() {
         },
         flavor: Flavor::CommunityPatch,
         forty_three_civs: FortyThreeCivs::Disabled,
+        build_configuration: BuildConfiguration::Release,
     };
 
     store
@@ -290,6 +296,7 @@ fn a_configuration_with_no_installation_source_still_remembers_its_flavor() {
                 source: InstallationSource::unchosen(),
                 flavor: Flavor::VoxPopuli { eui: Eui::Enabled },
                 forty_three_civs: FortyThreeCivs::Enabled,
+                build_configuration: BuildConfiguration::Release,
             }),
         })
         .unwrap();
@@ -321,6 +328,7 @@ fn a_remembered_upstream_version_survives_a_round_trip() {
                 source: chosen.clone(),
                 flavor: Flavor::CommunityPatch,
                 forty_three_civs: FortyThreeCivs::Disabled,
+                build_configuration: BuildConfiguration::Release,
             }),
         })
         .unwrap();

@@ -25,6 +25,12 @@ fn a_local_repo_is_handed_back_untouched_with_its_uncommitted_changes() {
         .unwrap()
         .join("developer-repo");
     fs::create_dir_all(checkout.join("(1) Community Patch")).unwrap();
+    fs::create_dir_all(checkout.join("CvGameCoreDLL_Expansion2")).unwrap();
+    fs::write(
+        checkout.join("CvGameCoreDLL_Expansion2/CvGame.cpp"),
+        "// wip",
+    )
+    .unwrap();
     fs::create_dir_all(checkout.join(".git")).unwrap();
     fs::write(checkout.join(".git/HEAD"), "ref: refs/heads/my-branch\n").unwrap();
     fs::write(
@@ -75,6 +81,71 @@ fn a_local_repo_that_is_not_a_folder_is_refused_before_anything_happens() {
         failure.message()
     );
     assert!(failure.detail().contains("NotADirectory"));
+}
+
+/// Ticket 08: a folder that exists but is not the repository — a Steam library, a mods
+/// folder — is named as such, before any Deployment starts.
+#[test]
+fn a_folder_that_is_not_a_checkout_is_refused_with_a_sentence() {
+    let fixture = UpstreamFixture::new();
+    let not_a_repo = fixture.cache_root().parent().unwrap().join("random-folder");
+    fs::create_dir_all(&not_a_repo).unwrap();
+
+    let failure = sources(&fixture)
+        .materialize(
+            &InstallationSource::LocalRepo {
+                path: not_a_repo.clone(),
+            },
+            &ProgressReporter::silent(),
+        )
+        .unwrap_err();
+
+    assert!(
+        failure
+            .message()
+            .contains("not a Community-Patch-DLL repository"),
+        "unexpected message: {}",
+        failure.message()
+    );
+    assert!(failure.detail().contains("NotACheckout"));
+}
+
+/// The dirty working tree names itself by content: editing a DLL source changes the
+/// identity, and the read is the only thing that happens to the tree (ticket 07 semantics
+/// for ticket 08's dirty Local Repo).
+#[test]
+fn a_dirty_local_repos_identity_tracks_its_working_files() {
+    let fixture = UpstreamFixture::new();
+    let checkout = fixture.cache_root().parent().unwrap().join("dirty-repo");
+    fs::create_dir_all(checkout.join("(1) Community Patch")).unwrap();
+    fs::create_dir_all(checkout.join("CvGameCoreDLL_Expansion2")).unwrap();
+    fs::write(
+        checkout.join("CvGameCoreDLL_Expansion2/CvGame.cpp"),
+        "// v1",
+    )
+    .unwrap();
+    let source = InstallationSource::LocalRepo {
+        path: checkout.clone(),
+    };
+
+    let before = sources(&fixture)
+        .materialize(&source, &ProgressReporter::silent())
+        .unwrap();
+    let unchanged = sources(&fixture)
+        .materialize(&source, &ProgressReporter::silent())
+        .unwrap();
+    fs::write(
+        checkout.join("CvGameCoreDLL_Expansion2/CvGame.cpp"),
+        "// v2",
+    )
+    .unwrap();
+    let edited = sources(&fixture)
+        .materialize(&source, &ProgressReporter::silent())
+        .unwrap();
+
+    assert!(before.source_identity.starts_with("files "));
+    assert_eq!(before.source_identity, unchanged.source_identity);
+    assert_ne!(before.source_identity, edited.source_identity);
 }
 
 #[test]

@@ -31,6 +31,13 @@ pub(crate) fn materialize(path: &Path) -> Result<MaterializedSource, SourceError
     if !path.is_dir() {
         return Err(unusable(LocalRepoProblem::NotADirectory));
     }
+    // The one folder every Version of the repository has and nothing else does: the DLL
+    // sources. Catching "you picked your Steam library" here, with a sentence, beats letting
+    // the Deployment discover a missing mod folder three steps later (ticket 08: "validates
+    // the folder is a Community-Patch-DLL checkout").
+    if !path.join("CvGameCoreDLL_Expansion2").is_dir() {
+        return Err(unusable(LocalRepoProblem::NotACheckout));
+    }
     let source_identity = civ5vp_core::dll_source_identity(path).map_err(|unreadable| {
         SourceError::LocalRepoUnusable {
             path: unreadable,

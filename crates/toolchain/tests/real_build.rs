@@ -68,7 +68,11 @@ fn reporting_progress() -> (ProgressReporter, std::thread::JoinHandle<()>) {
     (ProgressReporter::to_channel(sender), printer)
 }
 
-fn build_into_with(output_dir: &PathBuf, forty_three_civs: FortyThreeCivs) -> PathBuf {
+fn build_into_with(
+    output_dir: &PathBuf,
+    forty_three_civs: FortyThreeCivs,
+    build_configuration: BuildConfiguration,
+) -> PathBuf {
     fs::create_dir_all(output_dir).unwrap();
     let output_path = output_dir.join("CvGameCore_Expansion2.dll");
     // A stale DLL must not be able to pass as this run's product — the Core does the same.
@@ -78,7 +82,7 @@ fn build_into_with(output_dir: &PathBuf, forty_three_civs: FortyThreeCivs) -> Pa
     let request = BuildRequest {
         source_root: source_root(),
         forty_three_civs,
-        build_configuration: BuildConfiguration::Release,
+        build_configuration,
         version_label: "real-build-test".to_owned(),
         output_path: output_path.clone(),
     };
@@ -95,7 +99,11 @@ fn build_into_with(output_dir: &PathBuf, forty_three_civs: FortyThreeCivs) -> Pa
 }
 
 fn build_into(output_dir: &PathBuf) -> PathBuf {
-    build_into_with(output_dir, FortyThreeCivs::Disabled)
+    build_into_with(
+        output_dir,
+        FortyThreeCivs::Disabled,
+        BuildConfiguration::Release,
+    )
 }
 
 /// The whole thing: bootstrap (or reuse) the Toolchain, build the Release DLL through the
@@ -200,7 +208,11 @@ fn the_real_dll_builds_and_matches_the_reference() {
 #[ignore = "needs CIV5VP_DLL_SOURCE_ROOT and a populated Toolchain Cache; ~1 min of compiling"]
 fn the_43_civs_variant_builds() {
     let output_dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("real-dll-build");
-    let output_path = build_into_with(&output_dir, FortyThreeCivs::Enabled);
+    let output_path = build_into_with(
+        &output_dir,
+        FortyThreeCivs::Enabled,
+        BuildConfiguration::Release,
+    );
 
     let built = fs::read(&output_path).unwrap();
     let parsed = pe::parse(&built).unwrap_or_else(|e| panic!("43-Civs DLL does not parse: {e}"));
@@ -211,6 +223,31 @@ fn the_43_civs_variant_builds() {
         output_dir.join("objects/release-43civs").is_dir(),
         "the variant keeps its own objects"
     );
+}
+
+/// The Debug configuration (tickets 07/08): the other proven flag set really compiles and
+/// links, into its own object directory — a debuggable DLL, visibly larger than Release
+/// because nothing was optimised out.
+#[test]
+#[ignore = "needs CIV5VP_DLL_SOURCE_ROOT and a populated Toolchain Cache; ~1-2 min of compiling"]
+fn the_debug_configuration_builds() {
+    let output_dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("real-dll-build");
+    let output_path = build_into_with(
+        &output_dir,
+        FortyThreeCivs::Disabled,
+        BuildConfiguration::Debug,
+    );
+
+    let built = fs::read(&output_path).unwrap();
+    let parsed = pe::parse(&built).unwrap_or_else(|e| panic!("Debug DLL does not parse: {e}"));
+    assert_eq!(parsed.machine, pe::MACHINE_I386);
+    assert!(parsed.is_dll);
+    assert!(parsed.exports.contains("DllGetGameContext"));
+    assert!(
+        output_dir.join("objects/debug").is_dir(),
+        "the Debug variant keeps its own objects"
+    );
+    println!("debug DLL: {} bytes", built.len());
 }
 
 /// Ticket 06's incremental criterion, against the real compiler: touch one source, and the

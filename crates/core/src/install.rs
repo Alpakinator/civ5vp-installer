@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use crate::BUILT_DLL_FILE_NAME;
 use crate::boundaries::{BuildRequest, MaterializedSource, SourceProvider, ToolchainRunner};
 use crate::claimed::{ClaimedFile, ClaimedFolder, GameFolders};
-use crate::configuration::{BuildConfiguration, InstallConfiguration};
+use crate::configuration::InstallConfiguration;
 use crate::error::{InstallError, SourceItem};
 use crate::fingerprint::{BuildFingerprint, FINGERPRINT_FILE_NAME, fnv1a64_of_file};
 use crate::plan::Plan;
@@ -86,7 +86,7 @@ impl Core {
         let fingerprint = BuildFingerprint::new(
             &source.source_identity,
             &plan.configuration.source.version_label(),
-            BuildConfiguration::Release,
+            plan.configuration.build_configuration,
             plan.configuration.forty_three_civs,
             &self.toolchain_runner.toolchain_identity(),
         );
@@ -223,8 +223,7 @@ impl Core {
         let request = BuildRequest {
             source_root: source_root.to_path_buf(),
             forty_three_civs: plan.configuration.forty_three_civs,
-            // Players always get Release; ticket 08's Dev mode adds the Debug choice.
-            build_configuration: BuildConfiguration::Release,
+            build_configuration: plan.configuration.build_configuration,
             version_label: plan.configuration.source.version_label(),
             output_path: output_path.clone(),
         };

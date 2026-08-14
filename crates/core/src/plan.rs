@@ -94,6 +94,25 @@ impl Plan {
         // Before anything else: refuse folders the installer cannot safely write to.
         folders.check()?;
 
+        // A Debug DLL is a mod developer's tool. Outside Dev mode there is no way to choose
+        // it, and a remembered or hand-edited configuration that says otherwise is refused
+        // here rather than quietly built (rule 3: the shell draws choices, the Core rules on
+        // them).
+        if configuration.build_configuration == crate::BuildConfiguration::Debug
+            && !matches!(
+                configuration.source,
+                crate::InstallationSource::LocalRepo { .. }
+            )
+        {
+            return Err(InstallError::UnsupportedConfiguration {
+                message: "Debug builds are only available in Dev mode, building from your \
+                          own checkout. Pick Release, or point the installer at a local \
+                          Community-Patch-DLL folder."
+                    .to_owned(),
+                detail: "build_configuration = Debug with a non-LocalRepo source".to_owned(),
+            });
+        }
+
         Ok(Self {
             deployments: deployments_for(configuration),
             files: files_for(configuration),

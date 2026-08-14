@@ -5,8 +5,8 @@ mod support;
 use std::path::{Path, PathBuf};
 
 use civ5vp_core::{
-    ClaimedFolder, Core, Eui, Flavor, FortyThreeCivs, GameFolders, InstallConfiguration,
-    InstallationSource, ProgressReporter, Stage,
+    BuildConfiguration, ClaimedFolder, Core, Eui, Flavor, FortyThreeCivs, GameFolders,
+    InstallConfiguration, InstallationSource, ProgressReporter, Stage,
 };
 use support::{
     DLL_MARKER, FailingSourceProvider, FailingToolchainRunner, FixtureSourceProvider, GameFixture,
@@ -20,6 +20,7 @@ fn community_patch_only() -> InstallConfiguration {
         },
         flavor: Flavor::CommunityPatch,
         forty_three_civs: FortyThreeCivs::Disabled,
+        build_configuration: BuildConfiguration::Release,
     }
 }
 

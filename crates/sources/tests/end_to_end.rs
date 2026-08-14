@@ -11,8 +11,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use civ5vp_core::{
-    BoundaryError, BuildRequest, Core, Flavor, FortyThreeCivs, GameFolders, InstallConfiguration,
-    InstallationSource, ProgressReporter, Stage, ToolchainRunner, Version,
+    BoundaryError, BuildConfiguration, BuildRequest, Core, Flavor, FortyThreeCivs, GameFolders,
+    InstallConfiguration, InstallationSource, ProgressReporter, Stage, ToolchainRunner, Version,
 };
 use civ5vp_sources::{InstallationSources, UpstreamCache};
 use support::UpstreamFixture;
@@ -80,6 +80,7 @@ fn a_release_from_the_upstream_cache_installs_end_to_end() {
         },
         flavor: Flavor::CommunityPatch,
         forty_three_civs: FortyThreeCivs::Disabled,
+        build_configuration: BuildConfiguration::Release,
     };
 
     let plan = core.plan(&configuration, &game.folders()).unwrap();
@@ -122,6 +123,7 @@ fn switching_version_between_installs_removes_what_the_new_version_dropped() {
             },
             flavor: Flavor::CommunityPatch,
             forty_three_civs: FortyThreeCivs::Disabled,
+            build_configuration: BuildConfiguration::Release,
         };
         let plan = core.plan(&configuration, &game.folders()).unwrap();
         core.execute(&plan, &ProgressReporter::silent()).unwrap();

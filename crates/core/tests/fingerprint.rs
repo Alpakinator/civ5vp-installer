@@ -13,7 +13,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use civ5vp_core::{
-    Core, Flavor, FortyThreeCivs, InstallConfiguration, InstallationSource, ProgressReporter,
+    BuildConfiguration, Core, Flavor, FortyThreeCivs, InstallConfiguration, InstallationSource,
+    ProgressReporter,
 };
 use support::{
     CountingToolchainRunner, DLL_MARKER, FixtureSourceProvider, GameFixture, miniature_repo,
@@ -46,6 +47,7 @@ fn configuration(repo: &Path, forty_three_civs: FortyThreeCivs) -> InstallConfig
         },
         flavor: Flavor::CommunityPatch,
         forty_three_civs,
+        build_configuration: BuildConfiguration::Release,
     }
 }
 
@@ -205,6 +207,68 @@ fn configuration_toolchain_tamper_and_missing_sidecar_each_force_a_rebuild() {
         3,
         "a missing sidecar invalidates"
     );
+}
+
+/// Dev mode's Debug choice (ticket 08): it reaches the toolchain-runner boundary, it is its
+/// own fingerprint, and switching back to Release rebuilds again — Debug objects can never
+/// be skipped-to as Release ones.
+#[test]
+fn the_debug_configuration_reaches_the_runner_and_has_its_own_fingerprint() {
+    let game = GameFixture::new();
+    let repo = editable_repo(game.work_dir().as_path());
+    let (runner, builds) = CountingToolchainRunner::new("fake-toolchain-0");
+    let configurations = std::sync::Arc::clone(&runner.configurations);
+    let core = Core::new(
+        Box::new(FixtureSourceProvider::new(repo.clone())),
+        Box::new(runner),
+        game.work_dir(),
+    );
+    let mut config = configuration(&repo, FortyThreeCivs::Disabled);
+
+    install(&core, &game, &config);
+    config.build_configuration = BuildConfiguration::Debug;
+    install(&core, &game, &config);
+    let repeat_debug = install(&core, &game, &config);
+
+    assert_eq!(builds.load(Ordering::Relaxed), 2, "Debug is its own build");
+    assert!(
+        repeat_debug
+            .iter()
+            .any(|line| line.contains("already up to date")),
+        "an unchanged Debug configuration skips like Release does: {repeat_debug:?}"
+    );
+    assert_eq!(
+        configurations.lock().unwrap().as_slice(),
+        [BuildConfiguration::Release, BuildConfiguration::Debug],
+        "the choice crosses the boundary"
+    );
+}
+
+/// Debug is a Dev-mode tool: with anything but a Local Repo the Core refuses the plan with a
+/// sentence, before anything is fetched or built.
+#[test]
+fn a_debug_build_outside_dev_mode_is_refused() {
+    let game = GameFixture::new();
+    let repo = editable_repo(game.work_dir().as_path());
+    let (core, builds) = core_over(&game, &repo, "fake-toolchain-0");
+    let config = InstallConfiguration {
+        source: civ5vp_core::InstallationSource::UpstreamCache {
+            version: civ5vp_core::Version::LatestDevelopmentVersion,
+        },
+        flavor: Flavor::CommunityPatch,
+        forty_three_civs: FortyThreeCivs::Disabled,
+        build_configuration: BuildConfiguration::Debug,
+    };
+
+    let refused = core.plan(&config, &game.folders()).unwrap_err();
+
+    assert!(
+        refused.user_message().contains("Dev mode"),
+        "unexpected message: {}",
+        refused.user_message()
+    );
+    assert_eq!(builds.load(Ordering::Relaxed), 0, "nothing was built");
+    assert_eq!(game.files(), Vec::<String>::new(), "nothing was touched");
 }
 
 /// A deleted deployed DLL cannot be "skipped to" however fresh the sidecar looks.

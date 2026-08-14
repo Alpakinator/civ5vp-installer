@@ -15,8 +15,8 @@
 mod support;
 
 use civ5vp_core::{
-    ClaimedFolder, Core, Eui, Flavor, FortyThreeCivs, GameFolders, InstallConfiguration,
-    InstallationSource, ProgressReporter,
+    BuildConfiguration, ClaimedFolder, Core, Eui, Flavor, FortyThreeCivs, GameFolders,
+    InstallConfiguration, InstallationSource, ProgressReporter,
 };
 use support::{
     DLL_MARKER, FixtureSourceProvider, GameFixture, MarkerToolchainRunner, miniature_repo,
@@ -102,6 +102,7 @@ fn configuration(flavor: Flavor, forty_three_civs: FortyThreeCivs) -> InstallCon
         },
         flavor,
         forty_three_civs,
+        build_configuration: BuildConfiguration::Release,
     }
 }
 

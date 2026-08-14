@@ -21,7 +21,8 @@ use std::path::PathBuf;
 use std::sync::mpsc;
 
 use civ5vp_core::{
-    Flavor, FortyThreeCivs, GameFolders, InstallConfiguration, InstallationSource, ProgressReporter,
+    BuildConfiguration, Flavor, FortyThreeCivs, GameFolders, InstallConfiguration,
+    InstallationSource, ProgressReporter,
 };
 use civ5vp_installer::wiring;
 
@@ -66,6 +67,7 @@ fn a_real_version_installs_end_to_end_with_a_genuinely_built_dll() {
         },
         flavor: Flavor::CommunityPatch,
         forty_three_civs: FortyThreeCivs::Disabled,
+        build_configuration: BuildConfiguration::Release,
     };
     let plan = core.plan(&configuration, &folders).unwrap_or_else(|error| {
         panic!("{}\n  detail: {}", error.user_message(), error.log_detail())
@@ -134,6 +136,48 @@ fn a_real_version_installs_end_to_end_with_a_genuinely_built_dll() {
     );
     println!(
         "repeat install skipped the build in {:?}",
+        started.elapsed()
+    );
+
+    // Ticket 08's edit-to-game loop: edit a Lua file in the checkout, redeploy, and the
+    // change is in MODS — without the DLL recompiling. The fixture checkout is shared with
+    // other tests, so the file is restored afterwards (a panic in between leaves an edit
+    // behind; re-materializing the Version puts it right).
+    let lua = PathBuf::from(std::env::var_os("CIV5VP_DLL_SOURCE_ROOT").unwrap())
+        .join("(1) Community Patch/LUA/AssignStartingPlots.lua");
+    let original = fs::read(&lua).unwrap();
+    let mut edited = original.clone();
+    edited.extend_from_slice(b"\n-- hot-reload demo edit\n");
+    fs::write(&lua, &edited).unwrap();
+
+    let started = std::time::Instant::now();
+    let (sender, receiver) = mpsc::channel::<civ5vp_core::ProgressEvent>();
+    let progress = ProgressReporter::to_channel(sender);
+    let plan = core.plan(&configuration, &folders).unwrap();
+    let redeploy = core.execute(&plan, &progress);
+    drop(progress);
+    let lines: Vec<String> = receiver.iter().map(|event| event.message).collect();
+    fs::write(&lua, &original).unwrap();
+    redeploy.unwrap_or_else(|error| {
+        panic!("{}\n  detail: {}", error.user_message(), error.log_detail())
+    });
+
+    assert!(
+        lines.iter().any(|line| line.contains("already up to date")),
+        "a Lua edit must not recompile the DLL: {lines:?}"
+    );
+    let deployed_lua = fs::read(
+        folders
+            .mods
+            .join("(1) Community Patch/LUA/AssignStartingPlots.lua"),
+    )
+    .unwrap();
+    assert!(
+        deployed_lua.ends_with(b"\n-- hot-reload demo edit\n"),
+        "the edited Lua must be what reached MODS"
+    );
+    println!(
+        "edited Lua redeployed without a rebuild in {:?}",
         started.elapsed()
     );
 }

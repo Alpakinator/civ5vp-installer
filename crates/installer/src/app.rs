@@ -12,9 +12,9 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 
 use civ5vp_core::{
-    AppDataStore, Core, Eui, Flavor, FolderRejected, FortyThreeCivs, GameFolders,
-    InstallConfiguration, InstallError, InstallOutcome, InstallationSource, ProgressEvent,
-    ProgressReporter, SearchLocations, Settings, resolve_game_folders, start_up,
+    AppDataStore, BuildConfiguration, Core, Eui, Flavor, FolderRejected, FortyThreeCivs,
+    GameFolders, InstallConfiguration, InstallError, InstallOutcome, InstallationSource,
+    ProgressEvent, ProgressReporter, SearchLocations, Settings, resolve_game_folders, start_up,
 };
 
 use crate::{deco, placeholder, theme};
@@ -85,6 +85,7 @@ pub struct InstallerApp {
     remembered_source: InstallationSource,
     flavor: Flavor,
     forty_three_civs: FortyThreeCivs,
+    build_configuration: BuildConfiguration,
     activity: Vec<String>,
     status: Status,
     running: Option<RunningInstall>,
@@ -130,9 +131,17 @@ impl InstallerApp {
             _ => String::new(),
         };
         // The remembered Flavor and toggles, or what the Core suggests to a new player.
-        let (flavor, forty_three_civs) = match &startup.configuration {
-            Some(configuration) => (configuration.flavor.clone(), configuration.forty_three_civs),
-            None => (Flavor::suggested(), FortyThreeCivs::Disabled),
+        let (flavor, forty_three_civs, build_configuration) = match &startup.configuration {
+            Some(configuration) => (
+                configuration.flavor.clone(),
+                configuration.forty_three_civs,
+                configuration.build_configuration,
+            ),
+            None => (
+                Flavor::suggested(),
+                FortyThreeCivs::Disabled,
+                BuildConfiguration::Release,
+            ),
         };
         let game_folder = startup
             .game_installation
@@ -162,6 +171,7 @@ impl InstallerApp {
             resolved,
             flavor,
             forty_three_civs,
+            build_configuration,
             activity: Vec::new(),
             status: Status::Ready,
             running: None,
@@ -199,6 +209,7 @@ impl InstallerApp {
             }),
             flavor: Flavor::suggested(),
             forty_three_civs: FortyThreeCivs::Disabled,
+            build_configuration: BuildConfiguration::Release,
             activity: Vec::new(),
             status: Status::Ready,
             running: None,
@@ -363,6 +374,24 @@ impl InstallerApp {
                 };
                 chosen = true;
             }
+            // Dev mode: pointing the installer at your own checkout is what makes you a mod
+            // developer, and the Debug choice appears only then (user story 31). The Core is
+            // the one that *refuses* Debug anywhere else — this is just not drawing a
+            // checkbox that could only be refused.
+            if self.dev_mode() {
+                let mut debug = self.build_configuration == BuildConfiguration::Debug;
+                if ui
+                    .checkbox(&mut debug, "Debug build — for stepping through the DLL")
+                    .changed()
+                {
+                    self.build_configuration = if debug {
+                        BuildConfiguration::Debug
+                    } else {
+                        BuildConfiguration::Release
+                    };
+                    chosen = true;
+                }
+            }
         });
         if chosen && self.resolved.is_ok() {
             // Remembered like the folders are, so the next launch starts from the same choice
@@ -463,6 +492,19 @@ impl InstallerApp {
         }
     }
 
+    /// Dev mode is "building from your own checkout": a Local Repo has been named, in the
+    /// field or remembered from last time. What Dev mode *permits* is the Core's ruling;
+    /// this only decides which widgets are worth drawing.
+    fn dev_mode(&self) -> bool {
+        if !self.source_folder.trim().is_empty() {
+            return true;
+        }
+        matches!(
+            &self.remembered_source,
+            InstallationSource::LocalRepo { path } if !path.as_os_str().is_empty()
+        )
+    }
+
     /// What the player has chosen, as the Core wants it.
     fn configuration(&self) -> InstallConfiguration {
         let source = if self.source_folder.trim().is_empty() {
@@ -476,6 +518,14 @@ impl InstallerApp {
             source,
             flavor: self.flavor.clone(),
             forty_three_civs: self.forty_three_civs,
+            // Debug can only have been chosen in Dev mode; if the source stopped being a
+            // Local Repo since, hand the Core Release rather than a configuration it will
+            // refuse.
+            build_configuration: if self.dev_mode() {
+                self.build_configuration
+            } else {
+                BuildConfiguration::Release
+            },
         }
     }
 

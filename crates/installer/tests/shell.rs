@@ -538,6 +538,38 @@ fn a_bad_source_folder_is_explained_and_nothing_is_installed() {
     );
 }
 
+/// Ticket 08: the Debug choice belongs to Dev mode. Naming a Local Repo is what makes the
+/// checkbox exist; without one it is not drawn at all.
+#[test]
+fn the_debug_choice_appears_only_in_dev_mode() {
+    let game = TempGame::new();
+    let mut harness = harness_over(game.launch(&game.locations()));
+    harness.step();
+
+    assert!(
+        harness
+            .query_all_by_label_contains("Debug build")
+            .next()
+            .is_none(),
+        "no Local Repo named yet, so no Debug choice"
+    );
+
+    set_text(
+        &mut harness,
+        "Community-Patch-DLL folder",
+        &miniature_repo().display().to_string(),
+    );
+    harness.step();
+
+    assert!(
+        harness
+            .query_all_by_label_contains("Debug build")
+            .next()
+            .is_some(),
+        "a named checkout is Dev mode, and Dev mode has the Debug choice"
+    );
+}
+
 /// Every screen has a baseline. Reviewed before committing — an updated baseline nobody
 /// looked at proves nothing (rule 15).
 #[test]

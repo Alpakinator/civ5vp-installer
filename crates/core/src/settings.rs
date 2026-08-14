@@ -14,7 +14,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::configuration::{
-    Eui, Flavor, FortyThreeCivs, InstallConfiguration, InstallationSource, Version,
+    BuildConfiguration, Eui, Flavor, FortyThreeCivs, InstallConfiguration, InstallationSource,
+    Version,
 };
 use crate::detect::{self, Detection, FolderRejected, SearchLocations};
 
@@ -208,6 +209,14 @@ impl Settings {
             "forty-three-civs",
             on_off(configuration.forty_three_civs == FortyThreeCivs::Enabled),
         );
+        write_line(
+            &mut text,
+            "build-configuration",
+            match configuration.build_configuration {
+                BuildConfiguration::Release => "release",
+                BuildConfiguration::Debug => "debug",
+            },
+        );
         text
     }
 
@@ -386,10 +395,18 @@ fn read_configuration(values: &Values) -> Option<InstallConfiguration> {
     } else {
         FortyThreeCivs::Disabled
     };
+    // Anything but an explicit "debug" — including a file from before the line existed —
+    // reads as Release, the configuration every player gets.
+    let build_configuration = if values.get("build-configuration") == Some("debug") {
+        BuildConfiguration::Debug
+    } else {
+        BuildConfiguration::Release
+    };
     Some(InstallConfiguration {
         source,
         flavor,
         forty_three_civs,
+        build_configuration,
     })
 }
 

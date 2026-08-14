@@ -106,4 +106,7 @@ pub struct InstallConfiguration {
     pub source: InstallationSource,
     pub flavor: Flavor,
     pub forty_three_civs: FortyThreeCivs,
+    /// Release for players; Debug is a Dev-mode choice (user story 31) and is only legal
+    /// with a Local Repo — [`crate::Core::plan`] refuses it anywhere else.
+    pub build_configuration: BuildConfiguration,
 }
