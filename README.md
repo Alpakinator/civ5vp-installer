@@ -69,7 +69,8 @@ folders, `VPUI` and `UI_bc1` — the installer's own data folder can go whenever
 cargo build --release -p civ5vp-installer
 ```
 
-One static binary per OS, built by CI from a clean checkout (`.github/workflows/release.yml`).
+One self-contained, single-file binary per OS, built by CI from a clean checkout and
+attached to the GitHub Release on every version tag (`.github/workflows/release.yml`).
 Development docs live in [`AGENTS.md`](AGENTS.md) and [`docs/spec.md`](docs/spec.md).
 
 ## Version notification

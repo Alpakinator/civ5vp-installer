@@ -33,6 +33,16 @@ jobs:
         with:
           name: civ5vp-installer-linux-x86_64
           path: target/release/civ5vp-installer
+      # On a tag build, the binary joins the GitHub Release — the page the README links to
+      # and the update ping watches. `gh` is preinstalled on the runners.
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp target/release/civ5vp-installer civ5vp-installer-linux-x86_64
+          gh release create "${GITHUB_REF_NAME}" --verify-tag --title "${GITHUB_REF_NAME}" --generate-notes || true
+          gh release upload "${GITHUB_REF_NAME}" civ5vp-installer-linux-x86_64 --clobber
 
   windows:
     runs-on: windows-latest
@@ -46,3 +56,12 @@ jobs:
         with:
           name: civ5vp-installer-windows-x86_64
           path: target/release/civ5vp-installer.exe
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          cp target/release/civ5vp-installer.exe civ5vp-installer-windows-x86_64.exe
+          gh release create "${GITHUB_REF_NAME}" --verify-tag --title "${GITHUB_REF_NAME}" --generate-notes || true
+          gh release upload "${GITHUB_REF_NAME}" civ5vp-installer-windows-x86_64.exe --clobber

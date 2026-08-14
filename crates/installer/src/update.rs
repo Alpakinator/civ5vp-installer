@@ -25,9 +25,16 @@ pub fn check_for_newer_release() -> Option<String> {
         // GitHub's API requires a User-Agent; the version in it is politeness.
         .header("user-agent", &format!("civ5vp-installer/{CURRENT_VERSION}"))
         .call()
+        // The UI stays silent either way (user story 27: no update machinery); the log
+        // still records why, so "it never told me about the update" is diagnosable
+        // (rule 11).
+        .inspect_err(|error| crate::log_detail(&format!("update check failed: {error}")))
         .ok()?;
     let mut body = response.into_body();
-    let body = body.read_to_string().ok()?;
+    let body = body
+        .read_to_string()
+        .inspect_err(|error| crate::log_detail(&format!("update check failed: {error}")))
+        .ok()?;
     newer_release(CURRENT_VERSION, &body)
 }
 

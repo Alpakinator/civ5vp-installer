@@ -251,11 +251,7 @@ impl InstallerApp {
             store,
             source_choice: SourceChoice::GitHub,
             // A pre-loaded catalog: previews are pictures, they never open a socket.
-            versions: VersionsState::Ready(VersionCatalog::from_remote_refs([
-                ("refs/tags/Release-5.2", "b".repeat(40)),
-                ("refs/tags/Release-5.1", "a".repeat(40)),
-                ("refs/heads/master", "c".repeat(40)),
-            ])),
+            versions: VersionsState::Ready(placeholder::fixture_version_catalog()),
             picked_version: PickedVersion::NewestRelease,
             custom_ref: String::new(),
             source_folder: "/home/player/src/Community-Patch-DLL".to_owned(),
@@ -425,8 +421,10 @@ impl InstallerApp {
 
         if let Err(explanation) = &self.resolved {
             ui.add_space(6.0);
+            let explanation = explanation.clone();
             deco::notice(ui, theme::EMBER, |ui| {
-                ui.label(explanation);
+                ui.label(&explanation);
+                self.support_buttons(ui, &explanation);
             });
         }
 
@@ -507,25 +505,10 @@ impl InstallerApp {
             }
             Status::Failed { .. } => {
                 deco::notice(ui, theme::EMBER, |ui| {
-                    ui.label(line);
+                    ui.label(line.clone());
                     // User story 20: the full detail is in the log file; these put it in
                     // reach without raw compiler output ever entering the panel (rule 10).
-                    ui.add_space(4.0);
-                    ui.horizontal(|ui| {
-                        if ui.button("Copy details").clicked() {
-                            ui.ctx().copy_text(self.log_text_for_report());
-                        }
-                        if ui.button("Open log").clicked() {
-                            self.open_log();
-                        }
-                        if let Some(path) = crate::log_file() {
-                            ui.label(
-                                egui::RichText::new(display_path(path))
-                                    .small()
-                                    .color(theme::PARCHMENT_DIM),
-                            );
-                        }
-                    });
+                    self.support_buttons(ui, &line);
                 });
             }
         }
@@ -688,7 +671,8 @@ impl InstallerApp {
             VersionsState::Failed(message) => {
                 let message = message.clone();
                 deco::notice(ui, theme::EMBER, |ui| {
-                    ui.label(message);
+                    ui.label(&message);
+                    self.support_buttons(ui, &message);
                 });
                 if ui.button("Try again").clicked() {
                     self.versions = VersionsState::NotAsked;
@@ -848,8 +832,30 @@ impl InstallerApp {
 
     /// What "Copy details" puts on the clipboard: the sentence the user can see plus the
     /// tail of the log file — enough for a useful report, small enough to paste anywhere.
-    fn log_text_for_report(&self) -> String {
-        let mut report = self.status_line();
+    /// The copy/open row every failure surface carries (user story 20, ticket 10's "all
+    /// failure surfaces"). `headline` is what the notice says; the clipboard gets it plus
+    /// the log tail.
+    fn support_buttons(&self, ui: &mut egui::Ui, headline: &str) {
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            if ui.button("Copy details").clicked() {
+                ui.ctx().copy_text(self.log_text_for_report(headline));
+            }
+            if ui.button("Open log").clicked() {
+                self.open_log();
+            }
+            if let Some(path) = crate::log_file() {
+                ui.label(
+                    egui::RichText::new(display_path(path))
+                        .small()
+                        .color(theme::PARCHMENT_DIM),
+                );
+            }
+        });
+    }
+
+    fn log_text_for_report(&self, headline: &str) -> String {
+        let mut report = headline.to_owned();
         if let Some(path) = crate::log_file()
             && let Ok(contents) = std::fs::read_to_string(path)
         {

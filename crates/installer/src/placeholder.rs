@@ -88,14 +88,18 @@ impl SourceProvider for DirectorySourceProvider {
         &self,
         _progress: &ProgressReporter,
     ) -> Result<civ5vp_core::VersionCatalog, BoundaryError> {
-        // A fixture catalog, so the shell tests and screen previews can draw the picker
-        // without a socket (rule 13).
-        Ok(civ5vp_core::VersionCatalog::from_remote_refs([
-            ("refs/tags/Release-5.2", "b".repeat(40)),
-            ("refs/tags/Release-5.1", "a".repeat(40)),
-            ("refs/heads/master", "c".repeat(40)),
-        ]))
+        Ok(fixture_version_catalog())
     }
+}
+
+/// The catalog every offline surface shares — the fake provider, the screen previews — so
+/// the shell tests and baselines can draw the picker without a socket (rule 13).
+pub fn fixture_version_catalog() -> civ5vp_core::VersionCatalog {
+    civ5vp_core::VersionCatalog::from_remote_refs([
+        ("refs/tags/Release-5.2", "b".repeat(40)),
+        ("refs/tags/Release-5.1", "a".repeat(40)),
+        ("refs/heads/master", "c".repeat(40)),
+    ])
 }
 
 /// Writes a marker where the Built DLL belongs, so the rest of the pipeline can be exercised
