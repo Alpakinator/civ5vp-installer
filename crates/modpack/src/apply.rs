@@ -132,11 +132,39 @@ fn apply_gamedata(
             }
             table => {
                 valid_name(table)?;
+                // Text for a language this game does not have — mods ship translations
+                // for every language, the merged localization database only holds the
+                // installed ones, and the game drops the rest on the floor. So does the
+                // merge, out loud once per element.
+                if table.starts_with("Language_") && !has_table(text, table)? {
+                    progress.report(
+                        Stage::Build,
+                        format!(
+                            "Skipped {table} text in {file_name} — this game does not \
+                             have that language."
+                        ),
+                    );
+                    continue;
+                }
                 apply_operations(route(table), table, child, file_name, progress)?;
             }
         }
     }
     Ok(())
+}
+
+/// Does the database hold this table — or a view standing in for it, the way the merged
+/// localization database exposes the active language?
+fn has_table(conn: &Connection, table: &str) -> Result<bool, String> {
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type IN ('table', 'view') \
+             AND name = ?1 COLLATE NOCASE",
+            [table],
+            |row| row.get(0),
+        )
+        .map_err(|error| format!("looking for {table}: {error}"))?;
+    Ok(count > 0)
 }
 
 /// Table and column names get spliced into SQL (they cannot be bound), so only the character

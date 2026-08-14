@@ -183,6 +183,42 @@ fn a_rebuild_with_dangling_language_references_merges_like_the_games_own_sqlite(
     );
 }
 
+/// Mods ship translations for every language; the merged localization database only holds
+/// the installed ones (InGame Editor's `IGE_ZH_CN.xml` was the first real hit). The game
+/// drops text for absent languages, so the merge does the same, out loud.
+#[test]
+fn text_for_a_language_this_game_does_not_have_is_skipped() {
+    let merged = run_merge(
+        "",
+        "CREATE TABLE Language_en_US (Tag text, Text text);",
+        &[(
+            "IGE_ZH_CN.xml",
+            "<GameData>\n\
+             \t<Language_zh_CN>\n\
+             \t\t<Row Tag=\"TXT_KEY_IGE\"><Text>\u{7f16}\u{8f91}\u{5668}</Text></Row>\n\
+             \t</Language_zh_CN>\n\
+             \t<Language_en_US>\n\
+             \t\t<Row Tag=\"TXT_KEY_IGE\"><Text>Editor</Text></Row>\n\
+             \t</Language_en_US>\n\
+             </GameData>",
+        )],
+    )
+    .expect("absent-language text must not stop the merge");
+
+    assert!(
+        merged.text.contains("<Replace Tag=\"TXT_KEY_IGE\">"),
+        "the installed language's text still lands"
+    );
+    assert!(
+        merged
+            .progress
+            .iter()
+            .any(|line| line.contains("Language_zh_CN") && line.contains("IGE_ZH_CN.xml")),
+        "the skip is said out loud, got: {:?}",
+        merged.progress
+    );
+}
+
 #[test]
 fn a_table_element_creates_the_table_with_its_constraints() {
     let merged = run_merge(
