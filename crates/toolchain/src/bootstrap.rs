@@ -672,9 +672,11 @@ mod tests {
         let first = bootstrap_over(dir.path(), &internet, sdk, llvm, libtinfo)
             .ensure(&ProgressReporter::silent())
             .unwrap();
-        // One request per pinned artifact: the SDK image, the compiler, and — where the host
-        // needs it — the library the compiler will not start without.
-        let expected = 2 + usize::from(libtinfo_for_host().is_some());
+        // The SDK image and the compiler are pinned large, so each costs a parallel-path
+        // probe first; the probe discovers the fixture is tiny and the fetch drops to the
+        // sequential path — two requests each. The libtinfo package, where the host needs
+        // it, is pinned small and fetches in one.
+        let expected = 2 * 2 + usize::from(libtinfo_for_host().is_some());
         assert_eq!(internet.requests(), expected);
 
         let (second_internet, sdk, llvm, libtinfo) = fake_internet();

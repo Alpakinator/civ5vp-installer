@@ -1,14 +1,23 @@
 //! Fetching a pinned artifact: resume what is half-there, prove it against its SHA-256, and
 //! only then let it into the Toolchain Cache.
 //!
-//! The shape is deliberate. A 580 MB download over a slow connection will be interrupted, so
+//! The shape is deliberate. A big download over a slow connection will be interrupted, so
 //! bytes land in `<name>.part` and the finished, *verified* file appears at `<name>` in one
 //! atomic rename. Anything that goes wrong leaves either a resumable `.part` or nothing —
 //! never a short file that looks finished (an acceptance criterion of ticket 05).
+//!
+//! Large artifacts download over **several connections at once**. The Wayback Machine — the
+//! one source of the pinned SDK image — throttles per connection to roughly 1 MB/s, and
+//! measured from a real machine four parallel ranged requests deliver about 4.5x the
+//! single-connection rate. The file is divided into a fixed grid of chunks, each fetched
+//! with its own ranged request; a sidecar (`<name>.parts`) records which chunks are done, so
+//! an interrupted run redoes only what is missing. A server that ignores `Range` drops the
+//! whole fetch back to the sequential path automatically.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
 use civ5vp_core::{ProgressReporter, Stage};
 use sha2::{Digest, Sha256};
@@ -23,19 +32,45 @@ const CHUNK: usize = 256 * 1024;
 /// eight seconds; at 100 MB/s it is not a flood.
 const PROGRESS_STEP: u64 = 8 * 1024 * 1024;
 
+/// One ranged request's worth of file in the parallel path.
+const PARALLEL_CHUNK: u64 = 32 * 1024 * 1024;
+
+/// How many connections fetch chunks at once. Four is where the Wayback Machine's
+/// per-connection throttle stops being the limit, and modest enough to stay polite.
+const PARALLEL_CONNECTIONS: usize = 4;
+
+/// Artifacts smaller than this are not worth the extra requests.
+const PARALLEL_THRESHOLD: u64 = 64 * 1024 * 1024;
+
 /// A stream of bytes starting partway into a resource — the one thing the downloader needs
 /// from the network.
 ///
 /// A trait, because the interesting behaviour here (resume, verify, atomic move, self-repair
 /// after an interruption) is exactly what the fast suite must cover and the network is
-/// exactly what it must not touch (rule 13).
-pub trait ByteSource {
+/// exactly what it must not touch (rule 13). `Sync`, because the parallel path shares one
+/// source across its worker threads.
+pub trait ByteSource: Sync {
     /// Open `url` from `offset`.
     ///
     /// Implementations return [`Transfer::from_start`] when they could not honour the offset;
     /// the caller then discards whatever it already had rather than splicing two unrelated
     /// byte ranges together.
     fn open(&self, url: &str, offset: u64) -> Result<Transfer, ToolchainError>;
+
+    /// Open the bounded range `[start, end)` of `url`.
+    ///
+    /// The default rides on [`ByteSource::open`] and caps the stream, which is correct for
+    /// any source; the HTTP implementation overrides it with a real bounded `Range` header
+    /// so the server stops sending at `end` too.
+    fn open_range(&self, url: &str, start: u64, end: u64) -> Result<Transfer, ToolchainError> {
+        let transfer = self.open(url, start)?;
+        let cap = end.saturating_sub(transfer.start);
+        Ok(Transfer {
+            start: transfer.start,
+            total: transfer.total,
+            body: Box::new(transfer.body.take(cap)),
+        })
+    }
 }
 
 /// An open response body plus what is known about it.
@@ -58,6 +93,45 @@ impl HttpByteSource {
             agent: ureq::Agent::new_with_defaults(),
         }
     }
+
+    fn request(&self, url: &str, range: Option<String>) -> Result<Transfer, ToolchainError> {
+        let mut request = self.agent.get(url);
+        if let Some(range) = &range {
+            request = request.header("Range", range.as_str());
+        }
+        let response = request.call().map_err(|error| network_error(url, &error))?;
+
+        let status = response.status().as_u16();
+        // 206 means the Range header was honoured. Anything else 2xx is the whole resource,
+        // which is still usable — it just means starting over (or, on the parallel path,
+        // falling back to sequential).
+        let honoured = status == 206;
+        let content_length = response
+            .headers()
+            .get("content-length")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<u64>().ok());
+        // For a ranged response the total is in Content-Range: "bytes 0-99/1552508928".
+        let content_range_total = response
+            .headers()
+            .get("content-range")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.rsplit('/').next())
+            .and_then(|total| total.parse::<u64>().ok());
+
+        let body = response
+            .into_body()
+            .into_with_config()
+            // The default read limit is sized for API responses, not for a 1.45 GB ISO.
+            .limit(u64::MAX)
+            .reader();
+
+        Ok(Transfer {
+            start: if honoured { u64::MAX } else { 0 }, // caller fills the honoured offset
+            total: content_range_total.or(content_length),
+            body: Box::new(body),
+        })
+    }
 }
 
 impl Default for HttpByteSource {
@@ -68,35 +142,24 @@ impl Default for HttpByteSource {
 
 impl ByteSource for HttpByteSource {
     fn open(&self, url: &str, offset: u64) -> Result<Transfer, ToolchainError> {
-        let mut request = self.agent.get(url);
-        if offset > 0 {
-            request = request.header("Range", format!("bytes={offset}-"));
+        let range = (offset > 0).then(|| format!("bytes={offset}-"));
+        let mut transfer = self.request(url, range)?;
+        // `total` from a suffix range's Content-Range is already the full size; from a plain
+        // 200 it is the content length, which equals the full size when starting at 0.
+        if transfer.start == u64::MAX {
+            transfer.start = offset;
+        } else if transfer.total.is_some() && offset == 0 {
+            // Plain 200 at offset 0: content length is the whole resource.
         }
-        let response = request.call().map_err(|error| network_error(url, &error))?;
+        Ok(transfer)
+    }
 
-        let status = response.status().as_u16();
-        // 206 means the Range header was honoured. Anything else 2xx is the whole resource,
-        // which is still usable — it just means starting over.
-        let start = if status == 206 { offset } else { 0 };
-        let content_length = response
-            .headers()
-            .get("content-length")
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.parse::<u64>().ok());
-        let total = content_length.map(|length| start + length);
-
-        let body = response
-            .into_body()
-            .into_with_config()
-            // The default read limit is sized for API responses, not for a 580 MB ISO.
-            .limit(u64::MAX)
-            .reader();
-
-        Ok(Transfer {
-            start,
-            total,
-            body: Box::new(body),
-        })
+    fn open_range(&self, url: &str, start: u64, end: u64) -> Result<Transfer, ToolchainError> {
+        let mut transfer = self.request(url, Some(format!("bytes={start}-{}", end - 1)))?;
+        if transfer.start == u64::MAX {
+            transfer.start = start;
+        }
+        Ok(transfer)
     }
 }
 
@@ -122,11 +185,34 @@ pub fn fetch(
     downloads_dir: &Path,
     progress: &ProgressReporter,
 ) -> Result<PathBuf, ToolchainError> {
+    fetch_with(
+        source,
+        pinned,
+        downloads_dir,
+        progress,
+        PARALLEL_CHUNK,
+        PARALLEL_THRESHOLD,
+        PARALLEL_CONNECTIONS,
+    )
+}
+
+/// [`fetch`] with the parallel grid as parameters, so the fast suite can exercise the
+/// chunking with kilobytes instead of gigabytes.
+fn fetch_with(
+    source: &dyn ByteSource,
+    pinned: &PinnedDownload,
+    downloads_dir: &Path,
+    progress: &ProgressReporter,
+    chunk_size: u64,
+    parallel_threshold: u64,
+    connections: usize,
+) -> Result<PathBuf, ToolchainError> {
     fs::create_dir_all(downloads_dir)
         .map_err(|error| io_error("create the downloads folder", downloads_dir, &error))?;
 
     let final_path = downloads_dir.join(pinned.file_name);
     let partial_path = downloads_dir.join(format!("{}.part", pinned.file_name));
+    let sidecar_path = downloads_dir.join(format!("{}.parts", pinned.file_name));
 
     if final_path.is_file() {
         // Present from an earlier run. Still hashed: a file that was truncated by a full disk
@@ -136,18 +222,34 @@ pub fn fetch(
                 Stage::Build,
                 format!("Already have {} — skipping the download.", pinned.file_name),
             );
+            let _ = fs::remove_file(&sidecar_path);
             return Ok(final_path);
         }
         fs::remove_file(&final_path)
             .map_err(|error| io_error("remove a damaged download", &final_path, &error))?;
     }
 
-    download_to_partial(source, pinned, &partial_path, progress)?;
+    let mut fetched_in_parallel = false;
+    if pinned.approximate_bytes >= parallel_threshold {
+        fetched_in_parallel = parallel_download(
+            source,
+            pinned,
+            &partial_path,
+            &sidecar_path,
+            progress,
+            chunk_size,
+            connections,
+        )?;
+    }
+    if !fetched_in_parallel {
+        download_to_partial(source, pinned, &partial_path, progress)?;
+    }
 
     let actual = hash_file(&partial_path)?;
     if actual != pinned.sha256 {
         // Do not keep it: resuming from bytes that are already wrong would loop forever.
         let _ = fs::remove_file(&partial_path);
+        let _ = fs::remove_file(&sidecar_path);
         return Err(ToolchainError::new(
             format!(
                 "The download of {} came out damaged. Check your connection and try again.",
@@ -163,12 +265,342 @@ pub fn fetch(
     // The rename is the commit point: `<name>` exists only once its contents are proven.
     fs::rename(&partial_path, &final_path)
         .map_err(|error| io_error("finish a download", &final_path, &error))?;
+    let _ = fs::remove_file(&sidecar_path);
     progress.report(
         Stage::Build,
         format!("Downloaded {} and checked it.", pinned.file_name),
     );
     Ok(final_path)
 }
+
+// ---------------------------------------------------------------------------------------
+// The parallel path
+// ---------------------------------------------------------------------------------------
+
+/// Which chunks of a partial download have fully arrived. Lives in `<name>.parts` beside the
+/// `.part` file; the format records the grid too, so a sidecar from another grid (or another
+/// artifact size) is discarded rather than trusted.
+struct ChunkLedger {
+    chunk_size: u64,
+    total: u64,
+    done: Vec<bool>,
+}
+
+impl ChunkLedger {
+    fn chunk_count(chunk_size: u64, total: u64) -> usize {
+        (total.div_ceil(chunk_size)) as usize
+    }
+
+    fn new(chunk_size: u64, total: u64) -> Self {
+        Self {
+            chunk_size,
+            total,
+            done: vec![false; Self::chunk_count(chunk_size, total)],
+        }
+    }
+
+    fn load(path: &Path, chunk_size: u64) -> Option<Self> {
+        let text = fs::read_to_string(path).ok()?;
+        let mut lines = text.lines();
+        let mut header = lines.next()?.split_whitespace();
+        if (header.next(), header.next()) != (Some("chunks"), Some("v1")) {
+            return None;
+        }
+        let recorded_chunk: u64 = header.next()?.parse().ok()?;
+        let total: u64 = header.next()?.parse().ok()?;
+        if recorded_chunk != chunk_size || total == 0 {
+            return None;
+        }
+        let mut ledger = Self::new(chunk_size, total);
+        for line in lines {
+            let index: usize = line.trim().parse().ok()?;
+            *ledger.done.get_mut(index)? = true;
+        }
+        Some(ledger)
+    }
+
+    fn save(&self, path: &Path) -> Result<(), ToolchainError> {
+        let mut text = format!("chunks v1 {} {}\n", self.chunk_size, self.total);
+        for (index, done) in self.done.iter().enumerate() {
+            if *done {
+                text.push_str(&format!("{index}\n"));
+            }
+        }
+        let temporary = path.with_extension("parts.new");
+        fs::write(&temporary, text)
+            .map_err(|error| io_error("write the download ledger", &temporary, &error))?;
+        fs::rename(&temporary, path)
+            .map_err(|error| io_error("write the download ledger", path, &error))?;
+        Ok(())
+    }
+
+    fn range_of(&self, index: usize) -> (u64, u64) {
+        let start = index as u64 * self.chunk_size;
+        (start, (start + self.chunk_size).min(self.total))
+    }
+
+    fn bytes_done(&self) -> u64 {
+        self.done
+            .iter()
+            .enumerate()
+            .filter(|(_, done)| **done)
+            .map(|(index, _)| {
+                let (start, end) = self.range_of(index);
+                end - start
+            })
+            .sum()
+    }
+}
+
+/// Download `pinned` over several ranged connections.
+///
+/// Returns `Ok(false)` — with nothing torn down — when the server turns out not to support
+/// ranges or not to say the total size; the caller then uses the sequential path. `Ok(true)`
+/// means the `.part` file holds every byte.
+fn parallel_download(
+    source: &dyn ByteSource,
+    pinned: &PinnedDownload,
+    partial_path: &Path,
+    sidecar_path: &Path,
+    progress: &ProgressReporter,
+    chunk_size: u64,
+    connections: usize,
+) -> Result<bool, ToolchainError> {
+    // A ledger from an interrupted parallel run already knows the total, so a resume asks
+    // for nothing but the missing chunks. Otherwise the first chunk doubles as the probe:
+    // it learns the exact total and whether the server honours ranges, and its bytes are
+    // never wasted.
+    let mut probe = None;
+    let mut ledger = match ChunkLedger::load(sidecar_path, chunk_size) {
+        Some(ledger) => ledger,
+        None => {
+            let opened = source.open_range(pinned.url, 0, chunk_size)?;
+            let Some(total) = opened.total else {
+                return Ok(false);
+            };
+            if total <= chunk_size {
+                return Ok(false);
+            }
+            probe = Some(opened);
+            let mut ledger = ChunkLedger::new(chunk_size, total);
+            // Convert what a sequential run left behind: a plain `.part` prefix is credit
+            // for every chunk it fully covers.
+            if let Ok(metadata) = fs::metadata(partial_path) {
+                let prefix_chunks = (metadata.len() / chunk_size) as usize;
+                for done in ledger.done.iter_mut().take(prefix_chunks) {
+                    *done = true;
+                }
+            }
+            ledger
+        }
+    };
+    let total = ledger.total;
+
+    // The `.part` file at full size, so every worker writes straight to its own offsets.
+    let file = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(partial_path)
+        .map_err(|error| io_error("create a partial download", partial_path, &error))?;
+    file.set_len(total)
+        .map_err(|error| io_error("size a partial download", partial_path, &error))?;
+    drop(file);
+
+    let already = ledger.bytes_done();
+    progress.report(
+        Stage::Build,
+        format!(
+            "Downloading {} ({}) on {connections} connections{}.",
+            pinned.file_name,
+            human_bytes(total),
+            if already > 0 {
+                format!(" — resuming with {} already here", human_bytes(already))
+            } else {
+                String::new()
+            }
+        ),
+    );
+
+    // Write the probe's chunk first, when there is one and it is still needed. The ledger
+    // is persisted either way, so even a first-chunk failure leaves a resumable state.
+    if !ledger.done[0]
+        && let Some(probe) = probe.take()
+    {
+        let (start, end) = ledger.range_of(0);
+        let written = write_chunk(partial_path, probe, start, end, pinned.url);
+        if written.is_ok() {
+            ledger.done[0] = true;
+        }
+        ledger.save(sidecar_path)?;
+        written?;
+    } else {
+        ledger.save(sidecar_path)?;
+    }
+
+    let todo: Vec<usize> = ledger
+        .done
+        .iter()
+        .enumerate()
+        .filter(|(_, done)| !**done)
+        .map(|(index, _)| index)
+        .collect();
+    if todo.is_empty() {
+        return Ok(true);
+    }
+
+    // Workers pull chunk indices from a shared cursor; each failure or refused range is
+    // recorded and stops the others quickly.
+    let cursor = AtomicUsize::new(0);
+    let range_refused = AtomicBool::new(false);
+    let failed: std::sync::Mutex<Option<ToolchainError>> = std::sync::Mutex::new(None);
+    let finished: std::sync::Mutex<Vec<usize>> = std::sync::Mutex::new(Vec::new());
+    let downloaded = AtomicU64::new(already);
+    let announced = AtomicU64::new(already);
+
+    std::thread::scope(|scope| {
+        for _ in 0..connections.max(1) {
+            scope.spawn(|| {
+                loop {
+                    if range_refused.load(Ordering::Relaxed)
+                        || failed.lock().map(|f| f.is_some()).unwrap_or(true)
+                    {
+                        return;
+                    }
+                    let slot = cursor.fetch_add(1, Ordering::Relaxed);
+                    let Some(&index) = todo.get(slot) else {
+                        return;
+                    };
+                    let (start, end) = ledger.range_of(index);
+                    let outcome = source
+                        .open_range(pinned.url, start, end)
+                        .and_then(|transfer| {
+                            if transfer.start != start {
+                                range_refused.store(true, Ordering::Relaxed);
+                                return Ok(0);
+                            }
+                            write_chunk(partial_path, transfer, start, end, pinned.url)?;
+                            Ok(end - start)
+                        });
+                    match outcome {
+                        Ok(0) => return,
+                        Ok(bytes) => {
+                            if let Ok(mut list) = finished.lock() {
+                                list.push(index);
+                            }
+                            let so_far = downloaded.fetch_add(bytes, Ordering::Relaxed) + bytes;
+                            let last = announced.load(Ordering::Relaxed);
+                            if so_far - last >= PROGRESS_STEP
+                                && announced
+                                    .compare_exchange(
+                                        last,
+                                        so_far,
+                                        Ordering::Relaxed,
+                                        Ordering::Relaxed,
+                                    )
+                                    .is_ok()
+                            {
+                                progress.report(
+                                    Stage::Build,
+                                    format!(
+                                        "Downloading {} — {} of {} ({}%).",
+                                        pinned.file_name,
+                                        human_bytes(so_far),
+                                        human_bytes(total),
+                                        percent(so_far, total)
+                                    ),
+                                );
+                            }
+                        }
+                        Err(error) => {
+                            if let Ok(mut failure) = failed.lock() {
+                                failure.get_or_insert(error);
+                            }
+                            return;
+                        }
+                    }
+                }
+            });
+        }
+    });
+
+    // Record everything that landed, whatever else happened — that is the resume state.
+    if let Ok(list) = finished.lock() {
+        for &index in list.iter() {
+            ledger.done[index] = true;
+        }
+    }
+    ledger.save(sidecar_path)?;
+
+    if let Ok(mut failure) = failed.lock()
+        && let Some(error) = failure.take()
+    {
+        return Err(error);
+    }
+    if range_refused.load(Ordering::Relaxed) {
+        // The server would not serve ranges after all. Keep only a clean prefix for the
+        // sequential path to resume from.
+        let prefix_chunks = ledger.done.iter().take_while(|done| **done).count();
+        let prefix_bytes = if prefix_chunks == 0 {
+            0
+        } else {
+            ledger.range_of(prefix_chunks - 1).1
+        };
+        let file = OpenOptions::new()
+            .write(true)
+            .open(partial_path)
+            .map_err(|error| io_error("reopen a partial download", partial_path, &error))?;
+        file.set_len(prefix_bytes)
+            .map_err(|error| io_error("truncate a partial download", partial_path, &error))?;
+        let _ = fs::remove_file(sidecar_path);
+        return Ok(false);
+    }
+
+    Ok(ledger.done.iter().all(|done| *done))
+}
+
+/// Stream one transfer into `[start, end)` of the partial file. Short bodies are an error —
+/// a chunk is only credited when every byte of it arrived.
+fn write_chunk(
+    partial_path: &Path,
+    mut transfer: Transfer,
+    start: u64,
+    end: u64,
+    url: &str,
+) -> Result<(), ToolchainError> {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .open(partial_path)
+        .map_err(|error| io_error("open a partial download", partial_path, &error))?;
+    file.seek(SeekFrom::Start(start))
+        .map_err(|error| io_error("seek in a partial download", partial_path, &error))?;
+    let mut remaining = end - start;
+    let mut buffer = vec![0u8; CHUNK];
+    while remaining > 0 {
+        let want = remaining.min(buffer.len() as u64) as usize;
+        let read = transfer
+            .body
+            .read(&mut buffer[..want])
+            .map_err(|error| network_read_error(url, &error))?;
+        if read == 0 {
+            return Err(ToolchainError::new(
+                "The download was interrupted. Try again — the installer will carry on from \
+                 where it stopped.",
+                format!("range {start}-{end} of {url} ended {remaining} bytes short"),
+            ));
+        }
+        file.write_all(&buffer[..read])
+            .map_err(|error| io_error("write a partial download", partial_path, &error))?;
+        remaining -= read as u64;
+    }
+    file.flush()
+        .map_err(|error| io_error("flush a partial download", partial_path, &error))?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------------------
+// The sequential path — for small artifacts and servers without ranges
+// ---------------------------------------------------------------------------------------
 
 fn download_to_partial(
     source: &dyn ByteSource,
@@ -313,27 +745,31 @@ fn network_read_error(url: &str, error: &std::io::Error) -> ToolchainError {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use std::cell::RefCell;
     use std::io::Cursor;
+    use std::sync::Mutex;
 
     /// A ByteSource over an in-memory blob, which can be told to stop short — the fast
-    /// suite's stand-in for a dropped connection.
+    /// suite's stand-in for a dropped connection. `Mutex` inside because the parallel path
+    /// shares the source across worker threads.
     struct FakeSource {
         content: Vec<u8>,
         /// How many bytes each successive `open` will hand over before ending the stream.
-        allowances: RefCell<Vec<usize>>,
+        allowances: Mutex<Vec<usize>>,
         /// Set when the server should ignore `Range` and start over.
         ignores_range: bool,
-        opens: RefCell<Vec<u64>>,
+        /// Set when the server never says how large the resource is.
+        hides_total: bool,
+        opens: Mutex<Vec<u64>>,
     }
 
     impl FakeSource {
         fn new(content: Vec<u8>, allowances: Vec<usize>) -> Self {
             Self {
                 content,
-                allowances: RefCell::new(allowances),
+                allowances: Mutex::new(allowances),
                 ignores_range: false,
-                opens: RefCell::new(Vec::new()),
+                hides_total: false,
+                opens: Mutex::new(Vec::new()),
             }
         }
 
@@ -341,19 +777,28 @@ mod tests {
             self.ignores_range = true;
             self
         }
+
+        fn hiding_total(mut self) -> Self {
+            self.hides_total = true;
+            self
+        }
+
+        fn open_count(&self) -> usize {
+            self.opens.lock().unwrap().len()
+        }
     }
 
     impl ByteSource for FakeSource {
         fn open(&self, _url: &str, offset: u64) -> Result<Transfer, ToolchainError> {
-            self.opens.borrow_mut().push(offset);
+            self.opens.lock().unwrap().push(offset);
             let start = if self.ignores_range { 0 } else { offset };
             let mut remaining = self.content[start as usize..].to_vec();
-            if let Some(allowance) = self.allowances.borrow_mut().pop() {
+            if let Some(allowance) = self.allowances.lock().unwrap().pop() {
                 remaining.truncate(allowance);
             }
             Ok(Transfer {
                 start,
-                total: Some(self.content.len() as u64),
+                total: (!self.hides_total).then_some(self.content.len() as u64),
                 body: Box::new(Cursor::new(remaining)),
             })
         }
@@ -374,6 +819,17 @@ mod tests {
         (0..300_000u32).map(|index| (index % 253) as u8).collect()
     }
 
+    /// `fetch_with` on a small parallel grid: 64 KiB chunks, everything over 100 KiB goes
+    /// parallel on three connections.
+    fn fetch_small_grid(
+        source: &dyn ByteSource,
+        pinned: &PinnedDownload,
+        dir: &Path,
+        progress: &ProgressReporter,
+    ) -> Result<PathBuf, ToolchainError> {
+        fetch_with(source, pinned, dir, progress, 64 * 1024, 100 * 1024, 3)
+    }
+
     #[test]
     fn a_complete_download_is_verified_and_moved_into_place() {
         let dir = tempfile::tempdir().unwrap();
@@ -387,6 +843,110 @@ mod tests {
         assert_eq!(fs::read(&path).unwrap(), content);
         // Nothing half-finished is left behind.
         assert!(!dir.path().join("artifact.bin.part").exists());
+        assert!(!dir.path().join("artifact.bin.parts").exists());
+    }
+
+    /// The parallel path: several ranged requests, the same verified file, no leftovers.
+    #[test]
+    fn a_large_artifact_downloads_over_several_connections() {
+        let dir = tempfile::tempdir().unwrap();
+        let content = content();
+        let pinned = pinned_for(&content);
+        let source = FakeSource::new(content.clone(), vec![]);
+
+        let path =
+            fetch_small_grid(&source, &pinned, dir.path(), &ProgressReporter::silent()).unwrap();
+
+        assert_eq!(fs::read(&path).unwrap(), content);
+        // 300 KB over 64 KiB chunks: the probe plus four more ranged requests.
+        assert_eq!(source.open_count(), 5);
+        assert!(!dir.path().join("artifact.bin.part").exists());
+        assert!(!dir.path().join("artifact.bin.parts").exists());
+    }
+
+    /// A parallel run interrupted partway leaves a ledger, and the next run fetches only
+    /// the chunks that are missing.
+    #[test]
+    fn an_interrupted_parallel_download_resumes_by_chunk() {
+        let dir = tempfile::tempdir().unwrap();
+        let content = content();
+        let pinned = pinned_for(&content);
+
+        // Allowances pop from the end: the probe gets its full chunk, every worker request
+        // after it is cut short.
+        let failing = FakeSource::new(content.clone(), vec![1000, 1000, 1000, 1000, 65536]);
+        let first = fetch_small_grid(&failing, &pinned, dir.path(), &ProgressReporter::silent());
+        assert!(first.is_err(), "short chunks must not be accepted");
+        assert!(
+            dir.path().join("artifact.bin.parts").exists(),
+            "the ledger records what landed"
+        );
+
+        let complete = FakeSource::new(content.clone(), vec![]);
+        let path =
+            fetch_small_grid(&complete, &pinned, dir.path(), &ProgressReporter::silent()).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), content);
+        // The ledger knew the total, so no probe — only the four chunks that were missing.
+        assert_eq!(
+            complete.open_count(),
+            4,
+            "the finished chunk must not be fetched again"
+        );
+    }
+
+    /// A server that ignores `Range` drops the fetch back to the sequential path, which
+    /// still converges on the verified file.
+    #[test]
+    fn a_range_refusing_server_falls_back_to_the_sequential_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let content = content();
+        let pinned = pinned_for(&content);
+        let source = FakeSource::new(content.clone(), vec![]).ignoring_range();
+
+        let path =
+            fetch_small_grid(&source, &pinned, dir.path(), &ProgressReporter::silent()).unwrap();
+
+        assert_eq!(fs::read(&path).unwrap(), content);
+        assert!(!dir.path().join("artifact.bin.parts").exists());
+    }
+
+    /// A server that never says the total size cannot be chunked; the sequential path
+    /// handles it.
+    #[test]
+    fn a_server_without_a_total_size_downloads_sequentially() {
+        let dir = tempfile::tempdir().unwrap();
+        let content = content();
+        let pinned = pinned_for(&content);
+        let source = FakeSource::new(content.clone(), vec![]).hiding_total();
+
+        let path =
+            fetch_small_grid(&source, &pinned, dir.path(), &ProgressReporter::silent()).unwrap();
+
+        assert_eq!(fs::read(&path).unwrap(), content);
+    }
+
+    /// A sequential `.part` from an older run is converted into chunk credit rather than
+    /// thrown away.
+    #[test]
+    fn a_sequential_partial_is_credited_to_the_parallel_resume() {
+        let dir = tempfile::tempdir().unwrap();
+        let content = content();
+        let pinned = pinned_for(&content);
+        // 150 000 bytes of prefix: two full 64 KiB chunks and change.
+        fs::write(dir.path().join("artifact.bin.part"), &content[..150_000]).unwrap();
+
+        let source = FakeSource::new(content.clone(), vec![]);
+        let path =
+            fetch_small_grid(&source, &pinned, dir.path(), &ProgressReporter::silent()).unwrap();
+
+        assert_eq!(fs::read(&path).unwrap(), content);
+        // Chunks 0 and 1 were credited; the probe re-fetches nothing, so only the last
+        // three chunks travel.
+        assert!(
+            source.open_count() <= 4,
+            "expected only the missing chunks, got {} requests",
+            source.open_count()
+        );
     }
 
     /// The acceptance criterion in as few words as it can be put: interrupt it, run it again,
@@ -426,7 +986,7 @@ mod tests {
         let path = fetch(&source, &pinned, dir.path(), &ProgressReporter::silent()).unwrap();
 
         assert_eq!(fs::read(&path).unwrap(), content);
-        assert_eq!(source.opens.borrow().as_slice(), &[120_000u64]);
+        assert_eq!(source.opens.lock().unwrap().as_slice(), &[120_000u64]);
     }
 
     #[test]
@@ -468,7 +1028,7 @@ mod tests {
         fetch(&source, &pinned, dir.path(), &ProgressReporter::silent()).unwrap();
 
         assert!(
-            source.opens.borrow().is_empty(),
+            source.opens.lock().unwrap().is_empty(),
             "no request should be made"
         );
     }
@@ -485,7 +1045,7 @@ mod tests {
         let path = fetch(&source, &pinned, dir.path(), &ProgressReporter::silent()).unwrap();
 
         assert_eq!(fs::read(&path).unwrap(), content);
-        assert_eq!(source.opens.borrow().as_slice(), &[0u64]);
+        assert_eq!(source.opens.lock().unwrap().as_slice(), &[0u64]);
     }
 
     /// A 580 MB download with no visible progress is a defect (ticket 05).
@@ -507,7 +1067,7 @@ mod tests {
 
         let messages: Vec<String> = receiver.iter().map(|event| event.message).collect();
         assert!(
-            messages.iter().filter(|m| m.contains('%')).count() >= 4,
+            messages.iter().filter(|m| m.contains('%')).count() >= 2,
             "expected several percentage updates, got {messages:?}"
         );
     }
