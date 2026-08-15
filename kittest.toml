@@ -1,0 +1,11 @@
+# egui_kittest snapshot settings. Found by walking up from the crate under test,
+# so this one file covers every crate in the workspace.
+#
+# Baselines land in <crate>/tests/snapshots/ and are committed and reviewed
+# (CODING_STANDARDS.md rule 15). The `.diff.png`/`.new.png` files written next to
+# them on failure are gitignored.
+output_path = "tests/snapshots"
+
+# Defaults from egui_kittest, stated explicitly so a later loosening is a visible diff.
+threshold = 0.6
+failed_pixel_count_threshold = 0

@@ -1,0 +1,80 @@
+# Ticket 10: CI builds the two single-file binaries from a clean checkout.
+#
+# The Linux binary is also verified locally on every change (AGENTS.md); the Windows binary
+# is built here and verified later, per the spec's platform constraint ("Windows and
+# other-distro verification is currently unavailable locally; it arrives later via CI
+# runners"). The fast suite runs on the Linux job — it needs `git` for the fixture
+# repositories (a property of the fixtures, not of the installer; AGENTS.md), which the
+# runners have.
+#
+# `--ignored` tests (real downloads, real compiles) never run here.
+
+name: build
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+# The default workflow token is read-only; creating the Release and attaching the
+# binaries needs write access to the repository contents.
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain (pinned by rust-toolchain.toml)
+        run: rustup show
+      # Compiled dependencies survive between runs — the difference between ~15 minutes
+      # cold and a few minutes warm.
+      - uses: Swatinem/rust-cache@v2
+      # The UI snapshot tests render through wgpu, and the runners have no GPU — Mesa's
+      # lavapipe provides a software Vulkan adapter ("No adapter found" otherwise).
+      - name: Software GPU for the snapshot tests
+        run: sudo apt-get update && sudo apt-get install -y libvulkan1 mesa-vulkan-drivers
+      - name: Fast suite
+        run: cargo test --workspace --locked
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Build
+        run: cargo build --release --locked -p civ5vp-installer
+      - uses: actions/upload-artifact@v4
+        with:
+          name: civ5vp-installer-linux-x86_64
+          path: target/release/civ5vp-installer
+      # On a tag build, the binary joins the GitHub Release — the page the README links to
+      # and the update ping watches. `gh` is preinstalled on the runners.
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp target/release/civ5vp-installer civ5vp-installer-linux-x86_64
+          gh release create "${GITHUB_REF_NAME}" --verify-tag --title "${GITHUB_REF_NAME}" --generate-notes || true
+          gh release upload "${GITHUB_REF_NAME}" civ5vp-installer-linux-x86_64 --clobber
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain (pinned by rust-toolchain.toml)
+        run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release --locked -p civ5vp-installer
+      - uses: actions/upload-artifact@v4
+        with:
+          name: civ5vp-installer-windows-x86_64
+          path: target/release/civ5vp-installer.exe
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          cp target/release/civ5vp-installer.exe civ5vp-installer-windows-x86_64.exe
+          gh release create "${GITHUB_REF_NAME}" --verify-tag --title "${GITHUB_REF_NAME}" --generate-notes || true
+          gh release upload "${GITHUB_REF_NAME}" civ5vp-installer-windows-x86_64.exe --clobber

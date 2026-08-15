@@ -1,0 +1,15 @@
+[package]
+name = "civ5vp-core"
+description = "Headless Core for the Civ 5 VP Installer: plan, execute, deploy."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+# No dependencies. Deliberate: the Core is plain std, and CODING_STANDARDS.md rule 1
+# makes the absence of egui/eframe here the mechanism that enforces the seam.
+[dependencies]
+
+[dev-dependencies]
+# Temp MODS/DLC/Text directories for the Core-seam tests (rule 12). Pure Rust.
+tempfile = "3.27"
