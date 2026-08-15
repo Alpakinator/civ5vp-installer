@@ -315,7 +315,11 @@ fn stage_ui(
     }
 
     // A mod file named like a UI entry file replaces it, from any depth — the order is the
-    // mods' activation order, matching `CopyModFiles` running per mod.
+    // mods' activation order, matching `CopyModFiles` running per mod. The staged copy is
+    // then deleted: the game's VFS keys files by bare name, so a surviving duplicate would
+    // race the hooked `UI/` copy for the name, and a pack whose `Mods/` copy wins loses
+    // every addin hook. (The in-game Maker leaves the duplicate in; players delete it by
+    // hand. The `UI/` copy is a superset, so deleting here can only remove the ambiguity.)
     for staged in staged_mods {
         let mut found = Vec::new();
         find_files_named(staged, &UI_ENTRY_FILES.map(|(name, _)| name), &mut found)?;
@@ -324,6 +328,7 @@ fn stage_ui(
                 continue;
             };
             tree::copy_file(&file, &ui.join(name))?;
+            tree::remove_file_if_present(&file)?;
         }
     }
 

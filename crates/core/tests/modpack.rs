@@ -110,10 +110,18 @@ fn a_modpack_deployment_builds_the_pack_and_leaves_mods_alone() {
         "the standard exclusions apply inside the pack too"
     );
     // The UI folder: base copies, the mod's own CityView.lua over the base one, and the
-    // entry-point hook appended to InGame.lua.
-    assert_eq!(
-        game.read("DLC/VP_MODPACK/UI/CityView.lua"),
-        game.read("DLC/VP_MODPACK/Mods/(1) Community Patch/LUA/CityView.lua"),
+    // entry-point hook appended to InGame.lua. The mod's staged copy is deleted — two
+    // files with one bare name collide in the game's VFS, and the hookless one could win.
+    assert!(
+        game.read("DLC/VP_MODPACK/UI/CityView.lua")
+            .contains("print(\"CityView\")")
+    );
+    assert!(
+        !game
+            .game_root()
+            .join("DLC/VP_MODPACK/Mods/(1) Community Patch/LUA/CityView.lua")
+            .exists(),
+        "the staged duplicate of a UI entry file must be deleted"
     );
     let in_game = game.read("DLC/VP_MODPACK/UI/InGame.lua");
     assert!(in_game.starts_with("-- base InGame.lua"));
