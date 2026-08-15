@@ -1,0 +1,19 @@
+<Mod id="8411a7a8-dad3-4622-a18e-fcc18324c799" version="1">
+  <Properties>
+    <Name>(2) Vox Populi</Name>
+  </Properties>
+  <Files>
+    <File md5="00000000000000000000000000000000" import="0">Balance Changes\BalanceChanges.sql</File>
+    <File md5="00000000000000000000000000000000" import="1">LUA\PlotHelpManager.lua</File>
+  </Files>
+  <Actions>
+    <OnModActivated>
+      <UpdateDatabase>Balance Changes/BalanceChanges.sql</UpdateDatabase>
+    </OnModActivated>
+  </Actions>
+  <EntryPoints>
+    <EntryPoint type="InGameUIAddin" file="LUA/PlotHelpManager.lua">
+      <Name>PlotHelpManager</Name>
+    </EntryPoint>
+  </EntryPoints>
+</Mod>

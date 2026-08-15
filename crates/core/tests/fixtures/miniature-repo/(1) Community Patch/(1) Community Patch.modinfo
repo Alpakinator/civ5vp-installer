@@ -1,0 +1,20 @@
+<Mod id="d1b6328c-ff44-4b0d-aad7-c657f83610cd" version="1">
+  <Properties>
+    <Name>(1) Community Patch</Name>
+  </Properties>
+  <Files>
+    <File md5="00000000000000000000000000000000" import="0">Core Files\Core Values\DefinesChanges.sql</File>
+    <File md5="00000000000000000000000000000000" import="0">Core Files\LUA\CoreHelper.lua</File>
+    <File md5="00000000000000000000000000000000" import="0">CvGameCore_Expansion2.dll</File>
+    <File md5="00000000000000000000000000000000" import="0">Kit\ReadMe.txt</File>
+    <File md5="00000000000000000000000000000000" import="1">LUA\CityView.lua</File>
+  </Files>
+  <Actions>
+    <OnModActivated>
+      <UpdateDatabase>Core Files/Core Values/DefinesChanges.sql</UpdateDatabase>
+      <!-- A dangling reference, exactly as upstream ships one: (1) Community Patch (v 151)
+           renamed CoreGameOptionTextChanges.xml to .sql and left the action behind. -->
+      <UpdateDatabase>Core Files\Text\RenamedLongAgo.xml</UpdateDatabase>
+    </OnModActivated>
+  </Actions>
+</Mod>

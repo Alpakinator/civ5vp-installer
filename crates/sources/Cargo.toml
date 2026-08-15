@@ -1,0 +1,29 @@
+[package]
+name = "civ5vp-sources"
+description = "Installation Sources for the Civ 5 VP Installer: the Upstream Cache and the Local Repo."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+civ5vp-core = { path = "../core" }
+# The unofficial-versions list (ticket 13) is one GitHub compare-API call: the Upstream
+# Cache is a shallow clone with no history to walk, so the commit list has to come over
+# HTTP. ureq is the same client the installer's update ping already uses; serde_json
+# because commit messages contain every escape a hand parser would fumble.
+ureq = { version = "3.3", default-features = false, features = ["rustls"] }
+serde_json = "1"
+gix = { version = "0.74", default-features = false, features = [
+    "blocking-http-transport-reqwest-rust-tls",
+    "max-performance-safe",
+    "zlib-rs",
+    "worktree-mutation",
+    "revision",
+] }
+
+[dev-dependencies]
+tempfile = "3.27"
+# The fixture repositories the fast suite fetches from are built with the same library the
+# installer uses, so no test needs the `git` CLI to author a commit, a tag, or a branch.
+gix = { version = "0.74", default-features = false }

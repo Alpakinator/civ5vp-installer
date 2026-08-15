@@ -1,0 +1,47 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# egui_kittest snapshot artifacts — baselines (*.png) are committed and reviewed,
+# the failure output next to them is not
+**/*.diff.png
+**/*.new.png
+**/*.old.png
+
+# Local screenshot output from `cargo run -- --screenshot`
+/screenshots/
+
+# Editors / OS. No trailing slash: under the agent sandbox these appear as character
+# devices rather than directories, and a trailing slash would not match them.
+/.idea
+/.vscode
+*.swp
+.DS_Store
+
+# .claude/: only the shared project settings are tracked. Everything else in here is
+# machine-local (settings.local.json) or an agent-sandbox mount that surfaces as an
+# untracked entry — keep both out of `git add -A`.
+/.claude/*
+!/.claude/settings.json
+
+# Agent-sandbox mounts of the user's shell environment, not project files
+/.bash_profile
+/.bashrc
+/.profile
+/.zprofile
+/.zshrc
+/.gitconfig
+/.ripgreprc
+# Also mounts today. Delete these two lines if the project ever gains real git
+# submodules or a committed MCP server config.
+/.gitmodules
+/.mcp.json
+
+# Local working notes and reference images — not part of the published repository.
+/.scratch/
+/docs/ui-reference/art_for_inspiration/
+
+# AI-workflow files — local development tooling, not part of the published repository.
+/AGENTS.md
+/.claude/
+/docs/agents/
