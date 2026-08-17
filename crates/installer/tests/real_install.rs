@@ -275,3 +275,115 @@ fn a_real_version_installs_end_to_end_with_a_genuinely_built_dll() {
         started.elapsed()
     );
 }
+
+/// The Replaced File, end to end through the real Core: fetch LuaJIT, build it with the real
+/// toolchain, replace the engine, then give the original back.
+///
+/// The game folders are throwaway, but the Game Installation they point at holds real copies
+/// of Civilization V's own binaries — the build refuses to hand back an engine it has not
+/// checked against those, so a fixture of empty files would not exercise the thing worth
+/// proving. Nothing under `CIV5_GAME_DIR` is written; it is only read from.
+///
+/// ```bash
+/// CIV5VP_TOOLCHAIN_CACHE=~/.local/share/civ5vp-installer/toolchain-cache \
+/// CIV5VP_DLL_SOURCE_ROOT=/path/to/Community-Patch-DLL \
+/// CIV5_GAME_DIR="/path/to/Sid Meier's Civilization V" \
+///   cargo test --release -p civ5vp-installer --test real_install -- --ignored --nocapture \
+///   luajit_is_built_deployed_and_restored
+/// ```
+#[test]
+#[ignore = "fetches LuaJIT and compiles it and the DLL; needs a real Civilization V"]
+fn luajit_is_built_deployed_and_restored() {
+    let (Some(sources), Some(real_game)) = (
+        std::env::var_os("CIV5VP_DLL_SOURCE_ROOT").map(PathBuf::from),
+        std::env::var_os("CIV5_GAME_DIR").map(PathBuf::from),
+    ) else {
+        println!("set CIV5VP_DLL_SOURCE_ROOT and CIV5_GAME_DIR to run");
+        return;
+    };
+
+    let store_root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("luajit-store");
+    if let Some(cache) = std::env::var_os("CIV5VP_TOOLCHAIN_CACHE") {
+        fs::create_dir_all(&store_root).unwrap();
+        let link = store_root.join("toolchain-cache");
+        if !link.exists() {
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(PathBuf::from(&cache), &link).unwrap();
+        }
+    }
+
+    let game_root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("luajit-game");
+    let _ = fs::remove_dir_all(&game_root);
+    let folders = GameFolders {
+        mods: game_root.join("Documents/MODS"),
+        dlc: game_root.join("Game/Assets/DLC"),
+        text: game_root.join("Documents/Text"),
+        game_root: game_root.join("Game"),
+    };
+    for dir in [&folders.mods, &folders.dlc, &folders.text] {
+        fs::create_dir_all(dir).unwrap();
+    }
+
+    // The binaries the engine is checked against, plus the engine it will replace.
+    for name in [
+        "CivilizationV_DX11.exe",
+        "CvGameCoreDLLFinal Release.dll",
+        "CvGameDatabaseWin32Final Release.dll",
+        "lua51_Win32.dll",
+    ] {
+        fs::copy(real_game.join(name), folders.game_root.join(name))
+            .unwrap_or_else(|error| panic!("copying {name} out of the real game: {error}"));
+    }
+    let engine = folders.game_root.join("lua51_Win32.dll");
+    let stock = fs::read(&engine).unwrap();
+    assert!(
+        String::from_utf8_lossy(&stock).contains("Lua 5.1"),
+        "this test has to start from the stock engine"
+    );
+
+    let core = wiring::core_at(&store_root);
+    let configuration = InstallConfiguration {
+        source: InstallationSource::LocalRepo {
+            path: PathBuf::from(sources),
+        },
+        flavor: Flavor::CommunityPatch,
+        forty_three_civs: FortyThreeCivs::Disabled,
+        build_configuration: BuildConfiguration::Release,
+        install_mode: InstallMode::Mods,
+        extra_mods: Vec::new(),
+        luajit: LuaJitEngine::LuaJit,
+    };
+
+    let plan = core.plan(&configuration, &folders).unwrap_or_else(|error| {
+        panic!("{}\n  detail: {}", error.user_message(), error.log_detail())
+    });
+    let started = std::time::Instant::now();
+    let outcome = core
+        .execute(&plan, &ProgressReporter::silent())
+        .unwrap_or_else(|error| {
+            panic!("{}\n  detail: {}", error.user_message(), error.log_detail())
+        });
+    println!("LuaJIT deployed in {:?}", started.elapsed());
+
+    assert!(outcome.luajit_deployed);
+    let replaced = fs::read(&engine).unwrap();
+    assert!(
+        String::from_utf8_lossy(&replaced).contains("LuaJIT"),
+        "the engine in the game should now be LuaJIT"
+    );
+
+    let uninstalled = core
+        .uninstall(&folders, &ProgressReporter::silent())
+        .unwrap_or_else(|error| {
+            panic!("{}\n  detail: {}", error.user_message(), error.log_detail())
+        });
+    assert_eq!(
+        uninstalled.engine_restored,
+        civ5vp_core::Restored::FromBackup
+    );
+    assert_eq!(
+        fs::read(&engine).unwrap(),
+        stock,
+        "Uninstall must give the player their engine back byte for byte"
+    );
+}
