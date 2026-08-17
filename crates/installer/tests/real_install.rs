@@ -343,9 +343,7 @@ fn luajit_is_built_deployed_and_restored() {
 
     let core = wiring::core_at(&store_root);
     let configuration = InstallConfiguration {
-        source: InstallationSource::LocalRepo {
-            path: PathBuf::from(sources),
-        },
+        source: InstallationSource::LocalRepo { path: sources },
         flavor: Flavor::CommunityPatch,
         forty_three_civs: FortyThreeCivs::Disabled,
         build_configuration: BuildConfiguration::Release,
