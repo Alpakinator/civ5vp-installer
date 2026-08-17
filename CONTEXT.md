@@ -46,7 +46,9 @@ A folder that upstream has renamed is Claimed under **every** name it has gone b
 
 **Claimed Files** — the exact set of individual files the installer owns, in folders it does not own: `VPUI_tips_en_us.xml` in the Text Folder. A Claimed Folder is replaced wholesale, which is what makes Sync exact; that is not available in a folder the game and other mods also write to, so those files are named one by one instead.
 
-Together the Claimed Folders and Claimed Files are everything the installer may write, move, or delete. Nothing outside them is ever touched, with one exception: the game's `cache` folder, which is cleared after every Deployment.
+**Replaced File** — a file belonging to the *game* that the installer overwrites, having first copied the original into the App Data Store; Uninstall puts that copy back. The only one is `lua51_Win32.dll`, the game's Lua engine, in the Game Installation root. Always opt-in, never the default, and the backup is taken once so that a second Deployment cannot save the replacement over the original (ADR-0006).
+
+Together the Claimed Folders and Claimed Files are everything the installer may write, move, or delete, with two exceptions: the game's `cache` folder, which is cleared after every Deployment, and the Replaced File.
 
 **Sync** — how Deployment treats Claimed Folders: their contents are made to match the Install Configuration exactly (stale files deleted), and Claimed Folders not in the configuration are removed. After every Deployment the game's `cache` folder is cleared; `ModUserData` is preserved.
 

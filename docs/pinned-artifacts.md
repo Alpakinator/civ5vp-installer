@@ -188,3 +188,25 @@ These appear in the reference repo's documentation for the **Windows / Visual St
 ## 6. Mod sources
 
 The Community Patch / Vox Populi sources come from the Upstream Cache — an incremental clone of `LoneGazebo/Community-Patch-DLL` (~4.5 GB of history; see ticket 04 for the transfer budget) — or from a Local Repo. No other network source exists.
+
+## 7. LuaJIT — the replacement Lua engine (only when opted into)
+
+Fetched and built only when the player turns the LuaJIT engine on; a stock-engine install never
+touches it. Reasoning in **ADR-0006**.
+
+| | |
+| --- | --- |
+| **Repository** | `https://github.com/LuaJIT/LuaJIT.git` |
+| **Commit** | `1edc3e52b67eaf6ce5f809be8e17d6862594b8bc` (branch `v2.1`) |
+| **Built as** | a 32-bit `i386-pc-windows-msvc` DLL, deployed as `lua51_Win32.dll` |
+| **Never built with** | `LUAJIT_ENABLE_LUA52COMPAT` |
+| **Licence** | MIT — redistributable |
+
+Pinned by commit rather than by tag or tarball, which is a stronger pin than anything above:
+GitHub's generated archives are not byte-stable, so their checksums cannot be relied on, and
+`v2.1` is a *branch* that moves. A commit SHA needs no separate checksum — it is the content
+check.
+
+`LUAJIT_ENABLE_LUA52COMPAT` is listed here rather than left to the build code because it is a pin
+in the same sense the others are: Civilization V and Vox Populi are written against Lua 5.1, and
+5.2 semantics would only add divergence from the engine the scripts were tested on.

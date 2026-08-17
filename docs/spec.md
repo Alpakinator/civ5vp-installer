@@ -52,6 +52,7 @@ A single-file executable — **Civ 5 VP Installer** — for Windows and Linux, s
 32. As a mod developer, I want to redeploy changed Lua/SQL while the game is running, so that I can hot-reload what the game permits; the installer must not block on a running game.
 33. As a mod developer, I want the source file list read from the project file at the selected Version, so that builds don't break when upstream adds a source file.
 34. As a Windows user on a locked-down machine, I want the installer to run as a lone exe without installation or admin rights, so that it works anywhere.
+35. As a player who wants a faster script engine, I want to opt into LuaJIT, so that map generation and the interface are quicker — and I want my original game file put back when I uninstall.
 
 ## Implementation Decisions
 
@@ -61,7 +62,7 @@ A single-file executable — **Civ 5 VP Installer** — for Windows and Linux, s
 - **DLL**: always built locally, never deployed from the repository (ADR-0001). clang-cl + lld with the settings proven in the docker-branch build (other clang configurations produce DLLs the game rejects) — that branch is `docker` on the **`Alpakinator/Community-Patch-DLL` fork**, not upstream, and the concrete URLs, checksum, ISO members, clang version and Linux fix-ups are recorded in `docs/pinned-artifacts.md`. Toolchain Bootstrap on first build: pinned portable LLVM plus Windows SDK 7.0 / VC9 CRT obtained from the pinned archive.org ISO and extracted **in-process** (UDF + MSI + CAB parsing inside the installer; no wine, msitools, or 7-Zip), with case-folding fixes applied on Linux. Build orchestration is ported into the installer — no Python. The source list comes from the DLL's project file at the selected Version (`CvGameCoreDLL_Expansion2/VoxPopuli.vcxproj` — earlier drafts said "`.civ5proj`", but those files are the mods' ModBuddy projects; the C++ sources are listed in the vcxproj). Compilation is incremental within a build; whole builds are skipped via the Build Fingerprint (input hash + deployed-DLL hash sidecar; both must match).
 - **43 Civs**: DLL compiled with the 43-civ setting and placed in `(1)` as the only deployed DLL; `(3b)` receives only its `.modinfo` and `AdvancedSetup.lua`, with the modinfo regenerated to match deployed contents.
 - **EUI**: legal only with Vox Populi. Deploys `UI_bc1` as DLC, swaps in `(3a)`, strips `LUA/` from `(1)` and `(2)`.
-- **Deployment**: strict ordering fetch → build → Sync; failure at any stage aborts before the game is touched. Sync makes Claimed Folders exactly match the configuration (stale files deleted, unneeded Claimed Folders removed) and never touches anything else. Every Vox Populi configuration also deploys the tips XML to the Text Folder. Game `cache` cleared after each Deployment; `ModUserData` preserved. No running-game guard — deploying while the game runs is permitted deliberately. Uninstall removes all Claimed Folders and clears `cache`.
+- **Deployment**: strict ordering fetch → build → Sync; failure at any stage aborts before the game is touched. Sync makes Claimed Folders exactly match the configuration (stale files deleted, unneeded Claimed Folders removed) and never touches anything else. Every Vox Populi configuration also deploys the tips XML to the Text Folder. Game `cache` cleared after each Deployment; `ModUserData` preserved. No running-game guard — deploying while the game runs is permitted deliberately. Uninstall removes all Claimed Folders and clears `cache`. When the LuaJIT engine is enabled, Sync also replaces `lua51_Win32.dll` in the Game Installation root, having first copied the original into the App Data Store; this is the only file outside the Claimed set that a Deployment writes, and Uninstall restores it from that copy (ADR-0006).
 - **Detection**: Windows — known-folder API for Documents, Steam registry + `libraryfolders.vdf` for the game. Linux — Steam library parsing plus the Proton prefix for the Documents side; the native Linux port is detected only to be refused with an explanation. Manual picker with validation as universal fallback.
 - **Storage**: everything (Upstream Cache, Toolchain Cache, settings, logs) in the platform app-data location; the executable is a lone file. UI shows store location/size and offers a clear-data button.
 - **Art**: original artwork in Civ5's art-deco language, game assets used as visual reference only; Jost embedded (ADR-0003, OFL).
@@ -86,6 +87,7 @@ A single-file executable — **Civ 5 VP Installer** — for Windows and Linux, s
 - Portable/exe-adjacent storage mode (explicitly reversed in favor of app-data).
 - Installer UI localization.
 - Windows/other-distro CI verification in v1 (constraint accepted; revisited when the repo gains CI).
+- Replacing the game's SQLite, or making the game 64-bit: neither is possible. SQLite is statically linked with no exported C API, and the game ships only 32-bit executables (already `LARGE_ADDRESS_AWARE`).
 
 ## Further Notes
 
