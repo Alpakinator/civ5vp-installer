@@ -411,3 +411,148 @@ fn vox_populi_is_a_legal_configuration() {
     core.plan(&configuration, &game.folders())
         .expect("Vox Populi with EUI is a legal configuration");
 }
+
+// ── The Replaced File (ADR-0006) ─────────────────────────────────────────────
+
+/// The stock engine, as a real Game Installation has it before anything is installed.
+fn with_a_stock_engine(game: &GameFixture) -> PathBuf {
+    let engine = game.folders().game_root.join("lua51_Win32.dll");
+    std::fs::write(&engine, b"stock Lua 5.1.4").expect("the stock engine");
+    engine
+}
+
+fn with_luajit() -> InstallConfiguration {
+    InstallConfiguration {
+        luajit: LuaJitEngine::LuaJit,
+        ..community_patch_only()
+    }
+}
+
+/// The default must leave the engine alone. Replacing a file belonging to the game is only
+/// ever something the player asked for.
+#[test]
+fn the_stock_engine_is_untouched_when_luajit_is_not_chosen() {
+    let game = GameFixture::new();
+    let engine = with_a_stock_engine(&game);
+    let core = core_over(&game);
+
+    let plan = core
+        .plan(&community_patch_only(), &game.folders())
+        .expect("a plan");
+    let outcome = core
+        .execute(&plan, &ProgressReporter::silent())
+        .expect("a Deployment");
+
+    assert!(!outcome.luajit_deployed);
+    assert_eq!(
+        std::fs::read(&engine).expect("the engine"),
+        b"stock Lua 5.1.4"
+    );
+}
+
+/// Opting in replaces the engine, and Uninstall gives the player their file back byte for
+/// byte. That round trip is the whole promise of a Replaced File.
+#[test]
+fn luajit_replaces_the_engine_and_uninstall_puts_the_original_back() {
+    let game = GameFixture::new();
+    let engine = with_a_stock_engine(&game);
+    let core = core_over(&game);
+
+    let plan = core.plan(&with_luajit(), &game.folders()).expect("a plan");
+    let outcome = core
+        .execute(&plan, &ProgressReporter::silent())
+        .expect("a Deployment");
+
+    assert!(outcome.luajit_deployed);
+    assert_eq!(
+        std::fs::read(&engine).expect("the engine"),
+        support::LUAJIT_MARKER.as_bytes(),
+        "the engine should now be the built one"
+    );
+
+    let uninstalled = core
+        .uninstall(&game.folders(), &ProgressReporter::silent())
+        .expect("an Uninstall");
+
+    assert_eq!(
+        uninstalled.engine_restored,
+        civ5vp_core::Restored::FromBackup
+    );
+    assert_eq!(
+        std::fs::read(&engine).expect("the engine"),
+        b"stock Lua 5.1.4",
+        "Uninstall must restore the engine the game shipped with"
+    );
+}
+
+/// The back-up-once rule, observed from outside: after two Deployments the saved copy is
+/// still the *stock* engine, so Uninstall restores that rather than the installer's own.
+#[test]
+fn a_second_deployment_does_not_save_luajit_over_the_original() {
+    let game = GameFixture::new();
+    let engine = with_a_stock_engine(&game);
+    let core = core_over(&game);
+
+    for _ in 0..2 {
+        let plan = core.plan(&with_luajit(), &game.folders()).expect("a plan");
+        core.execute(&plan, &ProgressReporter::silent())
+            .expect("a Deployment");
+    }
+
+    core.uninstall(&game.folders(), &ProgressReporter::silent())
+        .expect("an Uninstall");
+
+    assert_eq!(
+        std::fs::read(&engine).expect("the engine"),
+        b"stock Lua 5.1.4",
+        "the second Deployment must not have backed up its own engine"
+    );
+}
+
+/// The game is not touched until everything that can fail has succeeded — and that now
+/// includes the LuaJIT build, which happens after the DLL is already built.
+#[test]
+fn a_failing_luajit_build_leaves_the_game_untouched() {
+    let game = GameFixture::new();
+    let engine = with_a_stock_engine(&game);
+    let core = Core::new(
+        Box::new(FixtureSourceProvider::new(miniature_repo())),
+        Box::new(support::FailingLuaJitToolchainRunner),
+        Box::new(FixtureModpackAssembler::ignored()),
+        game.work_dir(),
+    );
+
+    let plan = core.plan(&with_luajit(), &game.folders()).expect("a plan");
+    let error = core
+        .execute(&plan, &ProgressReporter::silent())
+        .expect_err("the Deployment must fail");
+
+    assert!(error.user_message().contains("LuaJIT"), "{error:?}");
+    assert_eq!(
+        std::fs::read(&engine).expect("the engine"),
+        b"stock Lua 5.1.4",
+        "a failed engine build must not have changed the game"
+    );
+    assert_eq!(
+        game.files(),
+        vec!["lua51_Win32.dll".to_owned()],
+        "nothing at all should have been deployed"
+    );
+}
+
+/// A player who cleared the App Data Store between installing and uninstalling has no saved
+/// original. That is reported, not treated as a failure — everything else still comes out.
+#[test]
+fn uninstalling_without_a_backup_reports_it_rather_than_failing() {
+    let game = GameFixture::new();
+    let core = core_over(&game);
+
+    let uninstalled = core
+        .uninstall(&game.folders(), &ProgressReporter::silent())
+        .expect("an Uninstall with nothing to restore still succeeds");
+
+    assert_eq!(
+        uninstalled.engine_restored,
+        civ5vp_core::Restored::NothingToRestore
+    );
+}

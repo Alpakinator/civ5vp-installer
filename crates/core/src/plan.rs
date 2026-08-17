@@ -133,6 +133,14 @@ impl Plan {
         self.configuration.install_mode == InstallMode::Modpack
     }
 
+    /// Does this Deployment replace the game's Lua engine?
+    ///
+    /// Independent of Install Mode: the engine is a file of the game, not of any mod, so a
+    /// Modpack Deployment replaces it exactly as a Mods Deployment does.
+    pub(crate) fn luajit(&self) -> bool {
+        self.configuration.luajit == crate::LuaJitEngine::LuaJit
+    }
+
     /// Does this deployment go straight into the game, rather than into the Modpack stage?
     ///
     /// In Mods mode, every deployment does. In Modpack mode the MODS-target folders are

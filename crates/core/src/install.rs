@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 
 use crate::BUILT_DLL_FILE_NAME;
 use crate::boundaries::{
-    BuildRequest, MaterializedSource, ModpackAssembler, SourceProvider, ToolchainRunner,
+    BuildRequest, LuaJitBuildRequest, MaterializedSource, ModpackAssembler, SourceProvider,
+    ToolchainRunner,
 };
 use crate::claimed::{ClaimedFile, ClaimedFolder, GameFolders};
 use crate::configuration::InstallConfiguration;
@@ -12,7 +13,23 @@ use crate::error::{InstallError, SourceItem};
 use crate::fingerprint::{BuildFingerprint, FINGERPRINT_FILE_NAME, fnv1a64_of_file};
 use crate::plan::Plan;
 use crate::progress::{ProgressReporter, Stage};
+use crate::replaced::{BackupStore, ReplacedFile, Restored};
 use crate::tree;
+
+/// The Replaced File's name, in the Core's build directory before it is deployed.
+const LUA_ENGINE_FILE_NAME: &str = "lua51_Win32.dll";
+
+/// Everything a Deployment produced before Sync is allowed to start.
+///
+/// Grouped rather than passed one by one because that is what they have in common: each is
+/// something that could have failed, and Sync runs only once none of them did.
+struct Built<'a> {
+    dll: &'a Path,
+    /// The staged Modpack, in Modpack mode only.
+    modpack: Option<&'a Path>,
+    /// The LuaJIT engine, when the configuration opted into it.
+    luajit: Option<&'a Path>,
+}
 
 /// What a finished Deployment did.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,6 +42,8 @@ pub struct InstallOutcome {
     pub deployed_files: Vec<ClaimedFile>,
     /// Where the Built DLL ended up in the game.
     pub built_dll: PathBuf,
+    /// Whether the game's Lua engine was replaced with LuaJIT by this Deployment.
+    pub luajit_deployed: bool,
 }
 
 /// What an Uninstall removed.
@@ -34,6 +53,9 @@ pub struct UninstallOutcome {
     pub removed: Vec<ClaimedFolder>,
     /// Claimed Files that were present and have been removed, in a fixed order.
     pub removed_files: Vec<ClaimedFile>,
+    /// Whether the game's original Lua engine was put back, and whether there was one to
+    /// put back at all.
+    pub engine_restored: Restored,
 }
 
 /// The headless Core.
@@ -140,14 +162,48 @@ impl Core {
         } else {
             None
         };
+        // Built before Sync for the same reason the DLL and the Modpack are: the game is not
+        // touched until everything that can fail has succeeded. A LuaJIT build that fails —
+        // no wine, a broken download, an engine missing a symbol the game needs — must leave
+        // the player's engine exactly where it was.
+        let built_luajit = if plan.luajit() {
+            let luajit_source = self
+                .source_provider
+                .materialize_luajit(progress)
+                .map_err(InstallError::Fetch)?;
+            let build_dir = self.work_dir.join("build");
+            tree::create_dir_all(&build_dir)?;
+            let output_path = build_dir.join(LUA_ENGINE_FILE_NAME);
+            self.toolchain_runner
+                .build_luajit(
+                    &LuaJitBuildRequest {
+                        source_root: luajit_source,
+                        game_root: plan.folders.game_root.clone(),
+                        output_path: output_path.clone(),
+                    },
+                    progress,
+                )
+                .map_err(InstallError::Build)?;
+            Some(output_path)
+        } else {
+            None
+        };
         self.sync(
             plan,
             &source.root,
-            &built_dll,
-            staged_modpack.as_deref(),
+            &Built {
+                dll: &built_dll,
+                modpack: staged_modpack.as_deref(),
+                luajit: built_luajit.as_deref(),
+            },
             &fingerprint,
             progress,
         )
+    }
+
+    /// Where the originals of Replaced Files are kept, inside the App Data Store.
+    fn backups(&self) -> BackupStore {
+        BackupStore::new(self.work_dir.join("backups"))
     }
 
     /// The deployed DLL, brought back into the build directory — if and only if the recorded
@@ -329,11 +385,15 @@ impl Core {
         &self,
         plan: &Plan,
         source_root: &Path,
-        built_dll: &Path,
-        staged_modpack: Option<&Path>,
+        built: &Built<'_>,
         fingerprint: &BuildFingerprint,
         progress: &ProgressReporter,
     ) -> Result<InstallOutcome, InstallError> {
+        let Built {
+            dll: built_dll,
+            modpack: staged_modpack,
+            luajit: built_luajit,
+        } = *built;
         progress.report(Stage::Sync, "Installing into the game.");
 
         // Resolved before a single deletion, not between them. `fetch` has already checked the
@@ -462,6 +522,22 @@ impl Core {
             );
         }
 
+        // The Replaced File, last of all: it is the one write outside the Claimed set
+        // (ADR-0006), so it happens only once everything the installer owns is already right.
+        if let Some(built) = built_luajit {
+            let destination = ReplacedFile::LuaEngine.path_in(&plan.folders);
+            // Only from the game's own copy, and only the first time. By the second Deployment
+            // the file sitting there is the installer's own engine, and saving that would
+            // destroy the only copy of the original.
+            self.backups()
+                .back_up_once(ReplacedFile::LuaEngine, &destination)?;
+            tree::copy_file(built, &destination)?;
+            progress.report(
+                Stage::Sync,
+                "Installed the LuaJIT engine. Your original was saved.",
+            );
+        }
+
         clear_game_cache(&plan.folders, progress)?;
 
         Ok(InstallOutcome {
@@ -469,6 +545,7 @@ impl Core {
             removed,
             deployed_files: plan.files.clone(),
             built_dll: dll_destination,
+            luajit_deployed: built_luajit.is_some(),
         })
     }
 
@@ -509,12 +586,25 @@ impl Core {
             }
         }
 
+        // Unconditional, and deliberately so: Uninstall is not given a configuration, so it
+        // cannot know whether the engine was ever replaced. Leaving a replaced engine behind
+        // would make "restoring an unmodded game" untrue, and restoring when nothing was
+        // replaced costs a `is_file` check that answers no.
+        let engine_restored = self.backups().restore(
+            ReplacedFile::LuaEngine,
+            &ReplacedFile::LuaEngine.path_in(folders),
+        )?;
+        if engine_restored == Restored::FromBackup {
+            progress.report(Stage::Sync, "Restored the game's original Lua engine.");
+        }
+
         clear_game_cache(folders, progress)?;
         progress.report(Stage::Sync, "Your game is back to how it was.");
 
         Ok(UninstallOutcome {
             removed,
             removed_files,
+            engine_restored,
         })
     }
 }
