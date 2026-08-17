@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use civ5vp_core::{AppDataStore, SearchLocations};
+use civ5vp_core::{AppDataStore, LuaJitEngine, SearchLocations};
 use civ5vp_installer::{InstallerApp, Screen, placeholder};
 use egui_kittest::kittest::Queryable as _;
 use egui_kittest::{Harness, SnapshotResults};
@@ -392,7 +392,11 @@ fn picking_the_modpack_mode_builds_a_modpack_and_is_remembered() {
         .click();
     harness.step();
     harness.get_by_label("My Modmod").click();
-    harness.get_by_label("Install").click();
+    // Modpack mode draws the longest page there is — its explanation, plus a row for every
+    // mod the player could bake in — so at the design-minimum window size Install sits below
+    // the fold. The page scrolls by design, so this presses the button the way a screen
+    // reader does, through the accessibility tree, rather than by aiming at a pixel.
+    harness.get_by_label("Install").click_accesskit();
     wait_for_the_install_to_finish(&mut harness);
 
     let pack = game.game_folder().join("Assets/DLC/VP_MODPACK");
@@ -533,6 +537,65 @@ fn a_flavor_chosen_before_anything_else_is_remembered() {
         is_ticked(&mut next, "43 Civs — room for 43 civilizations on a map"),
         "and so should the toggle",
     );
+}
+
+/// The engine choice reaches the Core, and the default leaves the game's engine alone.
+///
+/// The configuration is read back out of the App Data Store rather than out of the app,
+/// because that is the same `InstallConfiguration` the shell hands to a Deployment — the
+/// remembered copy is built by the very call an Install makes.
+#[test]
+fn the_luajit_checkbox_reaches_the_configuration() {
+    let game = TempGame::new();
+    let mut harness = harness_over(game.launch(&game.locations()));
+    harness.step();
+
+    assert_eq!(
+        remembered_configuration(&game).luajit,
+        LuaJitEngine::Stock,
+        "replacing a game file must never be the default",
+    );
+
+    harness.get_by_label("Use the LuaJIT engine").click();
+    harness.step();
+    assert_eq!(
+        remembered_configuration(&game).luajit,
+        LuaJitEngine::LuaJit,
+        "a ticked checkbox should ask the Core for the LuaJIT engine",
+    );
+
+    // And like every other part of the configuration, the choice survives the session.
+    let mut next = harness_over(game.launch(&game.nowhere()));
+    next.step();
+    assert!(is_ticked(&mut next, "Use the LuaJIT engine"));
+}
+
+/// Nobody is opted into overwriting a file the game owns.
+///
+/// ADR-0006's third Replaced-File rule, drawn: a launch that has never seen a settings file
+/// offers the engine option unticked, and the configuration it remembers says so.
+#[test]
+fn the_game_engine_is_left_alone_unless_a_player_asks_for_it() {
+    let game = TempGame::new();
+    let mut harness = harness_over(game.launch(&game.locations()));
+    harness.step();
+
+    assert!(
+        !is_ticked(&mut harness, "Use the LuaJIT engine"),
+        "the engine checkbox should open unticked",
+    );
+    assert_eq!(remembered_configuration(&game).luajit, LuaJitEngine::Stock);
+}
+
+/// The Install Configuration a launch left in the App Data Store.
+fn remembered_configuration(game: &TempGame) -> civ5vp_core::InstallConfiguration {
+    let Ok(settings) = game.store().load() else {
+        unreachable!("a launch over resolved folders remembers them")
+    };
+    let Some(configuration) = settings.configuration else {
+        unreachable!("and what it remembers includes the Install Configuration")
+    };
+    configuration
 }
 
 /// The native Aspyr port is refused, in words, and nothing can be installed

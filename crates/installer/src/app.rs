@@ -137,6 +137,11 @@ pub struct InstallerApp {
     custom_ref: String,
     flavor: Flavor,
     forty_three_civs: FortyThreeCivs,
+    /// Whether the player asked for the game's Lua engine to be replaced with LuaJIT.
+    /// Off unless it was turned on: this is the only choice that overwrites a file the game
+    /// owns, so a player has to reach for it rather than inherit it. Public so the choice can
+    /// be set without a click — the tests prefer clicking, but nothing here needs hiding.
+    pub luajit: bool,
     build_configuration: BuildConfiguration,
     install_mode: InstallMode,
     /// The player's own MODS-folder mods a Modpack could bake in: what the
@@ -239,23 +244,31 @@ impl InstallerApp {
             },
             _ => {}
         }
-        let (flavor, forty_three_civs, build_configuration, install_mode, extra_mods_picked) =
-            match &startup.configuration {
-                Some(configuration) => (
-                    configuration.flavor.clone(),
-                    configuration.forty_three_civs,
-                    configuration.build_configuration,
-                    configuration.install_mode,
-                    configuration.extra_mods.clone(),
-                ),
-                None => (
-                    Flavor::suggested(),
-                    FortyThreeCivs::Disabled,
-                    BuildConfiguration::Release,
-                    InstallMode::Mods,
-                    Vec::new(),
-                ),
-            };
+        let (
+            flavor,
+            forty_three_civs,
+            luajit,
+            build_configuration,
+            install_mode,
+            extra_mods_picked,
+        ) = match &startup.configuration {
+            Some(configuration) => (
+                configuration.flavor.clone(),
+                configuration.forty_three_civs,
+                configuration.luajit == LuaJitEngine::LuaJit,
+                configuration.build_configuration,
+                configuration.install_mode,
+                configuration.extra_mods.clone(),
+            ),
+            None => (
+                Flavor::suggested(),
+                FortyThreeCivs::Disabled,
+                false,
+                BuildConfiguration::Release,
+                InstallMode::Mods,
+                Vec::new(),
+            ),
+        };
         let game_folder = startup
             .game_installation
             .as_deref()
@@ -287,6 +300,7 @@ impl InstallerApp {
             resolved,
             flavor,
             forty_three_civs,
+            luajit,
             build_configuration,
             install_mode,
             extra_mods_available: Vec::new(),
@@ -340,6 +354,8 @@ impl InstallerApp {
             }),
             flavor: Flavor::suggested(),
             forty_three_civs: FortyThreeCivs::Disabled,
+            // A picture of a first run, and a first run never replaces the game's engine.
+            luajit: false,
             build_configuration: BuildConfiguration::Release,
             install_mode: InstallMode::Mods,
             extra_mods_available: Vec::new(),
@@ -530,6 +546,22 @@ impl InstallerApp {
                 } else {
                     FortyThreeCivs::Disabled
                 };
+                chosen = true;
+            }
+            // The one choice that touches a file the game owns, so the hover text says what
+            // gets replaced and what happens on uninstall. It also says what LuaJIT does
+            // *not* do: ADR-0006 measured the claim, and Vox Populi's AI turn time is native
+            // C++ that no Lua engine can speed up. Promising faster turns here would be a lie
+            // the player only finds out about after a two-hour game.
+            let engine = ui
+                .checkbox(&mut self.luajit, "Use the LuaJIT engine")
+                .on_hover_text(
+                    "Replaces the game's Lua engine with LuaJIT. Map generation and the \
+                     interface get faster; AI turn times are decided by the mod's C++ code \
+                     and will not change. Your original file is saved and put back if you \
+                     uninstall. Some older Lua mods do not work with it.",
+                );
+            if engine.changed() {
                 chosen = true;
             }
             ui.add_space(4.0);
@@ -1163,9 +1195,14 @@ impl InstallerApp {
             forty_three_civs: self.forty_three_civs,
             install_mode: self.install_mode,
             extra_mods: self.extra_mods_picked.clone(),
-            // Wired to its checkbox in a later change; until then the shell only ever asks
-            // for the engine the game shipped with.
-            luajit: LuaJitEngine::Stock,
+            // The checkbox, translated. Untouched it asks for the engine the game shipped
+            // with — what a Replaced File costs is the Core's business, but whether one is
+            // wanted at all is the player's, and silence means no.
+            luajit: if self.luajit {
+                LuaJitEngine::LuaJit
+            } else {
+                LuaJitEngine::Stock
+            },
             // Sent as chosen, even when Dev mode is off and the checkbox is not drawn:
             // which Build Configurations are legal with which sources is the Core's ruling,
             // and it refuses an illegal pair with a sentence.
