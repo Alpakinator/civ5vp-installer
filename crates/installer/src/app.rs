@@ -13,7 +13,7 @@ use std::sync::mpsc::{Receiver, TryRecvError, channel};
 
 use civ5vp_core::{
     AppDataStore, BuildConfiguration, Core, Eui, Flavor, FolderRejected, FortyThreeCivs,
-    GameFolders, InstallConfiguration, InstallError, InstallMode, InstallationSource,
+    GameFolders, InstallConfiguration, InstallError, InstallMode, InstallationSource, LuaJitEngine,
     ProgressEvent, ProgressReporter, SearchLocations, Settings, Version, VersionCatalog,
     resolve_game_folders, start_up,
 };
@@ -1163,6 +1163,9 @@ impl InstallerApp {
             forty_three_civs: self.forty_three_civs,
             install_mode: self.install_mode,
             extra_mods: self.extra_mods_picked.clone(),
+            // Wired to its checkbox in a later change; until then the shell only ever asks
+            // for the engine the game shipped with.
+            luajit: LuaJitEngine::Stock,
             // Sent as chosen, even when Dev mode is off and the checkbox is not drawn:
             // which Build Configurations are legal with which sources is the Core's ruling,
             // and it refuses an illegal pair with a sentence.

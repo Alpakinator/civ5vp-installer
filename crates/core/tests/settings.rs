@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use civ5vp_core::{
     AppDataStore, BuildConfiguration, Eui, Flavor, FortyThreeCivs, InstallConfiguration,
-    InstallMode, InstallationSource, SearchLocations, Settings, Version, start_up,
+    InstallMode, InstallationSource, LuaJitEngine, SearchLocations, Settings, Version, start_up,
 };
 
 fn temp() -> tempfile::TempDir {
@@ -82,6 +82,7 @@ fn the_remembered_state_survives_the_round_trip() {
             build_configuration: BuildConfiguration::Debug,
             install_mode: InstallMode::Mods,
             extra_mods: Vec::new(),
+            luajit: LuaJitEngine::Stock,
         },
         InstallConfiguration {
             source: InstallationSource::UpstreamCache {
@@ -92,6 +93,9 @@ fn the_remembered_state_survives_the_round_trip() {
             build_configuration: BuildConfiguration::Release,
             install_mode: InstallMode::Mods,
             extra_mods: Vec::new(),
+            // LuaJIT in the round-trip: a choice that replaces a file belonging to the game
+            // must survive a relaunch, or the next Deployment would quietly revert it.
+            luajit: LuaJitEngine::LuaJit,
         },
         InstallConfiguration {
             source: InstallationSource::UpstreamCache {
@@ -102,6 +106,7 @@ fn the_remembered_state_survives_the_round_trip() {
             build_configuration: BuildConfiguration::Release,
             install_mode: InstallMode::Mods,
             extra_mods: Vec::new(),
+            luajit: LuaJitEngine::Stock,
         },
         InstallConfiguration {
             source: InstallationSource::UpstreamCache {
@@ -112,6 +117,7 @@ fn the_remembered_state_survives_the_round_trip() {
             build_configuration: BuildConfiguration::Release,
             install_mode: InstallMode::Mods,
             extra_mods: Vec::new(),
+            luajit: LuaJitEngine::Stock,
         },
         // An unofficial build: the label and the commit both survive.
         InstallConfiguration {
@@ -126,6 +132,7 @@ fn the_remembered_state_survives_the_round_trip() {
             build_configuration: BuildConfiguration::Release,
             install_mode: InstallMode::Mods,
             extra_mods: Vec::new(),
+            luajit: LuaJitEngine::Stock,
         },
         // Modpack mode with extra picks — names with spaces and parentheses, like real
         // mod folders have.
@@ -138,6 +145,7 @@ fn the_remembered_state_survives_the_round_trip() {
             build_configuration: BuildConfiguration::Release,
             install_mode: InstallMode::Modpack,
             extra_mods: vec!["Even More Bonuses (v 3)".to_owned(), "My Modmod".to_owned()],
+            luajit: LuaJitEngine::Stock,
         },
     ];
 
@@ -214,6 +222,7 @@ fn remembered_folders_pre_fill_the_next_launch() {
         build_configuration: BuildConfiguration::Release,
         install_mode: InstallMode::Mods,
         extra_mods: Vec::new(),
+        luajit: LuaJitEngine::Stock,
     };
 
     store
@@ -370,6 +379,7 @@ fn a_configuration_with_no_installation_source_still_remembers_its_flavor() {
                 build_configuration: BuildConfiguration::Release,
                 install_mode: InstallMode::Mods,
                 extra_mods: Vec::new(),
+                luajit: LuaJitEngine::Stock,
             }),
             dev_checkout: None,
         })
@@ -405,6 +415,7 @@ fn a_remembered_upstream_version_survives_a_round_trip() {
                 build_configuration: BuildConfiguration::Release,
                 install_mode: InstallMode::Mods,
                 extra_mods: Vec::new(),
+                luajit: LuaJitEngine::Stock,
             }),
             dev_checkout: None,
         })
@@ -436,6 +447,7 @@ fn the_dev_checkout_outlives_a_switch_back_to_github() {
                 build_configuration: BuildConfiguration::Release,
                 install_mode: InstallMode::Mods,
                 extra_mods: Vec::new(),
+                luajit: LuaJitEngine::Stock,
             }),
             dev_checkout: Some(PathBuf::from("/home/player/src/Community-Patch-DLL")),
         })

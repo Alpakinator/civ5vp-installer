@@ -22,7 +22,7 @@ use std::sync::mpsc;
 
 use civ5vp_core::{
     BuildConfiguration, Flavor, FortyThreeCivs, GameFolders, InstallConfiguration, InstallMode,
-    InstallationSource, ProgressReporter,
+    InstallationSource, LuaJitEngine, ProgressReporter,
 };
 use civ5vp_installer::wiring;
 
@@ -78,6 +78,7 @@ fn a_fresh_machine_installs_the_newest_release_from_github() {
         build_configuration: BuildConfiguration::Release,
         install_mode: InstallMode::Mods,
         extra_mods: Vec::new(),
+        luajit: LuaJitEngine::Stock,
     };
     let plan = core.plan(&configuration, &folders).unwrap_or_else(|error| {
         panic!("{}\n  detail: {}", error.user_message(), error.log_detail())
@@ -160,6 +161,7 @@ fn a_real_version_installs_end_to_end_with_a_genuinely_built_dll() {
         build_configuration: BuildConfiguration::Release,
         install_mode: InstallMode::Mods,
         extra_mods: Vec::new(),
+        luajit: LuaJitEngine::Stock,
     };
     let plan = core.plan(&configuration, &folders).unwrap_or_else(|error| {
         panic!("{}\n  detail: {}", error.user_message(), error.log_detail())

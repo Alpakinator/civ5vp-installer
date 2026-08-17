@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 
 use crate::configuration::{
     BuildConfiguration, Eui, Flavor, FortyThreeCivs, InstallConfiguration, InstallMode,
-    InstallationSource, Version,
+    InstallationSource, LuaJitEngine, Version,
 };
 use crate::detect::{self, Detection, FolderRejected, SearchLocations};
 
@@ -262,6 +262,11 @@ impl Settings {
             "install-mode",
             configuration.install_mode.token(),
         );
+        write_line(
+            &mut text,
+            "luajit",
+            on_off(configuration.luajit == LuaJitEngine::LuaJit),
+        );
         if !configuration.extra_mods.is_empty() {
             // `|` cannot appear in a folder name the game accepts (Windows forbids it),
             // so it is a safe separator for the one list-valued line.
@@ -479,6 +484,14 @@ fn read_configuration(values: &Values) -> Option<InstallConfiguration> {
     } else {
         InstallMode::Mods
     };
+    // Anything but an explicit "on" — and in particular a file written before the line
+    // existed — reads as the stock engine. Replacing a file belonging to the game must never
+    // be something a player is opted into by an upgrade.
+    let luajit = if values.get("luajit") == Some("on") {
+        LuaJitEngine::LuaJit
+    } else {
+        LuaJitEngine::Stock
+    };
     let extra_mods = values
         .get("extra-mods")
         .map(|line| {
@@ -496,6 +509,7 @@ fn read_configuration(values: &Values) -> Option<InstallConfiguration> {
         build_configuration,
         install_mode,
         extra_mods,
+        luajit,
     })
 }
 

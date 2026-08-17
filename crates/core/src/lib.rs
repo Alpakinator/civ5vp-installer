@@ -44,7 +44,7 @@ pub use boundaries::{
 pub use claimed::{ClaimedFile, ClaimedFolder, DeploymentTarget, GameFolders};
 pub use configuration::{
     BuildConfiguration, Eui, Flavor, FortyThreeCivs, InstallConfiguration, InstallMode,
-    InstallationSource, Version,
+    InstallationSource, LuaJitEngine, Version,
 };
 pub use detect::{
     DetectedGame, Detection, DocumentsFolder, FolderKind, FolderRejected, GameInstallation,

@@ -14,7 +14,7 @@ use std::path::Path;
 
 use civ5vp_core::{
     BuildConfiguration, Core, Eui, Flavor, FortyThreeCivs, InstallConfiguration, InstallError,
-    InstallMode, InstallationSource, ProgressReporter, Version,
+    InstallMode, InstallationSource, LuaJitEngine, ProgressReporter, Version,
 };
 use support::{
     FixtureModpackAssembler, FixtureSourceProvider, GameFixture, MarkerToolchainRunner,
@@ -51,6 +51,7 @@ fn local_repo(checkout: &Path) -> InstallConfiguration {
         build_configuration: BuildConfiguration::Release,
         install_mode: InstallMode::Mods,
         extra_mods: Vec::new(),
+        luajit: LuaJitEngine::Stock,
     }
 }
 

@@ -22,8 +22,8 @@ use std::path::{Path, PathBuf};
 
 use civ5vp_core::{
     BoundaryError, BuildConfiguration, BuildRequest, Core, Eui, Flavor, FortyThreeCivs,
-    GameFolders, InstallConfiguration, InstallMode, InstallationSource, ProgressReporter, Stage,
-    ToolchainRunner, Version,
+    GameFolders, InstallConfiguration, InstallMode, InstallationSource, LuaJitEngine,
+    ProgressReporter, Stage, ToolchainRunner, Version,
 };
 use civ5vp_sources::{InstallationSources, UPSTREAM_URL, UpstreamCache};
 
@@ -224,6 +224,7 @@ fn a_real_release_installs_end_to_end() {
         build_configuration: BuildConfiguration::Release,
         install_mode: InstallMode::Mods,
         extra_mods: Vec::new(),
+        luajit: LuaJitEngine::Stock,
     };
 
     let plan = core.plan(&configuration, &folders).unwrap();

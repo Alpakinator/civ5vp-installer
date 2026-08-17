@@ -12,7 +12,7 @@ use std::path::PathBuf;
 
 use civ5vp_core::{
     BoundaryError, BuildConfiguration, BuildRequest, Core, Flavor, FortyThreeCivs, GameFolders,
-    InstallConfiguration, InstallMode, InstallationSource, ProgressReporter, Stage,
+    InstallConfiguration, InstallMode, InstallationSource, LuaJitEngine, ProgressReporter, Stage,
     ToolchainRunner, Version,
 };
 use civ5vp_sources::{InstallationSources, UpstreamCache};
@@ -86,6 +86,7 @@ fn a_release_from_the_upstream_cache_installs_end_to_end() {
         build_configuration: BuildConfiguration::Release,
         install_mode: InstallMode::Mods,
         extra_mods: Vec::new(),
+        luajit: LuaJitEngine::Stock,
     };
 
     let plan = core.plan(&configuration, &game.folders()).unwrap();
@@ -132,6 +133,7 @@ fn switching_version_between_installs_removes_what_the_new_version_dropped() {
             build_configuration: BuildConfiguration::Release,
             install_mode: InstallMode::Mods,
             extra_mods: Vec::new(),
+            luajit: LuaJitEngine::Stock,
         };
         let plan = core.plan(&configuration, &game.folders()).unwrap();
         core.execute(&plan, &ProgressReporter::silent()).unwrap();

@@ -61,6 +61,27 @@ pub fn apply(ctx: &egui::Context) {
     ctx.set_style_of(egui::Theme::Dark, style());
 }
 
+/// The VP logo, decoded for the window: the title bar, the taskbar and the Alt-Tab list.
+/// The same artwork is embedded into the Windows executable itself by `build.rs`, so
+/// Explorer shows it before the process ever runs.
+///
+/// Best-effort by construction: a window without an icon is a cosmetic loss, never a
+/// reason to fail startup, so an undecodable asset simply yields `None`.
+pub fn window_icon() -> Option<egui::IconData> {
+    let logo = image::load_from_memory_with_format(
+        include_bytes!("../../../assets/icon/VP_logo.png"),
+        image::ImageFormat::Png,
+    )
+    .ok()?
+    .into_rgba8();
+    let (width, height) = logo.dimensions();
+    Some(egui::IconData {
+        rgba: logo.into_raw(),
+        width,
+        height,
+    })
+}
+
 /// Jost for every piece of UI text (ADR-0003: an OFL-licensed geometric sans in the same
 /// Futura lineage as the game's Tw Cen MT — embeddable and redistributable without a
 /// licensing cloud; `assets/fonts/OFL.txt` accompanies it as the license requires).
@@ -158,4 +179,20 @@ fn visuals() -> egui::Visuals {
     visuals.widgets.open.corner_radius = corner;
 
     visuals
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The window icon is decoded from an embedded asset, so a bad or missing file is a
+    /// build-time fact, not something a user should discover as a blank title bar.
+    #[test]
+    fn the_window_icon_decodes() {
+        let Some(icon) = window_icon() else {
+            unreachable!("the embedded VP logo decodes")
+        };
+        assert_eq!(icon.width, icon.height, "the logo is square");
+        assert_eq!(icon.rgba.len(), (icon.width * icon.height * 4) as usize);
+    }
 }

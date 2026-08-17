@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use civ5vp_core::{
     BuildConfiguration, Core, Flavor, FortyThreeCivs, InstallConfiguration, InstallMode,
-    InstallationSource, ProgressReporter,
+    InstallationSource, LuaJitEngine, ProgressReporter,
 };
 use support::{
     CountingToolchainRunner, DLL_MARKER, FixtureModpackAssembler, FixtureSourceProvider,
@@ -51,6 +51,7 @@ fn configuration(repo: &Path, forty_three_civs: FortyThreeCivs) -> InstallConfig
         build_configuration: BuildConfiguration::Release,
         install_mode: InstallMode::Mods,
         extra_mods: Vec::new(),
+        luajit: LuaJitEngine::Stock,
     }
 }
 
@@ -265,6 +266,7 @@ fn a_debug_build_outside_dev_mode_is_refused() {
         build_configuration: BuildConfiguration::Debug,
         install_mode: InstallMode::Mods,
         extra_mods: Vec::new(),
+        luajit: LuaJitEngine::Stock,
     };
 
     let refused = core.plan(&config, &game.folders()).unwrap_err();

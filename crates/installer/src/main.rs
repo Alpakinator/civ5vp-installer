@@ -54,8 +54,16 @@ fn run_app() -> Result<(), String> {
             let _ = newer_sender.send(tag);
         }
     });
+    // The window icon, by the two routes desktops actually use. `with_icon` carries the logo
+    // on Windows and on X11; Wayland has no protocol for a client to set its own icon, so
+    // there the compositor matches `app_id` against an installed desktop entry —
+    // `packaging/civ5vp-installer.desktop`, whose file name this must keep matching.
+    let mut viewport = egui::ViewportBuilder::default().with_app_id("civ5vp-installer");
+    if let Some(icon) = civ5vp_installer::theme::window_icon() {
+        viewport = viewport.with_icon(icon);
+    }
     let native_options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
+        viewport: viewport
             .with_title("Civ 5 VP Installer")
             .with_inner_size(cli::DEFAULT_SIZE)
             // The layout is designed down to this size and no further; below it the

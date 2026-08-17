@@ -139,6 +139,20 @@ impl Flavor {
     }
 }
 
+/// Which Lua engine the game runs.
+///
+/// `LuaJit` replaces `lua51_Win32.dll` in the Game Installation — the Replaced File of
+/// ADR-0006, and the one file outside the Claimed set a Deployment writes. The default
+/// changes nothing about the game, which is the point: overwriting a file belonging to the
+/// game is always something the player asked for, never something they inherited from a
+/// settings file written before the choice existed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LuaJitEngine {
+    #[default]
+    Stock,
+    LuaJit,
+}
+
 /// The complete user selection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstallConfiguration {
@@ -156,4 +170,6 @@ pub struct InstallConfiguration {
     /// otherwise — in a Mods-mode install those mods are already in MODS and the game's
     /// own Mods menu governs them.
     pub extra_mods: Vec<String>,
+    /// Whether to replace the game's Lua engine with LuaJIT. Opt-in; see ADR-0006.
+    pub luajit: LuaJitEngine,
 }

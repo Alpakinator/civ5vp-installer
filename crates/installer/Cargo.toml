@@ -31,6 +31,10 @@ egui = "0.35"
 # Writing the PNGs that `--screenshot` produces. Pure Rust; `png` only, no other decoders.
 image = { version = "0.25", default-features = false, features = ["png"] }
 
+# Only the Windows resource compiler needs this, and only on a Windows host — see `build.rs`.
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
+
 [dev-dependencies]
 # The render harness (ticket 01) and the snapshot baselines every styled screen needs (rule 15).
 egui_kittest = { version = "0.35", features = ["wgpu", "snapshot"] }

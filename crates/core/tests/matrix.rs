@@ -16,7 +16,7 @@ mod support;
 
 use civ5vp_core::{
     BuildConfiguration, ClaimedFolder, Core, Eui, Flavor, FortyThreeCivs, GameFolders,
-    InstallConfiguration, InstallMode, InstallationSource, ProgressReporter,
+    InstallConfiguration, InstallMode, InstallationSource, LuaJitEngine, ProgressReporter,
 };
 use support::{
     DLL_MARKER, FixtureModpackAssembler, FixtureSourceProvider, GameFixture, MarkerToolchainRunner,
@@ -106,6 +106,7 @@ fn configuration(flavor: Flavor, forty_three_civs: FortyThreeCivs) -> InstallCon
         build_configuration: BuildConfiguration::Release,
         install_mode: InstallMode::Mods,
         extra_mods: Vec::new(),
+        luajit: LuaJitEngine::Stock,
     }
 }
 

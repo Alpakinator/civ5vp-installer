@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use civ5vp_core::{
     BuildConfiguration, ClaimedFolder, Core, Eui, Flavor, FortyThreeCivs, GameFolders,
-    InstallConfiguration, InstallMode, InstallationSource, ProgressReporter, Stage,
+    InstallConfiguration, InstallMode, InstallationSource, LuaJitEngine, ProgressReporter, Stage,
 };
 use support::{
     DLL_MARKER, FailingSourceProvider, FailingToolchainRunner, FixtureModpackAssembler,
@@ -23,6 +23,7 @@ fn community_patch_only() -> InstallConfiguration {
         build_configuration: BuildConfiguration::Release,
         install_mode: InstallMode::Mods,
         extra_mods: Vec::new(),
+        luajit: LuaJitEngine::Stock,
     }
 }
 
