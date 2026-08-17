@@ -93,6 +93,12 @@ pub trait SourceProvider: Send + Sync {
         newest_release: &str,
         progress: &ProgressReporter,
     ) -> Result<Vec<crate::UnofficialVersion>, BoundaryError>;
+
+    /// The pinned LuaJIT source tree, fetched if it is not cached yet.
+    ///
+    /// Only called when the configuration opts into the LuaJIT engine, so a player on the
+    /// stock engine never fetches it. Returns the directory holding `src/` and `dynasm/`.
+    fn materialize_luajit(&self, progress: &ProgressReporter) -> Result<PathBuf, BoundaryError>;
 }
 
 /// What the Core asks the toolchain runner to compile.

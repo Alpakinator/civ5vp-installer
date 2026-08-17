@@ -12,6 +12,10 @@
 //! * a **Local Repo** — a developer's own checkout, used as-is including uncommitted changes,
 //!   with no git operation performed on it at all.
 //!
+//! Beside them sits one more fetched thing, which is not an Installation Source because the
+//! player never chooses it: the **pinned LuaJIT checkout** (see [`LuaJitCache`]), fetched only
+//! when the configuration opts into the LuaJIT engine.
+//!
 //! The git work is done by `gix` (gitoxide) in-process. Nothing here runs an external
 //! program, so the installer works on a machine that has never had git installed.
 
@@ -27,11 +31,13 @@
 
 mod error;
 mod local;
+mod luajit;
 mod provider;
 mod upstream;
 mod version;
 
 pub use civ5vp_core::VersionCatalog;
 pub use error::{LocalRepoProblem, SourceError};
+pub use luajit::{LUAJIT_COMMIT, LUAJIT_URL, LuaJitCache};
 pub use provider::InstallationSources;
 pub use upstream::{UPSTREAM_URL, UpstreamCache};

@@ -5,15 +5,15 @@ mod support;
 use std::fs;
 
 use civ5vp_core::{InstallationSource, ProgressReporter, SourceProvider};
-use civ5vp_sources::{InstallationSources, UpstreamCache};
+use civ5vp_sources::{InstallationSources, LuaJitCache, UpstreamCache};
 use support::UpstreamFixture;
 
 /// A provider whose Upstream Cache is never reached — these tests only use the Local Repo arm.
 fn sources(fixture: &UpstreamFixture) -> InstallationSources {
-    InstallationSources::new(UpstreamCache::new(
-        fixture.cache_root(),
-        fixture.unreachable_url(),
-    ))
+    InstallationSources::new(
+        UpstreamCache::new(fixture.cache_root(), fixture.unreachable_url()),
+        LuaJitCache::new(fixture.cache_root().join("luajit")),
+    )
 }
 
 #[test]

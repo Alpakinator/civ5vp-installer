@@ -25,7 +25,7 @@ use civ5vp_core::{
     GameFolders, InstallConfiguration, InstallMode, InstallationSource, LuaJitEngine,
     ProgressReporter, Stage, ToolchainRunner, Version,
 };
-use civ5vp_sources::{InstallationSources, UPSTREAM_URL, UpstreamCache};
+use civ5vp_sources::{InstallationSources, LuaJitCache, UPSTREAM_URL, UpstreamCache};
 
 /// The ceiling for a first materialization.
 ///
@@ -205,10 +205,10 @@ fn a_real_release_installs_end_to_end() {
     };
 
     let core = Core::new(
-        Box::new(InstallationSources::new(UpstreamCache::new(
-            root.join("upstream-cache"),
-            UPSTREAM_URL,
-        ))),
+        Box::new(InstallationSources::new(
+            UpstreamCache::new(root.join("upstream-cache"), UPSTREAM_URL),
+            LuaJitCache::new(root.join("luajit-cache")),
+        )),
         Box::new(MarkerToolchainRunner),
         Box::new(UnusedModpackAssembler),
         root.join("work"),

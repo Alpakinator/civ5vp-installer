@@ -15,7 +15,7 @@ use civ5vp_core::{
     InstallConfiguration, InstallMode, InstallationSource, LuaJitEngine, ProgressReporter, Stage,
     ToolchainRunner, Version,
 };
-use civ5vp_sources::{InstallationSources, UpstreamCache};
+use civ5vp_sources::{InstallationSources, LuaJitCache, UpstreamCache};
 use support::UpstreamFixture;
 
 /// What the fake toolchain runner writes where the Built DLL would go.
@@ -69,10 +69,10 @@ fn a_release_from_the_upstream_cache_installs_end_to_end() {
     let game = GameFixture::new(app_data.join("game"));
 
     let core = Core::new(
-        Box::new(InstallationSources::new(UpstreamCache::new(
-            fixture.cache_root(),
-            fixture.url(),
-        ))),
+        Box::new(InstallationSources::new(
+            UpstreamCache::new(fixture.cache_root(), fixture.url()),
+            LuaJitCache::new(fixture.cache_root().join("luajit")),
+        )),
         Box::new(MarkerToolchainRunner),
         Box::new(UnusedModpackAssembler),
         app_data.join("work"),
@@ -115,10 +115,10 @@ fn switching_version_between_installs_removes_what_the_new_version_dropped() {
     let game = GameFixture::new(app_data.join("game"));
 
     let core = Core::new(
-        Box::new(InstallationSources::new(UpstreamCache::new(
-            fixture.cache_root(),
-            fixture.url(),
-        ))),
+        Box::new(InstallationSources::new(
+            UpstreamCache::new(fixture.cache_root(), fixture.url()),
+            LuaJitCache::new(fixture.cache_root().join("luajit")),
+        )),
         Box::new(MarkerToolchainRunner),
         Box::new(UnusedModpackAssembler),
         app_data.join("work"),

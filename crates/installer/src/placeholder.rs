@@ -107,6 +107,27 @@ impl SourceProvider for DirectorySourceProvider {
     ) -> Result<Vec<civ5vp_core::UnofficialVersion>, BoundaryError> {
         Ok(fixture_unofficial_versions(newest_release))
     }
+
+    fn materialize_luajit(&self, progress: &ProgressReporter) -> Result<PathBuf, BoundaryError> {
+        progress.report(Stage::Fetch, "Using a placeholder LuaJIT source tree.");
+        placeholder_luajit_source()
+    }
+}
+
+/// An empty stand-in for the pinned LuaJIT checkout: the two directories the build looks for
+/// and nothing inside them. The fast suite must not clone LuaJIT, and the placeholder toolchain
+/// runner never reads a byte of it.
+fn placeholder_luajit_source() -> Result<PathBuf, BoundaryError> {
+    let root = std::env::temp_dir().join("civ5vp-placeholder-luajit");
+    for directory in ["src", "dynasm"] {
+        fs::create_dir_all(root.join(directory)).map_err(|err| {
+            BoundaryError::new(
+                "Could not prepare the placeholder LuaJIT source folder.",
+                format!("placeholder provider: {err}"),
+            )
+        })?;
+    }
+    Ok(root)
 }
 
 /// The unofficial list every offline surface shares: two changes after the

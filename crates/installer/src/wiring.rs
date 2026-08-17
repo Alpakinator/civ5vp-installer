@@ -9,7 +9,7 @@
 use std::path::Path;
 
 use civ5vp_core::{AppDataStore, Core};
-use civ5vp_sources::{InstallationSources, UPSTREAM_URL, UpstreamCache};
+use civ5vp_sources::{InstallationSources, LuaJitCache, UPSTREAM_URL, UpstreamCache};
 use civ5vp_toolchain::BootstrappedToolchain;
 
 /// A Core over the real boundaries, everything installer-owned inside the App Data Store.
@@ -21,8 +21,12 @@ pub fn core(store: &AppDataStore) -> Core {
 /// in a directory of its own choosing.
 pub fn core_at(root: &Path) -> Core {
     let upstream = UpstreamCache::new(root.join("upstream-cache"), UPSTREAM_URL);
+    // Its own directory beside the Upstream Cache: the two are fetched from different remotes
+    // and have different lifetimes, and the Upstream Cache empties its working tree on every
+    // Version switch.
+    let luajit = LuaJitCache::new(root.join("luajit-cache"));
     Core::new(
-        Box::new(InstallationSources::new(upstream)),
+        Box::new(InstallationSources::new(upstream, luajit)),
         Box::new(BootstrappedToolchain::new(root.join("toolchain-cache"))),
         Box::new(civ5vp_modpack::SqliteModpackAssembler::new()),
         root.to_path_buf(),

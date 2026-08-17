@@ -92,6 +92,22 @@ impl SourceProvider for FixtureSourceProvider {
             },
         ])
     }
+
+    fn materialize_luajit(&self, progress: &ProgressReporter) -> Result<PathBuf, BoundaryError> {
+        progress.report(Stage::Fetch, "Using a fixture LuaJIT source tree.");
+        // Empty, and not inside the committed fixture: nothing in the fast suite compiles
+        // LuaJIT, so only the two directories the build looks for need to exist.
+        let root = std::env::temp_dir().join("civ5vp-fixture-luajit");
+        for directory in ["src", "dynasm"] {
+            fs::create_dir_all(root.join(directory)).map_err(|err| {
+                BoundaryError::new(
+                    "The fixture LuaJIT source folder could not be prepared.",
+                    format!("fixture provider: {err}"),
+                )
+            })?;
+        }
+        Ok(root)
+    }
 }
 
 /// A source provider that always fails, for the abort-before-touch case.
@@ -128,6 +144,14 @@ impl SourceProvider for FailingSourceProvider {
         Err(BoundaryError::new(
             "Could not look up the changes since the newest release. Check your internet \
              connection and try again.",
+            "fake provider: simulated network failure",
+        ))
+    }
+
+    fn materialize_luajit(&self, _progress: &ProgressReporter) -> Result<PathBuf, BoundaryError> {
+        Err(BoundaryError::new(
+            "Could not download the LuaJIT source. Check your internet connection and try \
+             again.",
             "fake provider: simulated network failure",
         ))
     }
