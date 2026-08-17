@@ -41,6 +41,7 @@ mod error;
 mod extract;
 mod fixups;
 mod iso9660;
+pub mod luajit;
 mod msi_layout;
 pub mod pinned;
 mod runner;
