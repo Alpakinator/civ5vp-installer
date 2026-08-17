@@ -20,6 +20,25 @@ pub struct ToolCommand {
     pub program: PathBuf,
     pub args: Vec<String>,
     pub current_dir: PathBuf,
+    /// Environment set for this invocation only, on top of what the process already has.
+    ///
+    /// Empty for the DLL build, which needs nothing. It exists for the LuaJIT build's host
+    /// tools: those run under wine on Linux, and wine with no `WINEPREFIX` creates one in the
+    /// user's home and opens a Mono installer dialog at them. Containing that is not optional.
+    pub env: Vec<(String, String)>,
+}
+
+impl ToolCommand {
+    /// An invocation that inherits the environment unchanged — every command but the LuaJIT
+    /// host tools.
+    pub fn new(program: PathBuf, args: Vec<String>, current_dir: PathBuf) -> Self {
+        Self {
+            program,
+            args,
+            current_dir,
+            env: Vec::new(),
+        }
+    }
 }
 
 /// What running a tool produced: whether it succeeded, and everything it printed.
@@ -47,6 +66,7 @@ impl ToolInvoker for ProcessInvoker {
         let result = Command::new(&command.program)
             .args(&command.args)
             .current_dir(&command.current_dir)
+            .envs(command.env.iter().map(|(key, value)| (key, value)))
             .output()
             .map_err(|error| {
                 format!(

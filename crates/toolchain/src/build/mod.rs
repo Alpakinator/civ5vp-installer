@@ -15,7 +15,9 @@
 //! The flags themselves are transcribed, not derived — see [`flags`].
 
 mod flags;
-mod invoke;
+// Visible to the crate because the LuaJIT build drives the same tools through the same seam —
+// it is a second consumer of the invoker, not a second way of running processes.
+pub(crate) mod invoke;
 mod project;
 mod state;
 
@@ -206,6 +208,7 @@ impl<'a> DllBuild<'a> {
                     .chain(cl_args.iter().cloned())
                     .collect(),
                 current_dir: source_root.clone(),
+                env: Vec::new(),
             })?;
             log.section(flags::CLANG_SHIM, &output.output)?;
             if !output.success {
@@ -228,6 +231,7 @@ impl<'a> DllBuild<'a> {
                     .chain(cl_args.iter().cloned())
                     .collect(),
                 current_dir: variant_dir.to_path_buf(),
+                env: Vec::new(),
             })?;
             log.section(VC9_COMPAT_FILE, &output.output)?;
             if !output.success {
@@ -260,6 +264,7 @@ impl<'a> DllBuild<'a> {
                 .chain(cl_args.iter().cloned())
                 .collect(),
                 current_dir: source_root.clone(),
+                env: Vec::new(),
             })?;
             log.section(flags::PCH_SOURCE, &output.output)?;
             if !output.success {
@@ -302,6 +307,7 @@ impl<'a> DllBuild<'a> {
                     .chain(cl_args.iter().cloned())
                     .collect(),
                     current_dir: source_root.clone(),
+                    env: Vec::new(),
                 },
                 source: source_text,
             });
@@ -442,6 +448,7 @@ impl<'a> DllBuild<'a> {
             program: self.toolchain.lld_link_path(),
             args: vec![format!("@{}", response_file.display())],
             current_dir: source_root.clone(),
+            env: Vec::new(),
         })?;
         log.section(&format!("{}.dll", flags::CORE_DLL), &output.output)?;
         if !output.success {

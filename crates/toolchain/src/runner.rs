@@ -5,15 +5,22 @@
 
 use std::path::PathBuf;
 
-use civ5vp_core::{BoundaryError, BuildRequest, ProgressReporter, ToolchainRunner};
+use civ5vp_core::{
+    BoundaryError, BuildRequest, LuaJitBuildRequest, ProgressReporter, SearchLocations,
+    ToolchainRunner,
+};
 
 use crate::bootstrap::ToolchainBootstrap;
 use crate::build::{DllBuild, ProcessInvoker};
 use crate::cache::{Toolchain, ToolchainCache};
+use crate::luajit;
 
 /// A [`ToolchainRunner`] backed by the Toolchain Cache.
 pub struct BootstrappedToolchain {
     cache: ToolchainCache,
+    /// Where to look for a Proton, which is where a Linux host finds a wine to run LuaJIT's
+    /// build tools under. Empty on Windows, where nothing needs one.
+    steam_roots: Vec<PathBuf>,
 }
 
 impl BootstrappedToolchain {
@@ -21,6 +28,19 @@ impl BootstrappedToolchain {
     pub fn new(cache_root: PathBuf) -> Self {
         Self {
             cache: ToolchainCache::new(cache_root),
+            // The same list detection searches for the game. Asked for here rather than
+            // threaded in from the shell because it is a fact about the machine, like which
+            // LLVM tarball this host needs, and the DLL build already resolves those itself.
+            steam_roots: SearchLocations::for_this_platform().steam_roots,
+        }
+    }
+
+    /// The same runner with the Steam libraries named explicitly, so a test can point the
+    /// wine search at a fixture instead of the machine it runs on.
+    pub fn with_steam_roots(cache_root: PathBuf, steam_roots: Vec<PathBuf>) -> Self {
+        Self {
+            cache: ToolchainCache::new(cache_root),
+            steam_roots,
         }
     }
 
@@ -45,6 +65,23 @@ impl ToolchainRunner for BootstrappedToolchain {
         DllBuild::new(&toolchain, &invoker)
             .run(request, progress)
             .map_err(Into::into)
+    }
+
+    /// Make the Toolchain exist, then compile LuaJIT into the game's Lua engine.
+    fn build_luajit(
+        &self,
+        request: &LuaJitBuildRequest,
+        progress: &ProgressReporter,
+    ) -> Result<(), BoundaryError> {
+        let toolchain = self.bootstrap(progress)?;
+        let invoker = ProcessInvoker;
+        Ok(luajit::run(
+            &toolchain,
+            &invoker,
+            &self.steam_roots,
+            request,
+            progress,
+        )?)
     }
 
     fn toolchain_identity(&self) -> String {

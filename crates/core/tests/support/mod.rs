@@ -244,6 +244,55 @@ impl ToolchainRunner for MarkerToolchainRunner {
         })
     }
 
+    fn build_luajit(
+        &self,
+        request: &civ5vp_core::LuaJitBuildRequest,
+        progress: &ProgressReporter,
+    ) -> Result<(), BoundaryError> {
+        progress.report(Stage::Build, "Faking a LuaJIT build.");
+        if let Some(parent) = request.output_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        fs::write(&request.output_path, LUAJIT_MARKER).map_err(|err| {
+            BoundaryError::new(
+                "The LuaJIT engine could not be built.",
+                format!("fake runner could not write the marker: {err}"),
+            )
+        })
+    }
+
+    fn toolchain_identity(&self) -> String {
+        "fake-toolchain-0".to_owned()
+    }
+}
+
+/// What [`MarkerToolchainRunner`] writes instead of a real Lua engine.
+pub const LUAJIT_MARKER: &str = "marker artifact standing in for the LuaJIT engine";
+
+/// Builds the DLL happily and fails only on the engine — the shape that proves Sync never
+/// starts when the *second* thing that can fail does.
+pub struct FailingLuaJitToolchainRunner;
+
+impl ToolchainRunner for FailingLuaJitToolchainRunner {
+    fn build_dll(
+        &self,
+        request: &BuildRequest,
+        progress: &ProgressReporter,
+    ) -> Result<(), BoundaryError> {
+        MarkerToolchainRunner.build_dll(request, progress)
+    }
+
+    fn build_luajit(
+        &self,
+        _request: &civ5vp_core::LuaJitBuildRequest,
+        _progress: &ProgressReporter,
+    ) -> Result<(), BoundaryError> {
+        Err(BoundaryError::new(
+            "The LuaJIT engine could not be built, so your game was not changed.",
+            "fake runner: simulated LuaJIT compile failure",
+        ))
+    }
+
     fn toolchain_identity(&self) -> String {
         "fake-toolchain-0".to_owned()
     }
@@ -290,6 +339,14 @@ impl ToolchainRunner for CountingToolchainRunner {
         MarkerToolchainRunner.build_dll(request, progress)
     }
 
+    fn build_luajit(
+        &self,
+        request: &civ5vp_core::LuaJitBuildRequest,
+        progress: &ProgressReporter,
+    ) -> Result<(), BoundaryError> {
+        MarkerToolchainRunner.build_luajit(request, progress)
+    }
+
     fn toolchain_identity(&self) -> String {
         self.identity.clone()
     }
@@ -306,6 +363,17 @@ impl ToolchainRunner for FailingToolchainRunner {
     ) -> Result<(), BoundaryError> {
         Err(BoundaryError::new(
             "The DLL could not be built.",
+            "fake runner: simulated compile failure",
+        ))
+    }
+
+    fn build_luajit(
+        &self,
+        _request: &civ5vp_core::LuaJitBuildRequest,
+        _progress: &ProgressReporter,
+    ) -> Result<(), BoundaryError> {
+        Err(BoundaryError::new(
+            "The LuaJIT engine could not be built.",
             "fake runner: simulated compile failure",
         ))
     }

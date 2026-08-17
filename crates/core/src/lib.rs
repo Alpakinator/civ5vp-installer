@@ -39,8 +39,8 @@ mod tree;
 mod versions;
 
 pub use boundaries::{
-    BoundaryError, BuildRequest, CacheState, MaterializedSource, ModpackAssembler,
-    ModpackDatabaseJob, SourceProvider, ToolchainRunner,
+    BoundaryError, BuildRequest, CacheState, LuaJitBuildRequest, MaterializedSource,
+    ModpackAssembler, ModpackDatabaseJob, SourceProvider, ToolchainRunner,
 };
 pub use claimed::{ClaimedFile, ClaimedFolder, DeploymentTarget, GameFolders};
 pub use configuration::{

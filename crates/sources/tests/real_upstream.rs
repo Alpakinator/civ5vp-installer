@@ -269,6 +269,23 @@ impl ToolchainRunner for MarkerToolchainRunner {
         })
     }
 
+    fn build_luajit(
+        &self,
+        request: &civ5vp_core::LuaJitBuildRequest,
+        progress: &ProgressReporter,
+    ) -> Result<(), BoundaryError> {
+        progress.report(Stage::Build, "Faking a LuaJIT build.");
+        if let Some(parent) = request.output_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        fs::write(&request.output_path, "fake luajit engine").map_err(|err| {
+            BoundaryError::new(
+                "The LuaJIT engine could not be built.",
+                format!("fake runner: {err}"),
+            )
+        })
+    }
+
     fn toolchain_identity(&self) -> String {
         "fake-toolchain-0".to_owned()
     }

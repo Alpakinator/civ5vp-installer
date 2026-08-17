@@ -120,6 +120,28 @@ pub struct BuildRequest {
     pub output_path: PathBuf,
 }
 
+/// What the Core asks the toolchain runner to compile for the Replaced File.
+///
+/// A second request type rather than a flag on [`BuildRequest`], because the two builds share
+/// only their compiler: different sources, different output, different reasons to fail.
+#[derive(Debug, Clone)]
+pub struct LuaJitBuildRequest {
+    /// Root of the materialized LuaJIT source — the directory holding `src/` and `dynasm/`.
+    pub source_root: PathBuf,
+    /// The Game Installation root.
+    ///
+    /// Not a place anything is written: the runner reads the game's own binaries from it to
+    /// check that the engine it just built exports everything they import. A DLL missing one
+    /// of those symbols is the single failure that would leave a player unable to start the
+    /// game, and it is checkable before the game is touched.
+    pub game_root: PathBuf,
+    /// Exactly where the built engine must be written.
+    ///
+    /// Always inside the Core's own build directory, never a game folder — the game is not
+    /// touched until every part of the Deployment that can fail has succeeded.
+    pub output_path: PathBuf,
+}
+
 /// Boundary two: compiling the Built DLL.
 ///
 /// The real implementation drives the bootstrapped clang from the Toolchain Cache.
@@ -128,6 +150,17 @@ pub trait ToolchainRunner: Send + Sync {
     fn build_dll(
         &self,
         request: &BuildRequest,
+        progress: &ProgressReporter,
+    ) -> Result<(), BoundaryError>;
+
+    /// Compile LuaJIT and write the engine to [`LuaJitBuildRequest::output_path`].
+    ///
+    /// Called only when the configuration opts into the LuaJIT engine, so a player on the
+    /// stock engine never compiles it. Like [`Self::build_dll`], this must never write into a
+    /// game folder — Sync decides when the game is touched.
+    fn build_luajit(
+        &self,
+        request: &LuaJitBuildRequest,
         progress: &ProgressReporter,
     ) -> Result<(), BoundaryError>;
 
