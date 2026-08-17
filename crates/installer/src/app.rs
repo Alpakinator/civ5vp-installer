@@ -336,6 +336,7 @@ impl InstallerApp {
                 mods: PathBuf::from(format!("{documents}/MODS")),
                 dlc: PathBuf::from(format!("{game}/Assets/DLC")),
                 text: PathBuf::from(format!("{documents}/Text")),
+                game_root: PathBuf::from(game),
             }),
             flavor: Flavor::suggested(),
             forty_three_civs: FortyThreeCivs::Disabled,

@@ -51,6 +51,7 @@ fn a_fresh_machine_installs_the_newest_release_from_github() {
         mods: game_root.join("Documents/MODS"),
         dlc: game_root.join("Game/Assets/DLC"),
         text: game_root.join("Documents/Text"),
+        game_root: game_root.join("Game"),
     };
     for dir in [&folders.mods, &folders.dlc, &folders.text] {
         fs::create_dir_all(dir).unwrap();
@@ -143,6 +144,7 @@ fn a_real_version_installs_end_to_end_with_a_genuinely_built_dll() {
         mods: game_root.join("Documents/MODS"),
         dlc: game_root.join("Game/Assets/DLC"),
         text: game_root.join("Documents/Text"),
+        game_root: game_root.join("Game"),
     };
     for dir in [&folders.mods, &folders.dlc, &folders.text] {
         fs::create_dir_all(dir).unwrap();

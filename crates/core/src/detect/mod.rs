@@ -208,6 +208,7 @@ pub fn game_folders(game: &GameInstallation, documents: &DocumentsFolder) -> Gam
         mods: documents.mods_folder().to_path_buf(),
         dlc: game.dlc_folder().to_path_buf(),
         text: documents.text_folder().to_path_buf(),
+        game_root: game.root().to_path_buf(),
     }
 }
 

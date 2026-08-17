@@ -201,6 +201,7 @@ fn a_real_release_installs_end_to_end() {
         mods: game_root.join("MODS"),
         dlc: game_root.join("DLC"),
         text: game_root.join("Text"),
+        game_root: game_root.clone(),
     };
 
     let core = Core::new(

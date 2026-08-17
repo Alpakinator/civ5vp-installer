@@ -13,6 +13,12 @@ pub struct GameFolders {
     pub dlc: PathBuf,
     /// `…/Documents/My Games/Sid Meier's Civilization 5/Text`
     pub text: PathBuf,
+    /// `…/Sid Meier's Civilization V` — the Game Installation root.
+    ///
+    /// Held rather than derived from the DLC Folder's grandparent, because this is where the
+    /// Replaced File is written (ADR-0006). A path that decides where a file belonging to the
+    /// game gets overwritten must be one detection resolved, not one Sync inferred.
+    pub game_root: PathBuf,
 }
 
 impl GameFolders {
@@ -49,6 +55,7 @@ impl GameFolders {
             ("MODS", &self.mods),
             ("DLC", &self.dlc),
             ("Text", &self.text),
+            ("Game Installation", &self.game_root),
         ] {
             let problem = if path.as_os_str().is_empty() {
                 Some(GameFolderProblem::NotChosen)
@@ -232,5 +239,75 @@ impl ClaimedFile {
         match self {
             Self::VpuiTips => folders.text.join(self.file_name()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Three real directories and one caller-supplied Game Installation root, so a test can
+    /// vary the fourth without the first three failing the check ahead of it.
+    fn folders_with_game_root(root: &Path, game_root: PathBuf) -> Option<GameFolders> {
+        for name in ["MODS", "DLC", "Text"] {
+            std::fs::create_dir_all(root.join(name)).ok()?;
+        }
+        Some(GameFolders {
+            mods: root.join("MODS"),
+            dlc: root.join("DLC"),
+            text: root.join("Text"),
+            game_root,
+        })
+    }
+
+    /// The Game Installation root decides where the Replaced File is written, so it is held
+    /// to exactly the standard the other three are — an unset one must stop a Deployment
+    /// before it starts, not surface as a write to a relative path.
+    #[test]
+    fn an_unset_game_root_is_refused() {
+        let Ok(dir) = tempfile::tempdir() else {
+            unreachable!("a temp dir")
+        };
+        let Some(folders) = folders_with_game_root(dir.path(), PathBuf::new()) else {
+            unreachable!("the fixture directories")
+        };
+
+        let Err(InstallError::UnusableGameFolder { which, problem, .. }) = folders.check() else {
+            unreachable!("an unset Game Installation root must be refused")
+        };
+        assert_eq!(which, "Game Installation");
+        assert_eq!(problem, GameFolderProblem::NotChosen);
+    }
+
+    /// A relative root would aim the Replaced File's write at whatever the working directory
+    /// happens to be.
+    #[test]
+    fn a_relative_game_root_is_refused() {
+        let Ok(dir) = tempfile::tempdir() else {
+            unreachable!("a temp dir")
+        };
+        let Some(folders) = folders_with_game_root(dir.path(), PathBuf::from("game")) else {
+            unreachable!("the fixture directories")
+        };
+
+        let Err(InstallError::UnusableGameFolder { which, problem, .. }) = folders.check() else {
+            unreachable!("a relative Game Installation root must be refused")
+        };
+        assert_eq!(which, "Game Installation");
+        assert_eq!(problem, GameFolderProblem::NotAbsolute);
+    }
+
+    /// The ordinary case still passes, so the new check cannot be satisfied by refusing
+    /// everything.
+    #[test]
+    fn a_real_game_root_is_accepted() {
+        let Ok(dir) = tempfile::tempdir() else {
+            unreachable!("a temp dir")
+        };
+        let Some(folders) = folders_with_game_root(dir.path(), dir.path().to_path_buf()) else {
+            unreachable!("the fixture directories")
+        };
+
+        assert!(folders.check().is_ok());
     }
 }

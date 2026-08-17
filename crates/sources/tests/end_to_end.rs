@@ -57,6 +57,7 @@ impl GameFixture {
             mods: self.root.join("MODS"),
             dlc: self.root.join("DLC"),
             text: self.root.join("Text"),
+            game_root: self.root.clone(),
         }
     }
 }

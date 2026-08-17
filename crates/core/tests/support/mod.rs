@@ -333,6 +333,10 @@ impl GameFixture {
             mods: self.game_root().join("MODS"),
             dlc: self.game_root().join("DLC"),
             text: self.game_root().join("Text"),
+            // The fixture collapses the two sides of a real install into one root, so the
+            // Game Installation is that same directory — which is what puts the Replaced File
+            // inside `files()`, where a test can see it.
+            game_root: self.game_root(),
         }
     }
 
