@@ -27,7 +27,7 @@ that's the whole process.
 
 1. Grab the file for your system from the
    [releases page](https://github.com/Alpakinator/civ5vp-installer/releases). One file,
-   nothing else.
+   nothing else. What changed in each one is in the [changelog](CHANGELOG.md).
 2. Run it. It finds your Civilization V folders by itself (you can correct it if it
    guesses wrong).
 3. Click **Install**.

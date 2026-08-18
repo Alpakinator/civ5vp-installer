@@ -12,8 +12,13 @@
 name: build
 
 on:
+  # Tags publish a Release; branches and pull requests only prove the build still works.
+  # Without the latter, every regression waits until the tag, which is the most expensive
+  # moment to find one.
   push:
+    branches: ["**"]
     tags: ["v*"]
+  pull_request:
   workflow_dispatch:
 
 # The default workflow token is read-only; creating the Release and attaching the
@@ -63,6 +68,20 @@ jobs:
       - name: Rust toolchain (pinned by rust-toolchain.toml)
         run: rustup show
       - uses: Swatinem/rust-cache@v2
+      # Windows is a supported platform, and until this ran nothing ever executed the code
+      # that only exists there: game-folder detection (`core/src/detect/platform.rs`), the
+      # native LuaJIT host runner (`toolchain/src/luajit/host.rs`), and the resource script
+      # in `installer/build.rs`. Building proved they compile, never that they work.
+      #
+      # The UI snapshot tests are excluded: their baselines are rendered on the Linux job's
+      # lavapipe, and a different rasteriser produces different pixels, so running them here
+      # would fail on the renderer rather than on the shell. Everything else runs.
+      - name: Fast suite
+        run: cargo test --workspace --locked --exclude civ5vp-installer
+      - name: Shell tests that do not render
+        run: cargo test --locked -p civ5vp-installer --lib --bins --test cli
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Build
         run: cargo build --release --locked -p civ5vp-installer
       - uses: actions/upload-artifact@v4

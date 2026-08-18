@@ -680,14 +680,14 @@ dependencies = [
 
 [[package]]
 name = "civ5vp-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "tempfile",
 ]
 
 [[package]]
 name = "civ5vp-installer"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "civ5vp-core",
  "civ5vp-modpack",
@@ -704,7 +704,7 @@ dependencies = [
 
 [[package]]
 name = "civ5vp-modpack"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "civ5vp-core",
  "quick-xml 0.38.4",
@@ -714,7 +714,7 @@ dependencies = [
 
 [[package]]
 name = "civ5vp-sources"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "civ5vp-core",
  "gix",
@@ -725,7 +725,7 @@ dependencies = [
 
 [[package]]
 name = "civ5vp-toolchain"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "cab",
  "civ5vp-core",
