@@ -108,7 +108,7 @@ fn framed<R>(
 
 /// The header: the display title centred, the sunburst fan behind it, the diamond rule
 /// below. Rendered once per window.
-pub fn header(ui: &mut egui::Ui, title: &str) {
+pub fn header(ui: &mut egui::Ui, title: &str, corner: Option<&str>) {
     let crest = ui.painter().add(Shape::Noop);
     ui.add_space(CREST_HEIGHT);
     let title_rect = ui
@@ -124,8 +124,23 @@ pub fn header(ui: &mut egui::Ui, title: &str) {
     let rule_rect = diamond_rule(ui);
     ui.painter()
         .set(crest, crowned_portal(title_rect, rule_rect));
-    ui.add_space(4.0);
+    // Painted rather than laid out, so it costs no vertical space at all: it sits in the
+    // blank the crest's wings leave to the right of the title, resting on the rule.
+    if let Some(corner) = corner {
+        let font = egui::TextStyle::Small.resolve(ui.style());
+        ui.painter().text(
+            pos2(rule_rect.right(), rule_rect.center().y - CORNER_LIFT),
+            egui::Align2::RIGHT_BOTTOM,
+            corner,
+            font,
+            theme::PARCHMENT_DIM,
+        );
+    }
+    ui.add_space(1.0);
 }
+
+/// How far above the rule the corner text rests, so its descenders clear the line.
+const CORNER_LIFT: f32 = 3.0;
 
 /// Vertical room reserved above the title for the crest's wings and medallion.
 const CREST_HEIGHT: f32 = 34.0;

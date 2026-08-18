@@ -20,6 +20,16 @@ use civ5vp_core::{
 
 use crate::{deco, placeholder, theme};
 
+/// How many lines of the Activity log the panel is always tall enough to hold.
+///
+/// A fixed promise rather than a leftover. The log was previously sized from whatever height
+/// the widgets above had not taken, and because the whole page sits in one `ScrollArea` that
+/// is near zero on a full page — so it collapsed to a single line exactly when an install had
+/// the most to report. Pinning it to the window bottom instead was tried and rejected: at the
+/// design size it leaves too little for the configuration panels, which then clip mid-border.
+/// The page scrolls, so a fixed height here is always honoured, if sometimes below the fold.
+const MIN_ACTIVITY_LINES: f32 = 5.0;
+
 /// Presentation state, not domain state — deliberately not public.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Status {
@@ -455,7 +465,14 @@ impl InstallerApp {
     }
 
     fn contents(&mut self, ui: &mut egui::Ui) {
-        deco::header(ui, "Civ 5 VP Installer");
+        // The build's own version rides in the header's right corner, just above the
+        // rule: the one moment anyone looks for it is while checking it against the
+        // newer-version notice below, or while writing a bug report.
+        deco::header(
+            ui,
+            "Civ 5 VP Installer",
+            Some(&format!("v{}", crate::update::CURRENT_VERSION)),
+        );
         ui.label(
             egui::RichText::new(
                 "Pick a version to download, or point the installer at your own checkout; \
@@ -474,7 +491,9 @@ impl InstallerApp {
                 ui.hyperlink_to("download it from GitHub", crate::update::RELEASES_PAGE_URL);
             });
         }
-        ui.add_space(6.0);
+        // No added space here: the strap line under the rule belongs to the header, and the
+        // panel's own margin is gap enough. The 6-point step between the panels below is
+        // what separates sections from each other, not the header from the page.
 
         self.source_section(ui);
         ui.add_space(6.0);
@@ -700,30 +719,7 @@ impl InstallerApp {
         self.storage_section(ui);
 
         if !self.activity.is_empty() {
-            ui.add_space(6.0);
-            // The log takes whatever height is left and scrolls inside it, pinned to the
-            // newest line, so the tail of the screen never spills past the window. The
-            // subtraction is the panel's own chrome — padding, caption, spacing — and the
-            // minimum keeps one line visible however small the window is forced.
-            let room = (ui.available_height() - 48.0).max(17.0);
-            deco::panel(ui, Some("Activity"), |ui| {
-                egui::ScrollArea::vertical()
-                    .max_height(room)
-                    // The default minimum (64) would override `room` on a short window and
-                    // push the panel's bottom edge past the page.
-                    .min_scrolled_height(room)
-                    .stick_to_bottom(true)
-                    .show(ui, |ui| {
-                        ui.set_min_width(ui.available_width());
-                        for line in &self.activity {
-                            ui.label(
-                                egui::RichText::new(line)
-                                    .small()
-                                    .color(theme::PARCHMENT_DIM),
-                            );
-                        }
-                    });
-            });
+            self.activity_panel(ui);
         }
 
         if self.running.is_some() {
@@ -732,6 +728,36 @@ impl InstallerApp {
             // installing screen still settles into a still frame for the renderer.
             ui.ctx().request_repaint();
         }
+    }
+
+    /// The Activity log, at the foot of the page.
+    ///
+    /// Its height is [`MIN_ACTIVITY_LINES`] lines of the style it actually renders in — not a
+    /// pixel constant — so it keeps its promise at any font scale. Scrolls within itself,
+    /// stuck to the newest line.
+    fn activity_panel(&self, ui: &mut egui::Ui) {
+        ui.add_space(6.0);
+        let line = ui.text_style_height(&egui::TextStyle::Small) + ui.spacing().item_spacing.y;
+        let room = line * MIN_ACTIVITY_LINES;
+        deco::panel(ui, Some("Activity"), |ui| {
+            egui::ScrollArea::vertical()
+                .max_height(room)
+                // The default minimum (64) would override `room` and make the panel taller
+                // than the height it promises.
+                .min_scrolled_height(room)
+                .stick_to_bottom(true)
+                .show(ui, |ui| {
+                    ui.set_min_width(ui.available_width());
+                    for line in &self.activity {
+                        ui.label(
+                            egui::RichText::new(line)
+                                .small()
+                                .color(theme::PARCHMENT_DIM),
+                        );
+                    }
+                });
+        });
+        ui.add_space(6.0);
     }
 
     fn folders_changed(&mut self) {
