@@ -907,8 +907,18 @@ mod tests {
         assert!(commit_id.contains("CURRENT_GAMECORE_VERSION"));
         assert!(commit_id.contains("Release-9.9"));
         assert!(!fixture.source_root.join("commit_id.inc").exists());
-        let include_flag = format!("/I{}", generated.join("include").display());
-        assert!(invoker.calls()[0].args.contains(&include_flag));
+        // Both sides are assembled with `Path::join`, but from different starting points, so
+        // on Windows they disagree about where the backslashes fall rather than about which
+        // directory is meant.
+        let include_flag = slashed(&format!("/I{}", generated.join("include").display()));
+        assert!(
+            invoker.calls()[0]
+                .args
+                .iter()
+                .any(|arg| slashed(arg) == include_flag),
+            "expected {include_flag} among {:?}",
+            invoker.calls()[0].args
+        );
 
         // The PCH is created once and consumed by the sources.
         let calls = invoker.calls();
