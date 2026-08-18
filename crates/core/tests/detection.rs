@@ -375,6 +375,20 @@ fn folder_names_are_matched_regardless_of_case() {
 
     let folders = resolve_game_folders(&game, &documents).expect("case is not a difference");
 
+    // The property that matters on every platform: the resolved path opens the folder that is
+    // really there. Written through the name on disk, read back through the resolved one.
+    std::fs::write(documents.join("Mods").join("marker.txt"), b"here").unwrap();
+    assert!(
+        folders.mods.join("marker.txt").is_file(),
+        "the resolved path must open the folder on disk, got {}",
+        folders.mods.display(),
+    );
+
+    // The *spelling* is only observable where the filesystem is case-sensitive. On Windows
+    // `locate` finds `MODS` exists — it is the same directory as `Mods` there — takes the
+    // exact-match fast path, and never scans for the on-disk name. Nothing depends on which
+    // of the two it hands back, because both open the same folder.
+    #[cfg(unix)]
     assert_eq!(
         folders.mods,
         documents.join("Mods"),
