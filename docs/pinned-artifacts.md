@@ -251,3 +251,28 @@ check.
 `LUAJIT_ENABLE_LUA52COMPAT` is listed here rather than left to the build code because it is a pin
 in the same sense the others are: Civilization V and Vox Populi are written against Lua 5.1, and
 5.2 semantics would only add divergence from the engine the scripts were tested on.
+
+### The source is patched before it is built
+
+The engine is a replacement for the exact Lua 5.1 the game ships, so where LuaJIT and PUC-Lua
+5.1 disagree about behaviour the language leaves *undefined*, the mods were written against
+PUC's answer and the engine has to give it. Those edits live in
+`crates/toolchain/src/luajit/patches.rs`, one exact-text replacement each, applied to the
+checkout before the first compile. A source that does not contain the expected text fails the
+build rather than silently dropping the patch — which is the failure a maintainer wants when
+the pinned commit moves.
+
+**`table.insert(t, pos, v)` measures the table by its contiguous prefix.** `#t` on a table with
+a hole is undefined — any index whose successor is nil is a valid answer — and PUC-Lua and
+LuaJIT pick different ones, because their tables grow differently. `table.insert` uses that
+number to decide how far to shift, so on a holey table the two engines build *different arrays*.
+Vox Populi's top panel hits this: it inserts each strategic resource at its `StrategicPriority`,
+the resources arrive in ID order (iron first) while the priorities put horses first, so the first
+insert lands at position 2 of an empty table. PUC-Lua calls that table empty; LuaJIT calls it
+length 2, shifts iron aside, and the next insert overwrites it — leaving a hole at index 2 that
+stops the panel's `ipairs` after one icon. The patch measures the prefix instead, which is the
+smallest valid border and equals `#t` exactly for any table without holes.
+
+Measured against PUC-Lua 5.1.5 and stock LuaJIT across every shape of insert (append, at 1, in
+the middle, at `#t+1`, past the end, into a hole), the only case whose resulting array differs
+is the broken one, and there the patched engine matches PUC byte for byte.

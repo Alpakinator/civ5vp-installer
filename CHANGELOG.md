@@ -22,6 +22,13 @@ publishes binaries for.
 
 ### Fixed
 
+- **The LuaJIT engine no longer breaks the top panel's resource icons.** With the engine turned
+  on, the strategic resources across the top of the screen showed horses and nothing else —
+  iron, coal, oil, aluminium, uranium and paper all vanished. Vox Populi builds that row with
+  `table.insert` at each resource's own priority, which depends on how the engine measures a
+  table with a gap in it; Lua 5.1 and LuaJIT answer that differently, and LuaJIT's answer left a
+  gap that stopped the row after the first icon. The engine is now built to answer the way the
+  game's own Lua does, so the row is identical either way.
 - **A dropped connection no longer ends the SDK download.** The Windows SDK image comes from
   the Wayback Machine, which drops ranged requests routinely; one drop used to abandon the
   whole 1.4 GB download and hand the player a failure. Each piece is now asked for again with
