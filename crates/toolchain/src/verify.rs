@@ -107,8 +107,18 @@ pub fn verify_extraction(sdk_root: &Path) -> Result<ExtractionReport, ToolchainE
 
             // A verification name counts whichever way it resolves — a case symlink added by
             // fix-up 1 is exactly as good as a real file, because the compiler will open it.
-            if wanted.contains(&name) && !metadata.is_dir() && !found.contains_key(name) {
-                found.insert(name.to_string(), path.clone());
+            //
+            // Matched without regard to case, and keyed by the spelling §4 uses so the caller
+            // can look the answer up. The SDK's own spellings are inconsistent — `Kernel32.Lib`
+            // beside `msvcrt.lib` — and on Windows no fix-up runs to add a lowercase alias,
+            // because NTFS never needed one. An exact match therefore reported a file the
+            // compiler opens perfectly well as missing, and sent the player to clear a data
+            // folder that was never the problem, forever.
+            if !metadata.is_dir()
+                && let Some(canonical) = wanted.iter().find(|want| want.eq_ignore_ascii_case(name))
+                && !found.contains_key(*canonical)
+            {
+                found.insert((*canonical).to_string(), path.clone());
             }
 
             if metadata.is_dir() {
@@ -232,6 +242,31 @@ mod tests {
         assert!(report.is_complete(), "{}", report.summary());
         assert_eq!(report.resolved.len(), VERIFICATION_NAMES.len());
         assert!(report.missing.is_empty());
+    }
+
+    /// The SDK spells its own files inconsistently — `Kernel32.Lib` beside `msvcrt.lib` —
+    /// and on Windows no fix-up runs to add a lowercase alias, because NTFS never needed one.
+    /// Matching exactly reported a file the compiler opens perfectly well as missing, and the
+    /// sentence it produced sent the player to clear a data folder that was never at fault.
+    #[test]
+    fn a_verification_name_resolves_whatever_case_the_sdk_shipped_it_in() {
+        let dir = extracted_tree();
+        let lib = dir.path().join("Lib");
+        fs::rename(lib.join("kernel32.lib"), lib.join("Kernel32.Lib")).unwrap();
+
+        let report = verify_extraction(dir.path()).unwrap();
+
+        assert!(report.is_complete(), "{}", report.summary());
+        // Reported under the spelling the document uses, whatever is on disk, because that is
+        // the name every caller looks the answer up by.
+        assert!(
+            report
+                .resolved
+                .iter()
+                .any(|(name, path)| name == "kernel32.lib" && path.ends_with("Kernel32.Lib")),
+            "{}",
+            report.summary()
+        );
     }
 
     #[test]
