@@ -18,6 +18,19 @@ publishes binaries for.
 
 ### Fixed
 
+- **A dropped connection no longer ends the SDK download.** The Windows SDK image comes from
+  the Wayback Machine, which drops ranged requests routinely; one drop used to abandon the
+  whole 1.4 GB download and hand the player a failure. Each piece is now asked for again with
+  a widening pause, the download as a whole is picked up twice more after that, and every
+  request carries a deadline — before this, a wedged connection could hold one of the four
+  download threads open indefinitely. Pieces are 8 MB rather than 32 MB, so a failure costs
+  seconds, and the progress lines name the transfer rate.
+- **A failed install no longer signs off with "Finished".** The last line of the Activity log
+  read "Finished in 4 min 50 s" whatever had happened, which read as success even though the
+  failure was on screen above it. A run that did not finish now says it stopped.
+- **A download that ends early is treated as interrupted, not as complete.** On the fallback
+  single-connection path a truncated response was hashed as if it were the whole file, which
+  discarded every byte that had arrived. It is now resumed from.
 - **Clearing the LuaJIT checkbox now restores the game's own engine.** Previously the choice
   was one-way: turning it on replaced the engine, turning it off did nothing, and the only
   route back was uninstalling everything. The restore is driven by the saved original rather

@@ -712,6 +712,31 @@ fn a_bad_source_folder_is_explained_and_nothing_is_installed() {
     );
 }
 
+/// A run that failed must not sign off with the word players read as success.
+///
+/// This is the bug behind a real report: a download died part-way, the Activity panel's last
+/// line still read "Finished in 4 min 50 s", and the player believed the mod was installed.
+#[test]
+fn a_failed_run_says_it_stopped_rather_than_that_it_finished() {
+    let game = TempGame::new();
+    let mut harness = harness_over(game.launch(&game.locations()));
+    harness.step();
+    enter_dev_mode(&mut harness, "/no/such/checkout");
+
+    harness.get_by_label("Install").click();
+    wait_for_the_install_to_finish(&mut harness);
+    wait_for_label(&mut harness, "Stopped after");
+
+    assert!(
+        harness
+            .query_all_by_label_contains("Finished in")
+            .next()
+            .is_none(),
+        "a failed run must not claim to have finished; visible: {:?}",
+        visible_labels(&mut harness)
+    );
+}
+
 /// The Debug choice belongs to Dev mode. Naming a Local Repo is what makes the
 /// checkbox exist; without one it is not drawn at all.
 #[test]
