@@ -104,6 +104,11 @@ jobs:
       - name: Publish both binaries
         env:
           GH_TOKEN: ${{ github.token }}
+          # This job has no checkout — it only moves two artifacts — so there is no `.git`
+          # for `gh` to work the repository out from, and it exits with "not a git
+          # repository". Naming it directly is cheaper than checking out the source purely
+          # to satisfy that inference.
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           mv artifacts/civ5vp-installer-linux-x86_64/civ5vp-installer \
