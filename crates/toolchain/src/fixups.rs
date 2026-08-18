@@ -506,6 +506,10 @@ mod tests {
     }
 
     #[test]
+    // What this asserts is a change the fix-ups make, and they deliberately make
+    // none on Windows: `NEEDS_FIXUPS` is false there because NTFS already resolves
+    // every spelling the SDK ships. The no-op is covered by its own test below.
+    #[cfg(unix)]
     fn fixup_1_lowercases_headers_and_leaves_the_original_spelling_working() {
         let dir = sdk_tree();
         let root = dir.path();
@@ -544,6 +548,10 @@ mod tests {
     }
 
     #[test]
+    // What this asserts is a change the fix-ups make, and they deliberately make
+    // none on Windows: `NEEDS_FIXUPS` is false there because NTFS already resolves
+    // every spelling the SDK ships. The no-op is covered by its own test below.
+    #[cfg(unix)]
     fn fixup_3_makes_both_spellings_of_include_and_lib_resolve() {
         let dir = sdk_tree();
         let root = dir.path();
@@ -558,6 +566,10 @@ mod tests {
     }
 
     #[test]
+    // What this asserts is a change the fix-ups make, and they deliberately make
+    // none on Windows: `NEEDS_FIXUPS` is false there because NTFS already resolves
+    // every spelling the SDK ships. The no-op is covered by its own test below.
+    #[cfg(unix)]
     fn fixup_4_rewrites_backslashes_inside_include_directives_only() {
         let dir = sdk_tree();
         let root = dir.path();
@@ -575,6 +587,10 @@ mod tests {
     }
 
     #[test]
+    // What this asserts is a change the fix-ups make, and they deliberately make
+    // none on Windows: `NEEDS_FIXUPS` is false there because NTFS already resolves
+    // every spelling the SDK ships. The no-op is covered by its own test below.
+    #[cfg(unix)]
     fn fixup_5_adds_case_spellings_for_every_import_library() {
         let dir = sdk_tree();
         let root = dir.path();
@@ -597,6 +613,10 @@ mod tests {
     }
 
     #[test]
+    // What this asserts is a change the fix-ups make, and they deliberately make
+    // none on Windows: `NEEDS_FIXUPS` is false there because NTFS already resolves
+    // every spelling the SDK ships. The no-op is covered by its own test below.
+    #[cfg(unix)]
     fn fixup_6_stubs_a_header_the_sdk_does_not_ship() {
         let dir = sdk_tree();
         let root = dir.path();
@@ -671,6 +691,30 @@ mod tests {
     /// The same input twice produces the same tree, and the second run changes nothing —
     /// a non-idempotent pass would turn every retried bootstrap into a slightly different
     /// toolchain.
+    /// On Windows the fix-ups exist only to be skipped, and that has to stay true: every one
+    /// of them either renames a file, adds a symlink, or rewrites a header, and none of those
+    /// is wanted on a filesystem that resolves case by itself. Creating symlinks there would
+    /// also need a privilege the installer deliberately does not ask for.
+    #[test]
+    #[cfg(not(unix))]
+    fn the_fixups_do_nothing_at_all_on_a_case_insensitive_filesystem() {
+        let dir = sdk_tree();
+        let before = fs::read_to_string(dir.path().join("Include/uses_backslashes.h")).ok();
+
+        let report = apply_to(dir.path());
+
+        assert_eq!(
+            report,
+            FixupReport::default(),
+            "no fix-up may touch an NTFS tree"
+        );
+        assert_eq!(
+            fs::read_to_string(dir.path().join("Include/uses_backslashes.h")).ok(),
+            before,
+            "no header may be rewritten"
+        );
+    }
+
     #[test]
     fn applying_the_fixups_twice_changes_nothing_the_second_time() {
         let dir = sdk_tree();

@@ -209,6 +209,14 @@ pub fn linker_args(configuration: BuildConfiguration, source_root: &Path) -> Vec
 mod tests {
     use std::path::PathBuf;
 
+    /// The flags carry real paths, and `Path::join` uses the platform's separator — `\` on
+    /// Windows, `/` everywhere else. Both are correct: clang-cl and lld-link accept either,
+    /// and nothing downstream cares. Comparing against one written spelling therefore means
+    /// normalising the separator, not asserting which platform the test runs on.
+    fn with_forward_slashes(args: &[String]) -> Vec<String> {
+        args.iter().map(|arg| arg.replace('\\', "/")).collect()
+    }
+
     use super::*;
 
     fn sdk_dirs() -> Vec<PathBuf> {
@@ -274,7 +282,7 @@ mod tests {
         ]
         .map(str::to_owned)
         .to_vec();
-        assert_eq!(args, expected);
+        assert_eq!(with_forward_slashes(&args), expected);
     }
 
     #[test]
@@ -382,7 +390,7 @@ mod tests {
         ]
         .map(str::to_owned)
         .to_vec();
-        assert_eq!(args, expected);
+        assert_eq!(with_forward_slashes(&args), expected);
     }
 
     #[test]
@@ -393,7 +401,7 @@ mod tests {
         assert!(!args.contains(&"/OPT:ICF".to_owned()));
         assert!(args.contains(&"/DEBUG".to_owned()));
         assert_eq!(
-            args.last().unwrap(),
+            with_forward_slashes(&args).last().unwrap(),
             "/DEF:/src/CvGameCoreDLL_Expansion2/CvGameCoreDLL.def"
         );
     }

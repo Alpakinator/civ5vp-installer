@@ -193,6 +193,18 @@ fn resolve_case(dir: &Path, relative: &str) -> Option<String> {
 mod tests {
     use super::*;
 
+    /// Source paths compared without regard to case.
+    ///
+    /// The project file spells one directory `lua\` while the disk has `Lua`. On a
+    /// case-sensitive filesystem `load` must hand back the disk spelling or the compiler
+    /// cannot open the file. On Windows the project file's own spelling already opens it, so
+    /// nothing is corrected and the asked-for spelling comes back. Both resolve, which is
+    /// what these tests are about; the exact spelling is checked separately, under `cfg(unix)`,
+    /// where it is the whole point.
+    fn ignoring_case(sources: &[String]) -> Vec<String> {
+        sources.iter().map(|source| source.to_lowercase()).collect()
+    }
+
     /// A miniature of the real file: same element shapes, same quirks.
     const PROJECT_XML: &str = r#"<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
@@ -243,6 +255,13 @@ mod tests {
 
         let project = load(dir.path()).unwrap();
 
+        assert_eq!(
+            ignoring_case(&project.sources),
+            vec!["cvcity.cpp", "lua/cvluaarea.cpp"]
+        );
+        // The disk spelling is what a case-sensitive filesystem needs, and correcting it is
+        // this function's job there.
+        #[cfg(unix)]
         assert_eq!(project.sources, vec!["CvCity.cpp", "Lua/CvLuaArea.cpp"]);
         assert_eq!(
             project.project_dir,
@@ -279,7 +298,10 @@ mod tests {
 
         assert!(project.stackwalker);
         // The definitions block must not have leaked into the source list.
-        assert_eq!(project.sources, vec!["CvCity.cpp", "Lua/CvLuaArea.cpp"]);
+        assert_eq!(
+            ignoring_case(&project.sources),
+            vec!["cvcity.cpp", "lua/cvluaarea.cpp"]
+        );
     }
 
     /// A file added at a newer Version appears without any change to the installer.
@@ -304,8 +326,8 @@ mod tests {
         let project = load(dir.path()).unwrap();
 
         assert_eq!(
-            project.sources,
-            vec!["CvCity.cpp", "CvNewFeature.cpp", "Lua/CvLuaArea.cpp"]
+            ignoring_case(&project.sources),
+            vec!["cvcity.cpp", "cvnewfeature.cpp", "lua/cvluaarea.cpp"]
         );
     }
 
