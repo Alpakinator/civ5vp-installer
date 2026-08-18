@@ -160,6 +160,25 @@ impl<R: Read + Seek> Iso9660<R> {
         self.resolve(path).is_ok()
     }
 
+    /// Where `path`'s bytes actually lie in the image: absolute `(offset, length)` pairs, in
+    /// order.
+    ///
+    /// Test-only, because at runtime the offsets come from the pin rather than from the
+    /// image: this is the tool that *measured* the pin (see `describe_the_pinned_members`),
+    /// and the check that each member really is one run of bytes.
+    ///
+    /// Byte offsets rather than the sector numbers the format stores, so this reader and the
+    /// UDF one answer the same question in the same units.
+    #[cfg(test)]
+    pub fn extents(&mut self, path: &str) -> Result<Vec<(u64, u64)>, ToolchainError> {
+        Ok(self
+            .resolve(path)?
+            .extents
+            .iter()
+            .map(|&(sector, length)| (sector * LOGICAL_SECTOR_SIZE, length))
+            .collect())
+    }
+
     /// Walk a `/`-separated path from the root, matching case-insensitively.
     ///
     /// Case-insensitive because the same image can be navigated through either descriptor and

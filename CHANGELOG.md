@@ -16,6 +16,16 @@ publishes binaries for.
   uninstall. Some older Lua mods do not work under it. See
   [ADR-0006](docs/adr/0006-replaced-files-and-the-luajit-engine.md).
 
+### Changed
+
+- **The first install downloads 102 MB of the Windows SDK instead of 1.4 GB.** The build needs
+  eleven files out of that disc image — the rest is samples, documentation, debuggers and the
+  64-bit halves, none of which is ever used. Each of the eleven is now fetched on its own,
+  checked against its own checksum, so a first install pulls about 1.1 GB in total rather than
+  2.4 GB, and the slowest part of it — the archive server that holds the SDK — is asked for a
+  fourteenth of what it used to be. A disc image left by an earlier version of the installer is
+  still unpacked where it lies, so nobody downloads anything twice.
+
 ### Fixed
 
 - **A dropped connection no longer ends the SDK download.** The Windows SDK image comes from

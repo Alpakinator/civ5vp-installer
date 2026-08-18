@@ -30,6 +30,45 @@ Setup/vc_stdx86/vc_stdx86.msi                   + vc_stdx86.cab          (VC9 CR
 
 Each MSI carries the mapping from CAB-internal names to real file paths — that mapping must be honoured, not guessed. The reference implementation shells out to `7z` and `msiextract`; **ours parses UDF, MSI, and CAB in-process** (ADR-0001), so this list is the extraction contract to verify against.
 
+### The installer downloads the members, not the image
+
+Those eleven files are **106,487,437 bytes — 6.9% of the image**. The rest is samples,
+documentation, debuggers and the amd64/ia64 halves, none of which is ever read. Since the only
+surviving source serves the image at a fraction of a megabyte a second (see below), fetching
+all of it means spending hours on bytes nothing looks at.
+
+So each member is fetched as its own windowed download: same URL, a `Range` over that member's
+own bytes, checked against that member's own SHA-256. The offsets and hashes are part of the
+pin. They were measured off a copy of the image whose whole-file SHA-256 matches the one above:
+
+```bash
+CIV5VP_SDK_ISO=/path/to/GRMSDK_EN_DVD.iso \
+  cargo test --release -p civ5vp-toolchain --lib -- --ignored --nocapture describe_the_pinned_members
+```
+
+| member | offset | bytes | sha256 |
+| --- | ---: | ---: | --- |
+| `Setup/WinSDK/WinSDK_x86.msi` | 2,975,744 | 2,374,144 | `1e22e5f4c7324a77088d33aa9d3f555c85a525639e14a624b033ded032fd4da8` |
+| `Setup/WinSDK/cab1.cab` | 5,351,424 | 29,986,366 | `c5076c9cd324161ec6e8fbf893be0aab75dd1c68866cdc93d6c043d2d69dd063` |
+| `Setup/WinSDKBuild/WinSDKBuild_x86.msi` | 76,539,904 | 979,968 | `f1268291829854745ed2ab80e854c8a8514e876e71e3f810fdc06f40ca97edc3` |
+| `Setup/WinSDKBuild/cab1.cab` | 77,520,896 | 5,742,456 | `bd2b525187d30f1d7cf7132cab080e212ec33f248226b4b5a6aa2a02ef0cf6ba` |
+| `Setup/WinSDKBuild/cab2.cab` | 83,263,488 | 6,193,571 | `baa12eca0e63a31f3d9d5eddd0003a26bf7e49e69373eddc882cc74d6b8573c4` |
+| `Setup/WinSDKBuild/cab3.cab` | 89,458,688 | 4,789,860 | `e69199e1c281838ecc70263296f5cc4b3a569cb1bf7bcfdb93775d8696264b33` |
+| `Setup/WinSDKBuild/cab4.cab` | 94,248,960 | 1,020,063 | `c4635d2eae946c088b84d6c1e8874c5ade865440e9ac8325e472e529f28ed9e6` |
+| `Setup/WinSDKWin32Tools/WinSDKWin32Tools_x86.msi` | 1,444,061,184 | 766,976 | `ba17c91c2fbdc09cf23ad126a489b6cd7b38ae2ff7098cc748348bf4bbe895f7` |
+| `Setup/WinSDKWin32Tools/cab1.cab` | 1,444,829,184 | 10,896,725 | `551a7ccea577f8d2fea8a059e463e9e3ead1d9a03b73aa26b2886b8647ec8b29` |
+| `Setup/vc_stdx86/vc_stdx86.msi` | 1,548,064,768 | 408,576 | `0a524433918357e8476fbf0191ad3a7fb45fad11ec929f5bd69b0d2713306ade` |
+| `Setup/vc_stdx86/vc_stdx86.cab` | 1,504,735,232 | 43,328,732 | `d91cdb54fe5b4328b811b3b0bdd0b660a84b09e87cdce4da7d07ead63069e192` |
+
+Each member is one unbroken run of bytes, which is what makes a single ranged request enough
+for it; the measuring test asserts that, so re-measuring against a differently-mastered image
+fails loudly instead of quietly fetching nonsense. A wrong offset cannot pass silently either
+— the bytes would not match the member's SHA-256, and the download is refused.
+
+The whole-image SHA-256 above is still the pin of record, and still checked whenever a whole
+image is present: one downloaded by an earlier version of the installer is unpacked where it
+lies rather than re-fetched a member at a time.
+
 ### Corrections, measured against the real download (ticket 05)
 
 Three things this document originally said were wrong. All three were found by pointing code at

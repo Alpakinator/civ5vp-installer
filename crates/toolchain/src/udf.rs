@@ -241,6 +241,20 @@ impl<R: Read + Seek> Udf<R> {
         self.resolve(path).is_ok()
     }
 
+    /// Where `path`'s bytes actually lie in the image: absolute `(offset, length)` pairs, in
+    /// order.
+    ///
+    /// Test-only, because at runtime the offsets come from the pin rather than from the
+    /// image: this is the tool that *measured* the pin (see `describe_the_pinned_members`),
+    /// and the check that each member really is one run of bytes.
+    ///
+    /// A file small enough to live inside its own File Entry has no extents at all, which is
+    /// why the answer can be empty.
+    #[cfg(test)]
+    pub fn extents(&mut self, path: &str) -> Result<Vec<(u64, u64)>, ToolchainError> {
+        Ok(self.resolve(path)?.extents)
+    }
+
     /// Walk a `/`-separated path from the root, matching case-insensitively.
     ///
     /// Only the matched child's File Entry is read, not every sibling's — `Setup/` has a few

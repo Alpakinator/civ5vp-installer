@@ -14,6 +14,13 @@
 //! an interrupted run redoes only what is missing. A server that ignores `Range` drops the
 //! whole fetch back to the sequential path automatically.
 //!
+//! **Not every download is a whole file.** The Windows SDK image is 1.45 GiB of which the
+//! build reads about 102 MiB, so its members are fetched as *windows*: the same URL, a
+//! `Range` over one member's own bytes, checked against that member's own SHA-256
+//! (`docs/pinned-artifacts.md` §1). Everything below — the chunk grid, the ledger, the
+//! resume, the retries — works in coordinates relative to what was asked for, so a window
+//! behaves exactly like a small artifact that happens to live inside a large one.
+//!
 //! **A failed request is the normal case, not the exceptional one.** The Wayback Machine
 //! answers a ranged request with nothing at all often enough that `docs/pinned-artifacts.md`
 //! §1 records it, so one dropped connection must never end a 1.45 GiB download: every ranged
@@ -32,7 +39,7 @@ use civ5vp_core::{ProgressReporter, Stage};
 use sha2::{Digest, Sha256};
 
 use crate::error::{ToolchainError, io_error};
-use crate::pinned::PinnedDownload;
+use crate::pinned::{PinnedDownload, PinnedMember};
 
 /// Copy buffer. Big enough that the syscall overhead disappears against a network stream.
 const CHUNK: usize = 256 * 1024;
@@ -258,7 +265,92 @@ pub fn fetch(
     downloads_dir: &Path,
     progress: &ProgressReporter,
 ) -> Result<PathBuf, ToolchainError> {
-    fetch_with(source, pinned, downloads_dir, progress, Tuning::shipped())
+    fetch_with(
+        source,
+        Wanted::whole(pinned),
+        downloads_dir,
+        progress,
+        Tuning::shipped(),
+    )
+}
+
+/// Make one member of `image` present and verified in `downloads_dir`, without downloading
+/// the rest of the image.
+///
+/// The four pinned members are ~102 MiB of a 1.45 GiB disc image, and the only place that
+/// image still exists is a replay service that serves it at a fraction of a megabyte a second
+/// — so fetching the other 93% of it is most of a first bootstrap's wall-clock time, spent on
+/// bytes that are read by nothing. Each member is one run of bytes at a pinned offset
+/// (`docs/pinned-artifacts.md` §1), so it is one windowed download like any other, checked
+/// against its own SHA-256.
+pub fn fetch_member(
+    source: &dyn ByteSource,
+    image: &PinnedDownload,
+    member: &PinnedMember,
+    label: &str,
+    downloads_dir: &Path,
+    progress: &ProgressReporter,
+) -> Result<PathBuf, ToolchainError> {
+    let cache_name = member.cache_name();
+    fetch_with(
+        source,
+        Wanted {
+            file_name: &cache_name,
+            label,
+            url: image.url,
+            sha256: member.sha256,
+            offset: member.offset,
+            bytes: Some(member.bytes),
+            approximate_bytes: member.bytes,
+        },
+        downloads_dir,
+        progress,
+        Tuning::for_member(),
+    )
+}
+
+/// One thing to fetch: what it is called on disk, where its bytes are, and what they have to
+/// hash to.
+///
+/// The window is what makes a member of the disc image expressible: same URL, but only the
+/// bytes that member occupies. A whole artifact is the degenerate case — offset 0, and a
+/// length only the server can say.
+#[derive(Debug, Clone, Copy)]
+struct Wanted<'a> {
+    file_name: &'a str,
+    /// What to call this in a sentence a player reads. A file name will do for an artifact
+    /// that *is* a file; a member of a disc image is "the Windows SDK core", not
+    /// `WinSDK-WinSDK_x86.msi`.
+    label: &'a str,
+    url: &'a str,
+    sha256: &'a str,
+    /// Where the wanted bytes start in the resource.
+    offset: u64,
+    /// How many bytes are wanted, when that is known before asking.
+    bytes: Option<u64>,
+    /// Roughly how many bytes that is, for the decisions and the sentences that have to be
+    /// made before the server answers.
+    approximate_bytes: u64,
+}
+
+impl<'a> Wanted<'a> {
+    fn whole(pinned: &'a PinnedDownload) -> Self {
+        Self {
+            file_name: pinned.file_name,
+            label: pinned.file_name,
+            url: pinned.url,
+            sha256: pinned.sha256,
+            offset: 0,
+            bytes: None,
+            approximate_bytes: pinned.approximate_bytes,
+        }
+    }
+
+    /// Whether this is a slice of a larger resource. A server that will not serve ranges can
+    /// still deliver a whole artifact; it cannot deliver a window at all.
+    fn is_window(&self) -> bool {
+        self.bytes.is_some()
+    }
 }
 
 /// The numbers behind a download: the parallel grid, and how stubbornly a failed request is
@@ -292,13 +384,26 @@ impl Tuning {
             backoff: BACKOFF,
         }
     }
+
+    /// The same, with a lower bar for going parallel.
+    ///
+    /// The threshold exists so a small artifact is not split into requests that cost more
+    /// than they save — but that reasoning is about the *probe*, and a member's length is
+    /// pinned, so there is nothing to discover. The two large cabinets (30 MB and 43 MB) are
+    /// most of what a first bootstrap fetches and are well under [`PARALLEL_THRESHOLD`].
+    fn for_member() -> Self {
+        Self {
+            parallel_threshold: 2 * PARALLEL_CHUNK,
+            ..Self::shipped()
+        }
+    }
 }
 
 /// [`fetch`] with the grid and the retries as parameters, so the fast suite can exercise the
 /// chunking with kilobytes instead of gigabytes.
 fn fetch_with(
     source: &dyn ByteSource,
-    pinned: &PinnedDownload,
+    wanted: Wanted<'_>,
     downloads_dir: &Path,
     progress: &ProgressReporter,
     tuning: Tuning,
@@ -306,17 +411,17 @@ fn fetch_with(
     fs::create_dir_all(downloads_dir)
         .map_err(|error| io_error("create the downloads folder", downloads_dir, &error))?;
 
-    let final_path = downloads_dir.join(pinned.file_name);
-    let partial_path = downloads_dir.join(format!("{}.part", pinned.file_name));
-    let sidecar_path = downloads_dir.join(format!("{}.parts", pinned.file_name));
+    let final_path = downloads_dir.join(wanted.file_name);
+    let partial_path = downloads_dir.join(format!("{}.part", wanted.file_name));
+    let sidecar_path = downloads_dir.join(format!("{}.parts", wanted.file_name));
 
     if final_path.is_file() {
         // Present from an earlier run. Still hashed: a file that was truncated by a full disk
         // or edited by something else must not be handed to the extractor.
-        if hash_file(&final_path)? == pinned.sha256 {
+        if hash_file(&final_path)? == wanted.sha256 {
             progress.report(
                 Stage::Build,
-                format!("Already have {} — skipping the download.", pinned.file_name),
+                format!("Already have {} — skipping the download.", wanted.label),
             );
             let _ = fs::remove_file(&sidecar_path);
             return Ok(final_path);
@@ -335,15 +440,15 @@ fn fetch_with(
         |next| {
             format!(
                 "The download of {} stopped early — carrying on from where it stopped (attempt {next} of {}).",
-                pinned.file_name, tuning.passes
+                wanted.label, tuning.passes
             )
         },
         || {
             let mut fetched_in_parallel = false;
-            if pinned.approximate_bytes >= tuning.parallel_threshold {
+            if wanted.approximate_bytes >= tuning.parallel_threshold {
                 fetched_in_parallel = parallel_download(
                     source,
-                    pinned,
+                    wanted,
                     &partial_path,
                     &sidecar_path,
                     progress,
@@ -351,25 +456,25 @@ fn fetch_with(
                 )?;
             }
             if !fetched_in_parallel {
-                download_to_partial(source, pinned, &partial_path, progress)?;
+                download_to_partial(source, wanted, &partial_path, progress)?;
             }
             Ok(())
         },
     )?;
 
     let actual = hash_file(&partial_path)?;
-    if actual != pinned.sha256 {
+    if actual != wanted.sha256 {
         // Do not keep it: resuming from bytes that are already wrong would loop forever.
         let _ = fs::remove_file(&partial_path);
         let _ = fs::remove_file(&sidecar_path);
         return Err(ToolchainError::new(
             format!(
                 "The download of {} came out damaged. Check your connection and try again.",
-                pinned.file_name
+                wanted.label
             ),
             format!(
-                "sha256 mismatch for {}: expected {}, got {actual}",
-                pinned.url, pinned.sha256
+                "sha256 mismatch for {} at offset {}: expected {}, got {actual}",
+                wanted.url, wanted.offset, wanted.sha256
             ),
         ));
     }
@@ -380,7 +485,7 @@ fn fetch_with(
     let _ = fs::remove_file(&sidecar_path);
     progress.report(
         Stage::Build,
-        format!("Downloaded {} and checked it.", pinned.file_name),
+        format!("Downloaded {} and checked it.", wanted.label),
     );
     Ok(final_path)
 }
@@ -417,7 +522,9 @@ fn with_retries<T>(
 /// The bytes that worker wrote are on disk either way, so treating the poison as a reason to
 /// drop the ledger would lose them — which is the opposite of what the ledger is for.
 fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 // ---------------------------------------------------------------------------------------
@@ -499,14 +606,14 @@ impl ChunkLedger {
     }
 }
 
-/// Download `pinned` over several ranged connections.
+/// Download `wanted` over several ranged connections.
 ///
 /// Returns `Ok(false)` — with nothing torn down — when the server turns out not to support
 /// ranges or not to say the total size; the caller then uses the sequential path. `Ok(true)`
 /// means the `.part` file holds every byte.
 fn parallel_download(
     source: &dyn ByteSource,
-    pinned: &PinnedDownload,
+    wanted: Wanted<'_>,
     partial_path: &Path,
     sidecar_path: &Path,
     progress: &ProgressReporter,
@@ -515,14 +622,15 @@ fn parallel_download(
     let chunk_size = tuning.chunk_size;
     let connections = tuning.connections;
     // A ledger from an interrupted parallel run already knows the total, so a resume asks
-    // for nothing but the missing chunks. Otherwise the first chunk doubles as the probe:
-    // it learns the exact total and whether the server honours ranges, and its bytes are
-    // never wasted.
+    // for nothing but the missing chunks. A window knows it too, from the pin. Otherwise the
+    // first chunk doubles as the probe: it learns the exact total and whether the server
+    // honours ranges, and its bytes are never wasted.
     let mut probe = None;
-    let mut ledger = match ChunkLedger::load(sidecar_path, chunk_size) {
-        Some(ledger) => ledger,
-        None => {
-            let opened = source.open_range(pinned.url, 0, chunk_size)?;
+    let mut ledger = match (ChunkLedger::load(sidecar_path, chunk_size), wanted.bytes) {
+        (Some(ledger), _) => ledger,
+        (None, Some(bytes)) => ChunkLedger::new(chunk_size, bytes),
+        (None, None) => {
+            let opened = source.open_range(wanted.url, 0, chunk_size)?;
             let Some(total) = opened.total else {
                 return Ok(false);
             };
@@ -560,7 +668,7 @@ fn parallel_download(
         Stage::Build,
         format!(
             "Downloading {} ({}) on {connections} connections{}.",
-            pinned.file_name,
+            wanted.label,
             human_bytes(total),
             if already > 0 {
                 format!(" — resuming with {} already here", human_bytes(already))
@@ -576,7 +684,7 @@ fn parallel_download(
         && let Some(probe) = probe.take()
     {
         let (start, end) = ledger.range_of(0);
-        let written = write_chunk(partial_path, probe, start, end, pinned.url);
+        let written = write_chunk(partial_path, probe, start, end, wanted.url);
         if written.is_ok() {
             ledger.done[0] = true;
         }
@@ -631,18 +739,23 @@ fn parallel_download(
                                 "Part {} of {chunk_count} of {} did not arrive — asking again \
                                  (attempt {next} of {}).",
                                 index + 1,
-                                pinned.file_name,
+                                wanted.label,
                                 tuning.attempts
                             )
                         },
                         || {
-                            let transfer = source.open_range(pinned.url, start, end)?;
+                            // The grid is over the wanted bytes; the requests are over the
+                            // resource, which for a member of the disc image starts a
+                            // gigabyte into it.
+                            let from = wanted.offset + start;
+                            let to = wanted.offset + end;
+                            let transfer = source.open_range(wanted.url, from, to)?;
                             // Not a failure to retry: this server does not do ranges, and
                             // asking it four more times will not change that.
-                            if transfer.start != start {
+                            if transfer.start != from {
                                 return Ok(false);
                             }
-                            write_chunk(partial_path, transfer, start, end, pinned.url)?;
+                            write_chunk(partial_path, transfer, start, end, wanted.url)?;
                             Ok(true)
                         },
                     );
@@ -670,7 +783,7 @@ fn parallel_download(
                                     Stage::Build,
                                     format!(
                                         "Downloading {} — {} of {} ({}%) at {}.",
-                                        pinned.file_name,
+                                        wanted.label,
                                         human_bytes(so_far),
                                         human_bytes(total),
                                         percent(so_far, total),
@@ -699,6 +812,20 @@ fn parallel_download(
         return Err(error);
     }
     if range_refused.load(Ordering::Relaxed) {
+        if wanted.is_window() {
+            // A whole artifact can still be had from a server that ignores `Range`; one
+            // member out of the middle of a disc image cannot be had at all.
+            return Err(ToolchainError::new(
+                "The download server stopped letting the installer ask for parts of files, \
+                 so the Windows SDK cannot be fetched piece by piece. Try again later.",
+                format!(
+                    "{} ignored a Range request for {}+{} bytes",
+                    wanted.url,
+                    wanted.offset,
+                    wanted.bytes.unwrap_or_default()
+                ),
+            ));
+        }
         // The server would not serve ranges after all. Keep only a clean prefix for the
         // sequential path to resume from.
         let prefix_chunks = ledger.done.iter().take_while(|done| **done).count();
@@ -726,7 +853,7 @@ fn parallel_download(
         return Err(ToolchainError::new(
             "The download stopped before it finished. Try again — the installer will carry \
              on from where it stopped.",
-            format!("{missing} chunks of {} are still missing", pinned.url),
+            format!("{missing} chunks of {} are still missing", wanted.file_name),
         ));
     }
     Ok(true)
@@ -777,7 +904,7 @@ fn write_chunk(
 
 fn download_to_partial(
     source: &dyn ByteSource,
-    pinned: &PinnedDownload,
+    wanted: Wanted<'_>,
     partial_path: &Path,
     progress: &ProgressReporter,
 ) -> Result<(), ToolchainError> {
@@ -786,18 +913,44 @@ fn download_to_partial(
         Err(_) => 0,
     };
 
-    let mut transfer = source.open(pinned.url, already)?;
+    // A window asks for its own bytes and nothing else; a whole artifact asks from where it
+    // stopped and lets the server say how much there is.
+    let mut transfer = match wanted.bytes {
+        Some(bytes) => {
+            source.open_range(wanted.url, wanted.offset + already, wanted.offset + bytes)?
+        }
+        None => source.open(wanted.url, already)?,
+    };
+    if wanted.is_window() && transfer.start != wanted.offset + already {
+        // The server ignored the range and started somewhere else. For a whole artifact that
+        // is merely a slower path; for a window it is the wrong bytes, and they would be
+        // written into a file named after the member they are not.
+        return Err(ToolchainError::new(
+            "The download server stopped letting the installer ask for parts of files, so \
+             the Windows SDK cannot be fetched piece by piece. Try again later.",
+            format!(
+                "{} answered a request for {}+{} with bytes starting at {}",
+                wanted.url,
+                wanted.offset + already,
+                wanted.bytes.unwrap_or_default(),
+                transfer.start
+            ),
+        ));
+    }
+    // From here on, positions are relative to what is wanted rather than to the resource it
+    // lives in: the `.part` holds the member, not the image the member came out of.
+    transfer.start -= wanted.offset;
     // What the server said the whole resource is, as opposed to what the pin guesses. Only
-    // the first can say whether the body that arrives is the whole body.
-    let announced_total = transfer.total;
-    let expected_total = transfer.total.unwrap_or(pinned.approximate_bytes);
+    // one of them can say whether the body that arrives is the whole body.
+    let announced_total = wanted.bytes.or(transfer.total);
+    let expected_total = announced_total.unwrap_or(wanted.approximate_bytes);
 
     let mut file = if transfer.start > 0 {
         progress.report(
             Stage::Build,
             format!(
                 "Resuming the download of {} at {}.",
-                pinned.file_name,
+                wanted.label,
                 human_bytes(transfer.start)
             ),
         );
@@ -816,7 +969,7 @@ fn download_to_partial(
             Stage::Build,
             format!(
                 "Downloading {} ({}).",
-                pinned.file_name,
+                wanted.label,
                 human_bytes(expected_total)
             ),
         );
@@ -833,7 +986,7 @@ fn download_to_partial(
         let read = transfer
             .body
             .read(&mut buffer)
-            .map_err(|error| network_read_error(pinned.url, &error))?;
+            .map_err(|error| network_read_error(wanted.url, &error))?;
         if read == 0 {
             break;
         }
@@ -847,7 +1000,7 @@ fn download_to_partial(
                 Stage::Build,
                 format!(
                     "Downloading {} — {} of {} ({}%) at {}.",
-                    pinned.file_name,
+                    wanted.label,
                     human_bytes(written),
                     human_bytes(expected_total),
                     percent(written, expected_total),
@@ -870,7 +1023,7 @@ fn download_to_partial(
              where it stopped.",
             format!(
                 "{} ended {} bytes short of {total}",
-                pinned.url,
+                wanted.file_name,
                 total - written
             ),
         ));
@@ -933,8 +1086,11 @@ fn human_bytes(bytes: u64) -> String {
     const MB: f64 = 1024.0 * 1024.0;
     if bytes >= 1024 * 1024 * 1024 {
         format!("{:.1} GB", bytes as f64 / (MB * 1024.0))
-    } else {
+    } else if bytes >= 1024 * 1024 {
         format!("{:.0} MB", bytes as f64 / MB)
+    } else {
+        // One pinned member is a 400 KB MSI, and "0 MB" is not a size.
+        format!("{:.0} KB", bytes as f64 / 1024.0)
     }
 }
 
@@ -1075,7 +1231,18 @@ mod tests {
         dir: &Path,
         progress: &ProgressReporter,
     ) -> Result<PathBuf, ToolchainError> {
-        fetch_with(source, pinned, dir, progress, small_grid())
+        fetch_tuned(source, pinned, dir, progress, small_grid())
+    }
+
+    /// [`fetch`] at a stated tuning, on a whole artifact.
+    fn fetch_tuned(
+        source: &dyn ByteSource,
+        pinned: &PinnedDownload,
+        dir: &Path,
+        progress: &ProgressReporter,
+        tuning: Tuning,
+    ) -> Result<PathBuf, ToolchainError> {
+        fetch_with(source, Wanted::whole(pinned), dir, progress, tuning)
     }
 
     #[test]
@@ -1196,7 +1363,7 @@ mod tests {
         let pinned = pinned_for(&content);
         let truncating = FakeSource::new(content.clone(), vec![100_000]);
 
-        let error = fetch_with(
+        let error = fetch_tuned(
             &truncating,
             &pinned,
             dir.path(),
@@ -1228,7 +1395,7 @@ mod tests {
         let pinned = pinned_for(&content);
         let truncating = FakeSource::new(content.clone(), vec![100_000]);
 
-        let path = fetch_with(
+        let path = fetch_tuned(
             &truncating,
             &pinned,
             dir.path(),
@@ -1242,7 +1409,10 @@ mod tests {
 
         assert_eq!(fs::read(&path).unwrap(), content);
         // The second pass asked for the rest, not for the whole thing again.
-        assert_eq!(truncating.opens.lock().unwrap().as_slice(), &[0u64, 100_000]);
+        assert_eq!(
+            truncating.opens.lock().unwrap().as_slice(),
+            &[0u64, 100_000]
+        );
     }
 
     /// Interrupt it, run it again, get the right file — without re-downloading what already
@@ -1254,7 +1424,7 @@ mod tests {
         let pinned = pinned_for(&content);
 
         let truncating = FakeSource::new(content.clone(), vec![100_000]);
-        let first = fetch_with(
+        let first = fetch_tuned(
             &truncating,
             &pinned,
             dir.path(),
@@ -1267,7 +1437,7 @@ mod tests {
         // A second run, as if the user clicked Install again: it continues from the 100 000
         // bytes the first one left behind rather than starting over.
         let complete = FakeSource::new(content.clone(), vec![]);
-        let path = fetch_with(
+        let path = fetch_tuned(
             &complete,
             &pinned,
             dir.path(),
@@ -1291,7 +1461,7 @@ mod tests {
         // short, everything after that is served properly.
         let flaky = FakeSource::new(content.clone(), vec![1000, 65536]);
 
-        let path = fetch_with(
+        let path = fetch_tuned(
             &flaky,
             &pinned,
             dir.path(),
@@ -1318,7 +1488,7 @@ mod tests {
         let pinned = pinned_for(&content);
         let broken = FakeSource::new(content.clone(), vec![65536]).always_stopping_after(1000);
 
-        let error = fetch_with(
+        let error = fetch_tuned(
             &broken,
             &pinned,
             dir.path(),
@@ -1453,7 +1623,7 @@ mod tests {
         let flaky = FakeSource::new(content, vec![1000, 65536]);
 
         let (sender, receiver) = std::sync::mpsc::channel();
-        fetch_with(
+        fetch_tuned(
             &flaky,
             &pinned,
             dir.path(),
@@ -1472,9 +1642,79 @@ mod tests {
         );
     }
 
+    /// A member of the disc image is the same URL and a window into it — and nothing outside
+    /// that window is ever asked for, which is the entire point.
+    #[test]
+    fn a_member_is_fetched_out_of_the_middle_of_the_artifact() {
+        let dir = tempfile::tempdir().unwrap();
+        let content = content();
+        let image = pinned_for(&content);
+        let window = &content[100_000..180_000];
+        let digest = hex(&Sha256::digest(window));
+        let member = PinnedMember {
+            path: "Setup/WinSDK/cab1.cab",
+            offset: 100_000,
+            bytes: 80_000,
+            sha256: Box::leak(digest.into_boxed_str()),
+        };
+        let source = FakeSource::new(content.clone(), vec![]);
+
+        let path = fetch_member(
+            &source,
+            &image,
+            &member,
+            "the Windows SDK core",
+            dir.path(),
+            &ProgressReporter::silent(),
+        )
+        .unwrap();
+
+        assert_eq!(fs::read(&path).unwrap(), window);
+        assert_eq!(path.file_name().unwrap(), "WinSDK-cab1.cab");
+        assert_eq!(
+            source.opens.lock().unwrap().as_slice(),
+            &[100_000u64],
+            "only the member's own bytes may be requested"
+        );
+    }
+
+    /// A server that ignores `Range` can still deliver a whole artifact. It cannot deliver
+    /// one member out of the middle of one, and pretending otherwise would write the front of
+    /// the image into a file named after a cabinet.
+    #[test]
+    fn a_member_cannot_be_fetched_from_a_server_that_ignores_ranges() {
+        let dir = tempfile::tempdir().unwrap();
+        let content = content();
+        let image = pinned_for(&content);
+        let member = PinnedMember {
+            path: "Setup/WinSDK/cab1.cab",
+            offset: 100_000,
+            bytes: 80_000,
+            sha256: "0000000000000000000000000000000000000000000000000000000000000000",
+        };
+        let source = FakeSource::new(content, vec![]).ignoring_range();
+
+        let error = fetch_member(
+            &source,
+            &image,
+            &member,
+            "the Windows SDK core",
+            dir.path(),
+            &ProgressReporter::silent(),
+        )
+        .unwrap_err();
+
+        assert!(
+            error.message().contains("parts of files"),
+            "expected a sentence about ranges, got {}",
+            error.message()
+        );
+    }
+
     #[test]
     fn byte_sizes_read_the_way_a_player_expects() {
         assert_eq!(human_bytes(580 * 1024 * 1024), "580 MB");
+        assert_eq!(human_bytes(408_576), "399 KB");
         assert_eq!(
             human_bytes(1024 * 1024 * 1024 + 512 * 1024 * 1024),
             "1.5 GB"

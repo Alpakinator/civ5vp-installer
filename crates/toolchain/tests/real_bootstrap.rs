@@ -1,6 +1,6 @@
 //! The real Toolchain Bootstrap, against the artifacts `docs/pinned-artifacts.md` pins.
 //!
-//! `#[ignore]`d, never deleted. It downloads ~1.6 GB and unpacks tens of thousands
+//! `#[ignore]`d, never deleted. It downloads ~1.1 GB and unpacks tens of thousands
 //! of files, so it is nothing like a per-commit test — but a bootstrap that has never once
 //! extracted the real ISO has not resolved the spec's extraction-fidelity bet.
 //!
@@ -18,7 +18,7 @@ use std::sync::mpsc;
 use civ5vp_toolchain::{REFERENCE_BASELINE, ToolchainBootstrap, verify_extraction};
 
 /// Where the real Toolchain Cache goes for these tests. Deliberately persistent: nobody
-/// should pay 1.6 GB twice to re-run one assertion.
+/// should pay 1.1 GB twice to re-run one assertion.
 fn cache_root() -> PathBuf {
     match std::env::var_os("CIV5VP_TOOLCHAIN_CACHE") {
         Some(path) => PathBuf::from(path),
@@ -41,7 +41,7 @@ fn reporting_progress() -> (civ5vp_core::ProgressReporter, std::thread::JoinHand
 /// ISO members through MSI and CAB, apply the six Linux fix-ups, and check that every name in
 /// `docs/pinned-artifacts.md` §4 resolves.
 #[test]
-#[ignore = "downloads ~1.6 GB from archive.org and github.com"]
+#[ignore = "downloads ~1.1 GB from archive.org and github.com"]
 fn the_real_sdk_iso_extracts_into_a_usable_toolchain() {
     let root = cache_root();
     println!("Toolchain Cache: {}", root.display());

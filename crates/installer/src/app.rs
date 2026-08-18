@@ -652,7 +652,7 @@ impl InstallerApp {
         }
 
         ui.add_space(8.0);
-        // The Core's up-front cost warning: the 2.4 GB first-run bootstrap
+        // The Core's up-front cost warning: the 1.1 GB first-run bootstrap
         // must be known before the click, and the sentence disappears the moment the
         // Toolchain Cache makes it untrue.
         if let Some(note) = &self.first_run_note {

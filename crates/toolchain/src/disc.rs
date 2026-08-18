@@ -70,6 +70,17 @@ impl<R: Read + Seek> Disc<R> {
         }
     }
 
+    /// Where `path`'s bytes lie in the image: absolute `(offset, length)` pairs, in order.
+    /// Empty when the filesystem stores the data inside the entry itself. Test-only — see
+    /// [`crate::udf::Udf::extents`].
+    #[cfg(test)]
+    pub fn extents(&mut self, path: &str) -> Result<Vec<(u64, u64)>, ToolchainError> {
+        match self {
+            Self::Udf(volume) => volume.extents(path),
+            Self::Iso9660(volume) => volume.extents(path),
+        }
+    }
+
     pub fn read_file(&mut self, path: &str) -> Result<Vec<u8>, ToolchainError> {
         match self {
             Self::Udf(volume) => volume.read_file(path),
