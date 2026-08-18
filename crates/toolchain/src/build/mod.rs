@@ -885,9 +885,13 @@ mod tests {
         assert_eq!(paths[0], "clang.cpp");
         assert_eq!(paths[1], "vc9-crt-compat.cpp");
         assert_eq!(paths[2], "CvGameCoreDLL_Expansion2/_precompile.cpp");
-        // The parallel section's order is nondeterministic; membership is not.
-        assert!(paths[3..5].contains(&"CvGameCoreDLL_Expansion2/CvCity.cpp".to_owned()));
-        assert!(paths[3..5].contains(&"CvGameCoreDLL_Expansion2/Lua/CvLuaArea.cpp".to_owned()));
+        // The parallel section's order is nondeterministic; membership is not. Compared
+        // without case as well as without separators: the project file spells one directory
+        // `lua\` where the disk has `Lua`, and correcting that is only needed — and only
+        // done — where the filesystem is case-sensitive.
+        let sources: Vec<String> = paths[3..5].iter().map(|p| p.to_lowercase()).collect();
+        assert!(sources.contains(&"cvgamecoredll_expansion2/cvcity.cpp".to_owned()));
+        assert!(sources.contains(&"cvgamecoredll_expansion2/lua/cvluaarea.cpp".to_owned()));
         assert!(inputs[5].starts_with('@'));
         assert!(fixture.output_path.is_file());
 
@@ -1061,11 +1065,13 @@ mod tests {
             .unwrap()
             .join("objects/release/build.log");
         assert!(slashed(error.detail()).contains(&slashed(&log_path.display().to_string())));
-        let log = fs::read_to_string(log_path).unwrap();
-        assert!(log.contains("==== CvGameCoreDLL_Expansion2/CvCity.cpp ===="));
-        assert!(log.contains("error C1000"));
+        // The log records each source under the path the builder compiled it by, so it
+        // carries the platform's separator and the project file's own casing.
+        let log = slashed(&fs::read_to_string(log_path).unwrap()).to_lowercase();
+        assert!(log.contains("==== cvgamecoredll_expansion2/cvcity.cpp ===="));
+        assert!(log.contains("error c1000"));
         // The file that compiled fine is in the log too, in project order.
-        assert!(log.contains("==== CvGameCoreDLL_Expansion2/Lua/CvLuaArea.cpp ===="));
+        assert!(log.contains("==== cvgamecoredll_expansion2/lua/cvluaarea.cpp ===="));
     }
 
     #[test]
