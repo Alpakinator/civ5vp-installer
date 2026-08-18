@@ -363,7 +363,7 @@ fn luajit_is_built_deployed_and_restored() {
         });
     println!("LuaJIT deployed in {:?}", started.elapsed());
 
-    assert!(outcome.luajit_deployed);
+    assert_eq!(outcome.engine, civ5vp_core::EngineOutcome::Replaced);
     let replaced = fs::read(&engine).unwrap();
     assert!(
         String::from_utf8_lossy(&replaced).contains("LuaJIT"),

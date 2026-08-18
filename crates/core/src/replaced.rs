@@ -47,6 +47,22 @@ pub enum Restored {
     NothingToRestore,
 }
 
+/// What a Deployment did to the game's Lua engine.
+///
+/// Three states rather than a bool, because "the configuration does not want LuaJIT" covers
+/// two different situations that must not be reported as one: a Deployment that put the stock
+/// engine back, and a Deployment that had nothing to put back because none was ever replaced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EngineOutcome {
+    /// LuaJIT was installed. The game's own engine is held in the Backup Store.
+    Replaced,
+    /// The game's own engine was put back, because this Deployment did not ask for LuaJIT
+    /// and an earlier one had replaced it.
+    Restored,
+    /// Neither: no LuaJIT was asked for and none was ever installed.
+    Untouched,
+}
+
 /// Where the originals are kept, inside the App Data Store.
 pub struct BackupStore {
     root: PathBuf,

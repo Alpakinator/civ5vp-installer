@@ -13,7 +13,7 @@ use crate::error::{InstallError, SourceItem};
 use crate::fingerprint::{BuildFingerprint, FINGERPRINT_FILE_NAME, fnv1a64_of_file};
 use crate::plan::Plan;
 use crate::progress::{ProgressReporter, Stage};
-use crate::replaced::{BackupStore, ReplacedFile, Restored};
+use crate::replaced::{BackupStore, EngineOutcome, ReplacedFile, Restored};
 use crate::tree;
 
 /// The Replaced File's name, in the Core's build directory before it is deployed.
@@ -42,8 +42,8 @@ pub struct InstallOutcome {
     pub deployed_files: Vec<ClaimedFile>,
     /// Where the Built DLL ended up in the game.
     pub built_dll: PathBuf,
-    /// Whether the game's Lua engine was replaced with LuaJIT by this Deployment.
-    pub luajit_deployed: bool,
+    /// What this Deployment did to the game's Lua engine.
+    pub engine: EngineOutcome,
 }
 
 /// What an Uninstall removed.
@@ -524,19 +524,7 @@ impl Core {
 
         // The Replaced File, last of all: it is the one write outside the Claimed set
         // (ADR-0006), so it happens only once everything the installer owns is already right.
-        if let Some(built) = built_luajit {
-            let destination = ReplacedFile::LuaEngine.path_in(&plan.folders);
-            // Only from the game's own copy, and only the first time. By the second Deployment
-            // the file sitting there is the installer's own engine, and saving that would
-            // destroy the only copy of the original.
-            self.backups()
-                .back_up_once(ReplacedFile::LuaEngine, &destination)?;
-            tree::copy_file(built, &destination)?;
-            progress.report(
-                Stage::Sync,
-                "Installed the LuaJIT engine. Your original was saved.",
-            );
-        }
+        let engine = self.settle_engine(plan, built_luajit, progress)?;
 
         clear_game_cache(&plan.folders, progress)?;
 
@@ -545,8 +533,52 @@ impl Core {
             removed,
             deployed_files: plan.files.clone(),
             built_dll: dll_destination,
-            luajit_deployed: built_luajit.is_some(),
+            engine,
         })
+    }
+
+    /// Bring the game's Lua engine into line with the configuration.
+    ///
+    /// Symmetric on purpose, and that symmetry is the whole point: turning the choice on
+    /// replaces the engine, so turning it off has to put the original back. Without the second
+    /// half the checkbox is one-way — a player who tries LuaJIT and dislikes it has no way to
+    /// undo it short of uninstalling the entire Deployment, which is not what unticking a box
+    /// means anywhere else in this installer.
+    fn settle_engine(
+        &self,
+        plan: &Plan,
+        built: Option<&Path>,
+        progress: &ProgressReporter,
+    ) -> Result<EngineOutcome, InstallError> {
+        let destination = ReplacedFile::LuaEngine.path_in(&plan.folders);
+        let backups = self.backups();
+
+        let Some(built) = built else {
+            // Driven by what the Backup Store holds rather than by what the configuration
+            // said last time: the remembered settings can be rewritten by an older build
+            // that has never heard of this choice, but a held backup is proof that an engine
+            // was replaced and still needs putting back.
+            return Ok(
+                match backups.restore(ReplacedFile::LuaEngine, &destination)? {
+                    Restored::FromBackup => {
+                        progress.report(Stage::Sync, "Put the game's original Lua engine back.");
+                        EngineOutcome::Restored
+                    }
+                    Restored::NothingToRestore => EngineOutcome::Untouched,
+                },
+            );
+        };
+
+        // Only from the game's own copy, and only the first time. By the second Deployment
+        // the file sitting there is the installer's own engine, and saving that would
+        // destroy the only copy of the original.
+        backups.back_up_once(ReplacedFile::LuaEngine, &destination)?;
+        tree::copy_file(built, &destination)?;
+        progress.report(
+            Stage::Sync,
+            "Installed the LuaJIT engine. Your original was saved.",
+        );
+        Ok(EngineOutcome::Replaced)
     }
 
     /// Remove every Claimed Folder, restoring an unmodded game.

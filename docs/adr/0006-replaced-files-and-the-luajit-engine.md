@@ -15,7 +15,7 @@ the game and lives in a directory the installer otherwise only reads.
 ## Decision
 
 Introduce a third category beside Claimed Folders and Claimed Files: the **Replaced File**. A
-Replaced File is a game-owned file the installer may overwrite, subject to three rules that
+Replaced File is a game-owned file the installer may overwrite, subject to four rules that
 Claimed things do not need.
 
 1. The original is copied into the App Data Store *before* the first replacement, and that backup
@@ -23,6 +23,13 @@ Claimed things do not need.
 2. Uninstall restores it. Removing the installer's work must leave the game with the engine it
    shipped with.
 3. It is opt-in. The default configuration replaces nothing.
+4. Opting back out restores it too. A Deployment that does not ask for the replacement puts the
+   original back, so the choice is reversible by the same control that made it. Without this the
+   checkbox is one-way, and the only route back is uninstalling everything else as well.
+
+Rule 4 is driven by what the Backup Store holds, not by what the remembered settings say. An
+older build that has never heard of this choice rewrites the settings file without it, so a held
+backup is the only trustworthy evidence that an engine was replaced and still needs putting back.
 
 The only Replaced File is `lua51_Win32.dll`.
 

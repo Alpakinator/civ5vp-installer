@@ -58,7 +58,7 @@ pub use install::{Core, InstallOutcome, UninstallOutcome};
 pub use modpack::available_extra_mods;
 pub use plan::Plan;
 pub use progress::{ProgressEvent, ProgressReporter, Stage};
-pub use replaced::{BackupStore, ReplacedFile, Restored};
+pub use replaced::{BackupStore, EngineOutcome, ReplacedFile, Restored};
 pub use settings::{AppDataStore, Settings, SettingsError, Startup, start_up};
 pub use versions::{UnofficialVersion, VersionCatalog};
 

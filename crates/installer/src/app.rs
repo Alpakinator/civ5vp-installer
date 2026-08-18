@@ -558,8 +558,8 @@ impl InstallerApp {
                 .on_hover_text(
                     "Replaces the game's Lua engine with LuaJIT. Map generation and the \
                      interface get faster; AI turn times are decided by the mod's C++ code \
-                     and will not change. Your original file is saved and put back if you \
-                     uninstall. Some older Lua mods do not work with it.",
+                     and will not change. Your original file is saved, and put back if you \
+                     clear this box or uninstall. Some older Lua mods do not work with it.",
                 );
             if engine.changed() {
                 chosen = true;

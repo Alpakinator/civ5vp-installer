@@ -443,7 +443,7 @@ fn the_stock_engine_is_untouched_when_luajit_is_not_chosen() {
         .execute(&plan, &ProgressReporter::silent())
         .expect("a Deployment");
 
-    assert!(!outcome.luajit_deployed);
+    assert_eq!(outcome.engine, civ5vp_core::EngineOutcome::Untouched);
     assert_eq!(
         std::fs::read(&engine).expect("the engine"),
         b"stock Lua 5.1.4"
@@ -463,7 +463,7 @@ fn luajit_replaces_the_engine_and_uninstall_puts_the_original_back() {
         .execute(&plan, &ProgressReporter::silent())
         .expect("a Deployment");
 
-    assert!(outcome.luajit_deployed);
+    assert_eq!(outcome.engine, civ5vp_core::EngineOutcome::Replaced);
     assert_eq!(
         std::fs::read(&engine).expect("the engine"),
         support::LUAJIT_MARKER.as_bytes(),
@@ -482,6 +482,61 @@ fn luajit_replaces_the_engine_and_uninstall_puts_the_original_back() {
         std::fs::read(&engine).expect("the engine"),
         b"stock Lua 5.1.4",
         "Uninstall must restore the engine the game shipped with"
+    );
+}
+
+/// Unticking the choice undoes it. A player who tries LuaJIT and does not like it gets their
+/// engine back from the next Deployment, without having to uninstall everything else first.
+#[test]
+fn turning_luajit_off_puts_the_stock_engine_back() {
+    let game = GameFixture::new();
+    let engine = with_a_stock_engine(&game);
+    let core = core_over(&game);
+
+    let plan = core.plan(&with_luajit(), &game.folders()).expect("a plan");
+    core.execute(&plan, &ProgressReporter::silent())
+        .expect("the Deployment that opts in");
+    assert_eq!(
+        std::fs::read(&engine).expect("the engine"),
+        support::LUAJIT_MARKER.as_bytes(),
+        "the opt-in Deployment should have replaced the engine"
+    );
+
+    let plan = core
+        .plan(&community_patch_only(), &game.folders())
+        .expect("a plan");
+    let outcome = core
+        .execute(&plan, &ProgressReporter::silent())
+        .expect("the Deployment that opts back out");
+
+    assert_eq!(outcome.engine, civ5vp_core::EngineOutcome::Restored);
+    assert_eq!(
+        std::fs::read(&engine).expect("the engine"),
+        b"stock Lua 5.1.4",
+        "opting out must put the game's own engine back"
+    );
+}
+
+/// Opting out when nothing was ever replaced must not write into the Game Installation at
+/// all. The relaxation of the Claimed-Folders invariant is only justified while every write
+/// outside it is one the player asked for.
+#[test]
+fn opting_out_without_a_backup_leaves_the_game_alone() {
+    let game = GameFixture::new();
+    let engine = with_a_stock_engine(&game);
+    let core = core_over(&game);
+
+    let plan = core
+        .plan(&community_patch_only(), &game.folders())
+        .expect("a plan");
+    let outcome = core
+        .execute(&plan, &ProgressReporter::silent())
+        .expect("a Deployment");
+
+    assert_eq!(outcome.engine, civ5vp_core::EngineOutcome::Untouched);
+    assert_eq!(
+        std::fs::read(&engine).expect("the engine"),
+        b"stock Lua 5.1.4"
     );
 }
 
