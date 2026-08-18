@@ -735,6 +735,16 @@ mod tests {
         }
     }
 
+    /// Separators normalised to `/` for comparison.
+    ///
+    /// These arguments are built with `Path::join`, which uses the platform's separator — `\`
+    /// on Windows, `/` everywhere else. Both are correct, and clang-cl, lld-link and the
+    /// Windows file APIs all accept either, so a test comparing against one written spelling
+    /// has to normalise rather than assert which platform it is running on.
+    fn slashed(text: &str) -> String {
+        text.replace('\\', "/")
+    }
+
     impl ToolInvoker for FakeInvoker {
         fn run(&self, command: &ToolCommand) -> Result<ToolOutput, String> {
             self.calls.lock().unwrap().push(command.clone());
@@ -871,12 +881,13 @@ mod tests {
             6,
             "shim, CRT stubs, PCH, two sources, link: {inputs:?}"
         );
-        assert_eq!(inputs[0], "clang.cpp");
-        assert_eq!(inputs[1], "vc9-crt-compat.cpp");
-        assert_eq!(inputs[2], "CvGameCoreDLL_Expansion2/_precompile.cpp");
+        let paths: Vec<String> = inputs.iter().map(|input| slashed(input)).collect();
+        assert_eq!(paths[0], "clang.cpp");
+        assert_eq!(paths[1], "vc9-crt-compat.cpp");
+        assert_eq!(paths[2], "CvGameCoreDLL_Expansion2/_precompile.cpp");
         // The parallel section's order is nondeterministic; membership is not.
-        assert!(inputs[3..5].contains(&"CvGameCoreDLL_Expansion2/CvCity.cpp".to_owned()));
-        assert!(inputs[3..5].contains(&"CvGameCoreDLL_Expansion2/Lua/CvLuaArea.cpp".to_owned()));
+        assert!(paths[3..5].contains(&"CvGameCoreDLL_Expansion2/CvCity.cpp".to_owned()));
+        assert!(paths[3..5].contains(&"CvGameCoreDLL_Expansion2/Lua/CvLuaArea.cpp".to_owned()));
         assert!(inputs[5].starts_with('@'));
         assert!(fixture.output_path.is_file());
 
@@ -945,7 +956,7 @@ mod tests {
 
         let inputs = second.call_inputs();
         assert_eq!(inputs.len(), 2, "one compile and one link: {inputs:?}");
-        assert_eq!(inputs[0], "CvGameCoreDLL_Expansion2/CvCity.cpp");
+        assert_eq!(slashed(&inputs[0]), "CvGameCoreDLL_Expansion2/CvCity.cpp");
         assert!(inputs[1].starts_with('@'));
     }
 
@@ -994,7 +1005,10 @@ mod tests {
 
         let inputs = second.call_inputs();
         assert_eq!(inputs.len(), 2, "the new source and one link: {inputs:?}");
-        assert_eq!(inputs[0], "CvGameCoreDLL_Expansion2/CvNewFeature.cpp");
+        assert_eq!(
+            slashed(&inputs[0]),
+            "CvGameCoreDLL_Expansion2/CvNewFeature.cpp"
+        );
         let response = fs::read_to_string(inputs[1].strip_prefix('@').unwrap()).unwrap();
         assert!(response.contains("CvNewFeature.obj"));
         assert!(
@@ -1046,7 +1060,7 @@ mod tests {
             .parent()
             .unwrap()
             .join("objects/release/build.log");
-        assert!(error.detail().contains(&log_path.display().to_string()));
+        assert!(slashed(error.detail()).contains(&slashed(&log_path.display().to_string())));
         let log = fs::read_to_string(log_path).unwrap();
         assert!(log.contains("==== CvGameCoreDLL_Expansion2/CvCity.cpp ===="));
         assert!(log.contains("error C1000"));
