@@ -1,0 +1,99 @@
+# Ticket 10: CI builds the two single-file binaries from a clean checkout.
+#
+# The Linux binary is also verified locally on every change (AGENTS.md); the Windows binary
+# is built here and verified later, per the spec's platform constraint ("Windows and
+# other-distro verification is currently unavailable locally; it arrives later via CI
+# runners"). The fast suite runs on the Linux job — it needs `git` for the fixture
+# repositories (a property of the fixtures, not of the installer; AGENTS.md), which the
+# runners have.
+#
+# `--ignored` tests (real downloads, real compiles) never run here.
+
+name: build
+
+on:
+  # Tags publish a Release; branches and pull requests only prove the build still works.
+  # Without the latter, every regression waits until the tag, which is the most expensive
+  # moment to find one.
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+# The default workflow token is read-only; creating the Release and attaching the
+# binaries needs write access to the repository contents.
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain (pinned by rust-toolchain.toml)
+        run: rustup show
+      # Compiled dependencies survive between runs — the difference between ~15 minutes
+      # cold and a few minutes warm.
+      - uses: Swatinem/rust-cache@v2
+      # The UI snapshot tests render through wgpu, and the runners have no GPU — Mesa's
+      # lavapipe provides a software Vulkan adapter ("No adapter found" otherwise).
+      - name: Software GPU for the snapshot tests
+        run: sudo apt-get update && sudo apt-get install -y libvulkan1 mesa-vulkan-drivers
+      - name: Fast suite
+        run: cargo test --workspace --locked
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Build
+        run: cargo build --release --locked -p civ5vp-installer
+      - uses: actions/upload-artifact@v4
+        with:
+          name: civ5vp-installer-linux-x86_64
+          path: target/release/civ5vp-installer
+      # On a tag build, the binary joins the GitHub Release — the page the README links to
+      # and the update ping watches. `gh` is preinstalled on the runners.
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp target/release/civ5vp-installer civ5vp-installer-linux-x86_64
+          gh release create "${GITHUB_REF_NAME}" --verify-tag --title "${GITHUB_REF_NAME}" --generate-notes || true
+          gh release upload "${GITHUB_REF_NAME}" civ5vp-installer-linux-x86_64 --clobber
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain (pinned by rust-toolchain.toml)
+        run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      # Windows is a supported platform, and until this ran nothing ever executed the code
+      # that only exists there: game-folder detection (`core/src/detect/platform.rs`), the
+      # native LuaJIT host runner (`toolchain/src/luajit/host.rs`), and the resource script
+      # in `installer/build.rs`. Building proved they compile, never that they work.
+      #
+      # The UI snapshot tests are excluded: their baselines are rendered on the Linux job's
+      # lavapipe, and a different rasteriser produces different pixels, so running them here
+      # would fail on the renderer rather than on the shell. Everything else runs.
+      - name: Fast suite
+        run: cargo test --workspace --locked --exclude civ5vp-installer
+      - name: Shell tests that do not render
+        run: cargo test --locked -p civ5vp-installer --lib --bins --test cli
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Build
+        run: cargo build --release --locked -p civ5vp-installer
+      - uses: actions/upload-artifact@v4
+        with:
+          name: civ5vp-installer-windows-x86_64
+          path: target/release/civ5vp-installer.exe
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          cp target/release/civ5vp-installer.exe civ5vp-installer-windows-x86_64.exe
+          gh release create "${GITHUB_REF_NAME}" --verify-tag --title "${GITHUB_REF_NAME}" --generate-notes || true
+          gh release upload "${GITHUB_REF_NAME}" civ5vp-installer-windows-x86_64.exe --clobber

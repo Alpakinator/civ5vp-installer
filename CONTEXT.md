@@ -1,0 +1,59 @@
+# CONTEXT — VP Installer Ubiquitous Language
+
+Glossary for the Vox Populi installer for Civilization V. Terms only — no implementation details.
+
+## Terms
+
+**Installation Source** — where the mod files and DLL sources come from. Exactly two kinds: the **Upstream Cache** (a local cached clone of `LoneGazebo/Community-Patch-DLL`) or a **Local Repo** (a developer's own checkout, used as-is, including uncommitted changes).
+
+**Version** — the ref of the Community-Patch-DLL repository being installed. Three selectable tiers: a **Release** (a `Release-*` tag), the **Latest Development Version** (upstream `master` HEAD), or an **Arbitrary Ref** (any branch/tag/commit, advanced users only). A Local Repo's version is whatever its working tree currently contains. Ticket 13 added a fourth tier, the **Unofficial Build**: one commit after the newest Release, labelled `X.Y.Z.NN` by its position (`5.4.3.07` is the seventh change since `Release-5.4.3`), offered by the picker's unofficial-versions toggle and pinned to the commit hash it named when listed. The Latest Development Version is no longer offered by the picker — the newest Unofficial Build is that commit, with an honest name.
+
+**Flavor** — the base choice of what to install: **Community Patch only** (`(1)`) or **Vox Populi** (`(1)` + `(2)` + Squads + VPUI). Vox Populi implies Community Patch.
+
+**EUI** — the Enhanced User Interface (`UI_bc1`, installed as DLC). A toggle that is only legal with the Vox Populi flavor. Selecting it also swaps in the EUI Compatibility Files (`(3a)`) and strips `LUA/` from `(1)` and `(2)`.
+
+**43 Civs** — a toggle, legal with both Flavors and with or without EUI. Means: the Built DLL is compiled with the 43-civ setting and placed in `(1)` (the only DLL deployed), and the `(3b)` mod folder is deployed containing only its `.modinfo` and `AdvancedSetup.lua`.
+
+**Squads** — the `(4a) Squads for VP` mod. Auto-included with the Vox Populi flavor; never a user-facing choice.
+
+**Install Configuration** — the complete user selection: Installation Source + Version + Flavor + toggles (EUI, 43 Civs).
+
+**Built DLL** — `CvGameCore_Expansion2.dll` compiled locally by the installer with clang. The installer always builds it; DLLs checked into the repository are never deployed (they are stale outside release commits).
+
+**Build Configuration** — Release or Debug, the two proven compiler configurations for the Built DLL. Players always get Release; Dev mode offers the Debug choice.
+
+**Toolchain** — everything needed to produce the Built DLL: portable clang/lld and the extracted Windows SDK 7.0 + VC9 CRT. Acquired by **Toolchain Bootstrap**: downloaded and unpacked on first build, then kept in the **Toolchain Cache**. Never bundled inside the installer executable.
+
+**App Data Store** — the single installer-owned directory in the platform's app-data location (`%LOCALAPPDATA%` on Windows, XDG data dir on Linux) holding the Upstream Cache, Toolchain Cache, settings, and logs. The executable itself is a lone file that stores nothing beside itself. The UI exposes the store's location and size and a button that clears it (never touching the game).
+
+**Build Fingerprint** — a hash of everything that determines the Built DLL: all source inputs at the selected Version (or the Local Repo's working files), compiler flags, the 43-Civs setting, and the Toolchain version. Recorded next to the deployed DLL together with the DLL's own hash; when both still match, the build is skipped.
+
+**Upstream Cache** — the installer-managed clone of the upstream repository, fetched incrementally so no file content is ever downloaded twice. Checking out a Version happens here.
+
+**Documents Folder** — the `…/Documents/My Games/Sid Meier's Civilization 5/` folder holding the MODS Folder, the Text Folder, `ModUserData`, `UserSettings.ini` and the game's `cache`. On Linux it lives inside the Proton prefix. Note that it says "Civilization 5" where the Game Installation says "Civilization V" — one is never derived from the other by substitution.
+
+**Text Folder** — `…/Documents/My Games/Sid Meier's Civilization 5/Text/`. Receives `VPUI_tips_en_us.xml` (loading-screen tips) for every Vox Populi configuration. The third deployment target alongside the MODS and DLC Folders.
+
+**MODS Folder** — the game's mod directory (`…/Documents/My Games/Sid Meier's Civilization 5/MODS`). Deployment target for mod folders `(1)`, `(2)`, `(3a)`, `(3b)`, `(4a)`.
+
+**DLC Folder** — the game's DLC directory (`…/Sid Meier's Civilization V/Assets/DLC`). Deployment target for `VPUI` and `UI_bc1`.
+
+**Claimed Folders** — the exact set of folders the installer owns and may create, sync, or delete: `(1) Community Patch`, `(2) Vox Populi`, `(3a) VP - EUI Compatibility Files`, `(3b) 43 Civs Community Patch`, `(4a) Squads for VP` in the MODS Folder; `VPUI`, `UI_bc1` and `VP_MODPACK` in the DLC Folder.
+
+**Modpack** — the `VP_MODPACK` DLC folder (ticket 11): the selected mods plus a full merged copy of the game's databases, baked into one package the game loads automatically at startup — no Mods menu, multiplayer-friendly. Generated by the installer the way the in-game "Modpack Maker for VP" generates it (the Community Patch DLL's `CreateMPMP`). Install Mode chooses between a Mods Deployment and a Modpack Deployment; a Mods Deployment removes the Modpack (a baked-in Modpack conflicts with the same mods activated on top of it), while a Modpack Deployment leaves the MODS Folder untouched.
+
+A folder that upstream has renamed is Claimed under **every** name it has gone by, and is deployed under the one in current use. `(3a)` was `(3a) EUI Compatibility Files` up to and including `Release-5.1`; both spellings are Claimed, because both are Versions the installer offers and a player who installs one after the other must not end up with the mod twice.
+
+**Claimed Files** — the exact set of individual files the installer owns, in folders it does not own: `VPUI_tips_en_us.xml` in the Text Folder. A Claimed Folder is replaced wholesale, which is what makes Sync exact; that is not available in a folder the game and other mods also write to, so those files are named one by one instead.
+
+**Replaced File** — a file belonging to the *game* that the installer overwrites, having first copied the original into the App Data Store; Uninstall puts that copy back. The only one is `lua51_Win32.dll`, the game's Lua engine, in the Game Installation root. Always opt-in, never the default, and the backup is taken once so that a second Deployment cannot save the replacement over the original (ADR-0006).
+
+Together the Claimed Folders and Claimed Files are everything the installer may write, move, or delete, with two exceptions: the game's `cache` folder, which is cleared after every Deployment, and the Replaced File.
+
+**Sync** — how Deployment treats Claimed Folders: their contents are made to match the Install Configuration exactly (stale files deleted), and Claimed Folders not in the configuration are removed. After every Deployment the game's `cache` folder is cleared; `ModUserData` is preserved.
+
+**Uninstall** — removing all Claimed Folders (and clearing `cache`), restoring an unmodded game.
+
+**Game Installation** — the Steam install of the *Windows* version of Civilization V. On Linux this means the game running under Proton (MODS Folder lives inside the Proton prefix). The native Aspyr Linux port cannot load the Built DLL and is detected only to be refused with an explanation.
+
+**Deployment** — copying the selected files from the Installation Source into the MODS and DLC Folders according to the Install Configuration, with the standard exclusions (project files, source art, docs, checked-in DLLs).

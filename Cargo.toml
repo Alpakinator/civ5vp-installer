@@ -1,0 +1,25 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/core",
+    "crates/installer",
+    "crates/modpack",
+    "crates/sources",
+    "crates/toolchain",
+]
+# All of them, so a bare `cargo test` at the root really is the whole suite. `cargo run`
+# still resolves without `-p` because the installer holds the workspace's only binary.
+default-members = [
+    "crates/core",
+    "crates/installer",
+    "crates/modpack",
+    "crates/sources",
+    "crates/toolchain",
+]
+
+[workspace.package]
+license = "Apache-2.0"
+version = "0.1.2"
+edition = "2024"
+rust-version = "1.97"
+publish = false
