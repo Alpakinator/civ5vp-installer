@@ -460,3 +460,83 @@ fn the_dev_checkout_outlives_a_switch_back_to_github() {
         Some(PathBuf::from("/home/player/src/Community-Patch-DLL")),
     );
 }
+
+/// A key this build has never heard of survives a save.
+///
+/// The real case: a player keeps two installer versions on one machine and runs the older
+/// one. It rewrites the settings whole from the fields it knows, and every choice only the
+/// newer build understands would otherwise vanish — silently, and invisibly until they go
+/// looking for the setting again.
+#[test]
+fn a_setting_this_build_does_not_understand_survives_being_rewritten() {
+    let temp = temp();
+    let store = store(&temp);
+
+    // Written by some future build: one key this one knows, one it does not.
+    store.save(&Settings::default()).unwrap();
+    let path = store.settings_file();
+    let seeded = std::fs::read_to_string(&path).unwrap()
+        + "\nsomething-from-the-future = keep me\ngame-installation = /somewhere\n";
+    std::fs::write(&path, seeded).unwrap();
+
+    store
+        .save(&Settings {
+            game_installation: Some(PathBuf::from("/elsewhere")),
+            ..Settings::default()
+        })
+        .unwrap();
+
+    let written = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        written.contains("something-from-the-future = keep me"),
+        "an unknown key must be carried across, got:\n{written}"
+    );
+    assert!(
+        written.contains("game-installation = /elsewhere"),
+        "a known key must still be rewritten from this build's own state, got:\n{written}"
+    );
+    assert!(
+        !written.contains("/somewhere"),
+        "the old value of a known key must not survive, got:\n{written}"
+    );
+}
+
+/// A key this build knows but did not write on this run must not come back from the old
+/// file. `version` belongs to a configuration; with no configuration there is no version,
+/// and resurrecting the previous one would install something nobody chose.
+#[test]
+fn a_known_key_left_out_this_time_is_not_resurrected() {
+    let temp = temp();
+    let store = store(&temp);
+    let path = store.settings_file();
+
+    store
+        .save(&Settings {
+            configuration: Some(InstallConfiguration {
+                source: InstallationSource::UpstreamCache {
+                    version: Version::Release("Release-4.0".to_owned()),
+                },
+                flavor: Flavor::CommunityPatch,
+                forty_three_civs: FortyThreeCivs::Disabled,
+                build_configuration: BuildConfiguration::Release,
+                install_mode: InstallMode::Mods,
+                extra_mods: Vec::new(),
+                luajit: LuaJitEngine::Stock,
+            }),
+            ..Settings::default()
+        })
+        .unwrap();
+    assert!(
+        std::fs::read_to_string(&path)
+            .unwrap()
+            .contains("Release-4.0")
+    );
+
+    store.save(&Settings::default()).unwrap();
+
+    let written = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        !written.contains("Release-4.0"),
+        "a known key this build chose not to write must stay gone, got:\n{written}"
+    );
+}

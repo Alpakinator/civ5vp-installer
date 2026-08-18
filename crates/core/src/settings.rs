@@ -185,7 +185,13 @@ impl AppDataStore {
             cause,
         })?;
         let path = self.settings_file();
-        fs::write(&path, settings.to_text()).map_err(|cause| SettingsError::Io {
+        // Keys this build does not know are carried across rather than dropped — see
+        // `unknown_lines`. A file that cannot be read is not a failure here: it means there
+        // is nothing to carry, and the write that follows is what creates it.
+        let carried = fs::read_to_string(&path)
+            .map(|existing| unknown_lines(&existing))
+            .unwrap_or_default();
+        fs::write(&path, settings.to_text() + &carried).map_err(|cause| SettingsError::Io {
             action: "write",
             path,
             cause,
@@ -557,6 +563,56 @@ fn write_path(text: &mut String, key: &str, path: Option<&PathBuf>) {
         return;
     }
     write_line(text, key, value);
+}
+
+/// Every key this build writes.
+///
+/// The list is what lets [`unknown_lines`] tell a key this build simply did not write on this
+/// run — a `version` line with no configuration — from a key it has never heard of. The first
+/// must not be resurrected; the second must not be lost.
+const KNOWN_KEYS: &[&str] = &[
+    "game-installation",
+    "documents-folder",
+    "dev-checkout",
+    "source",
+    "local-repo",
+    "version",
+    "flavor",
+    "eui",
+    "forty-three-civs",
+    "build-configuration",
+    "install-mode",
+    "luajit",
+    "extra-mods",
+];
+
+/// The lines of an existing settings file whose keys this build never writes, ready to be
+/// appended to a freshly written one.
+///
+/// Settings are rewritten whole from the fields this build knows, so without this an older
+/// installer, run once, silently drops every choice only a newer one understands. That is not
+/// hypothetical: it is what happens the first time someone keeps two versions on one machine,
+/// and the loss is invisible until they go looking for the setting again.
+fn unknown_lines(existing: &str) -> String {
+    let pairs = Values::parse(existing).pairs;
+    let mut carried = String::new();
+    for (index, (key, value)) in pairs.iter().enumerate() {
+        if KNOWN_KEYS.contains(&key.as_str()) {
+            continue;
+        }
+        // The last value wins, exactly as `Values::get` reads it back.
+        if pairs[index + 1..].iter().any(|(later, _)| later == key) {
+            continue;
+        }
+        if carried.is_empty() {
+            carried.push_str(
+                "\n# Written by a different version of the installer. This build does not\n\
+                 # understand these lines and keeps them so that version still finds them.\n",
+            );
+        }
+        write_line(&mut carried, key, value);
+    }
+    carried
 }
 
 /// The `key = value` lines of a settings file, in the order they were read. Anything else in
