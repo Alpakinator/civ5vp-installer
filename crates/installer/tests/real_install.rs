@@ -17,7 +17,7 @@
 //! any object cache under the store root (`CARGO_TARGET_TMPDIR/real-install-store`).
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 
 use civ5vp_core::{
@@ -25,6 +25,28 @@ use civ5vp_core::{
     InstallationSource, LuaJitEngine, ProgressReporter,
 };
 use civ5vp_installer::wiring;
+
+/// Point this store's Toolchain Cache at a prepared one, when `CIV5VP_TOOLCHAIN_CACHE` names
+/// it, so a real run does not fetch 2.4 GB from archive.org again — that download path has its
+/// own proof in `real_bootstrap.rs`.
+///
+/// Unix only, and quietly nothing elsewhere. The share is a symlink, and creating one on
+/// Windows needs a privilege the installer deliberately does not require — the same reason the
+/// SDK fix-ups do not run there. On Windows these tests use whatever the store already holds.
+fn link_toolchain_cache(store_root: &Path) {
+    #[cfg(not(unix))]
+    let _ = store_root;
+    #[cfg(unix)]
+    if let Some(cache) = std::env::var_os("CIV5VP_TOOLCHAIN_CACHE") {
+        // `wiring::core_at` puts the Toolchain Cache inside the store root; share the
+        // already-populated one instead so these tests never re-download.
+        fs::create_dir_all(store_root).unwrap();
+        let link = store_root.join("toolchain-cache");
+        if !link.exists() {
+            std::os::unix::fs::symlink(PathBuf::from(&cache), &link).unwrap();
+        }
+    }
+}
 
 /// The fresh-machine walkthrough: a clean App Data Store, empty game folders, and
 /// the exact path a new player takes — list the versions, pick the newest Release, fetch it
@@ -40,11 +62,7 @@ fn a_fresh_machine_installs_the_newest_release_from_github() {
     let store_root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("fresh-machine-store");
     let _ = fs::remove_dir_all(&store_root);
     fs::create_dir_all(&store_root).unwrap();
-    if let Some(cache) = std::env::var_os("CIV5VP_TOOLCHAIN_CACHE") {
-        #[cfg(unix)]
-        std::os::unix::fs::symlink(PathBuf::from(cache), store_root.join("toolchain-cache"))
-            .unwrap();
-    }
+    link_toolchain_cache(&store_root);
     let game_root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("fresh-machine-game");
     let _ = fs::remove_dir_all(&game_root);
     let folders = GameFolders {
@@ -126,16 +144,7 @@ fn a_real_version_installs_end_to_end_with_a_genuinely_built_dll() {
     // re-run of this test cheap, and persisting it is exactly how the shipped installer uses
     // its App Data Store.
     let store_root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("real-install-store");
-    if let Some(cache) = std::env::var_os("CIV5VP_TOOLCHAIN_CACHE") {
-        // `wiring::core_at` puts the Toolchain Cache inside the store root; share the
-        // already-populated one instead through a symlink so this test never re-downloads.
-        fs::create_dir_all(&store_root).unwrap();
-        let link = store_root.join("toolchain-cache");
-        if !link.exists() {
-            #[cfg(unix)]
-            std::os::unix::fs::symlink(PathBuf::from(&cache), &link).unwrap();
-        }
-    }
+    link_toolchain_cache(&store_root);
 
     // Throwaway game folders with the real layout: MODS and Text as siblings in a Documents
     // folder, DLC under the game's Assets.
@@ -303,14 +312,7 @@ fn luajit_is_built_deployed_and_restored() {
     };
 
     let store_root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("luajit-store");
-    if let Some(cache) = std::env::var_os("CIV5VP_TOOLCHAIN_CACHE") {
-        fs::create_dir_all(&store_root).unwrap();
-        let link = store_root.join("toolchain-cache");
-        if !link.exists() {
-            #[cfg(unix)]
-            std::os::unix::fs::symlink(PathBuf::from(&cache), &link).unwrap();
-        }
-    }
+    link_toolchain_cache(&store_root);
 
     let game_root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("luajit-game");
     let _ = fs::remove_dir_all(&game_root);
