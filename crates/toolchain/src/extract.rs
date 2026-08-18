@@ -9,134 +9,17 @@
 //! See [`crate::disc`].
 
 use std::collections::BTreeMap;
-use std::fs::{self, File};
-use std::io::{BufWriter, Cursor, Read, Seek, Write};
+use std::fs;
+use std::io::Cursor;
 use std::path::{Component, Path, PathBuf};
 
 use civ5vp_core::{ProgressReporter, Stage};
 
 use crate::cabinet::{Cabinet, Wanted};
-use crate::disc::{self, Disc};
 use crate::error::{ToolchainError, io_error, missing_member};
+use crate::members::StagedMembers;
 use crate::msi_layout::{self, PlannedFile};
-use crate::pinned::{IsoMember, member_cache_name};
-
-/// Where the pinned members' bytes come from.
-///
-/// The seam exists because there are two honest answers, and the extraction after them is
-/// identical: a whole disc image the installer has a copy of, or the eleven member files it
-/// fetched out of the middle of that image without ever downloading the other 1.35 GiB.
-pub trait MemberSource {
-    fn contains(&mut self, path: &str) -> bool;
-
-    fn read(&mut self, path: &str) -> Result<Vec<u8>, ToolchainError>;
-
-    fn copy_to(&mut self, path: &str, out: &mut dyn Write) -> Result<u64, ToolchainError>;
-
-    /// Where this member already is on disk, when it is a file in its own right. The
-    /// cabinets are up to 43 MB, and copying one into scratch space that is already a file is
-    /// pure waste — so the file path is offered, and only a real copy is deleted afterwards.
-    fn local_path(&self, _path: &str) -> Option<PathBuf> {
-        None
-    }
-
-    /// What this source is and what it holds around `path` — the log line for a missing
-    /// member, where "what was actually there?" is the only question worth answering.
-    fn describe_near(&mut self, path: &str) -> String;
-}
-
-impl<R: Read + Seek> MemberSource for Disc<R> {
-    fn contains(&mut self, path: &str) -> bool {
-        Disc::contains(self, path)
-    }
-
-    fn read(&mut self, path: &str) -> Result<Vec<u8>, ToolchainError> {
-        Disc::read_file(self, path)
-    }
-
-    fn copy_to(&mut self, path: &str, out: &mut dyn Write) -> Result<u64, ToolchainError> {
-        // `&mut out` rather than `out`: the disc readers are generic over a *sized* writer,
-        // and a `&mut` to an unsized one is exactly that.
-        let mut out = out;
-        Disc::copy_file_to(self, path, &mut out)
-    }
-
-    fn describe_near(&mut self, path: &str) -> String {
-        let (directory, _) = path.rsplit_once('/').unwrap_or(("", path));
-        let siblings = self
-            .read_dir(directory)
-            .map(|entries| {
-                entries
-                    .into_iter()
-                    .map(|entry| entry.name)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            })
-            .unwrap_or_else(|_| "<no such folder>".to_string());
-        format!(
-            "the image reads as {}; {directory} contains: {siblings}",
-            self.format()
-        )
-    }
-}
-
-/// The members as files, each already checked against its own SHA-256 on the way in.
-///
-/// Named by [`PinnedMember::cache_name`], which flattens the path inside the image — the two
-/// different `cab1.cab`s must not land on top of each other.
-pub struct StagedMembers {
-    directory: PathBuf,
-}
-
-impl StagedMembers {
-    pub fn new(directory: PathBuf) -> Self {
-        Self { directory }
-    }
-
-    fn file_for(&self, path: &str) -> PathBuf {
-        self.directory.join(member_cache_name(path))
-    }
-}
-
-impl MemberSource for StagedMembers {
-    fn contains(&mut self, path: &str) -> bool {
-        self.file_for(path).is_file()
-    }
-
-    fn read(&mut self, path: &str) -> Result<Vec<u8>, ToolchainError> {
-        let file = self.file_for(path);
-        fs::read(&file).map_err(|error| io_error("read a downloaded SDK package", &file, &error))
-    }
-
-    fn copy_to(&mut self, path: &str, out: &mut dyn Write) -> Result<u64, ToolchainError> {
-        let file = self.file_for(path);
-        let mut handle = File::open(&file)
-            .map_err(|error| io_error("read a downloaded SDK package", &file, &error))?;
-        std::io::copy(&mut handle, out)
-            .map_err(|error| io_error("read a downloaded SDK package", &file, &error))
-    }
-
-    fn local_path(&self, path: &str) -> Option<PathBuf> {
-        let file = self.file_for(path);
-        file.is_file().then_some(file)
-    }
-
-    fn describe_near(&mut self, path: &str) -> String {
-        let present: Vec<String> = fs::read_dir(&self.directory)
-            .map(|entries| {
-                entries
-                    .flatten()
-                    .map(|entry| entry.file_name().to_string_lossy().into_owned())
-                    .collect()
-            })
-            .unwrap_or_default();
-        format!(
-            "{path} was expected at {}; that folder holds: {}",
-            self.file_for(path).display(),
-            present.join(", ")
-        )
-    }
-}
+use crate::pinned::IsoMember;
 
 /// What one run of the extractor produced.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -145,30 +28,26 @@ pub struct ExtractionCounts {
     pub bytes_written: u64,
 }
 
-/// Extract the pinned members into `sdk_root`, wherever their bytes are coming from.
+/// Extract the pinned members into `sdk_root`.
 ///
-/// `staging` is scratch space for the CABs on their way out of a disc image — they are up to
-/// a couple of hundred megabytes each, which is more than belongs in memory. It is emptied of
-/// each CAB as soon as that CAB is done with; a member that is already a file of its own is
-/// read where it lies and never copied.
+/// Each member is a file of its own by the time it gets here — downloaded, or taken out of a
+/// disc image — so the cabinets are read where they lie. Nothing is copied into scratch space
+/// first, which for the two large cabinets is 73 MB of writing that no longer happens.
 pub fn extract_members(
-    source: &mut dyn MemberSource,
+    source: &StagedMembers,
     members: &[IsoMember],
     sdk_root: &Path,
-    staging: &Path,
     progress: &ProgressReporter,
 ) -> Result<ExtractionCounts, ToolchainError> {
     fs::create_dir_all(sdk_root)
         .map_err(|error| io_error("create the toolchain folder", sdk_root, &error))?;
-    fs::create_dir_all(staging)
-        .map_err(|error| io_error("create a temporary folder", staging, &error))?;
 
     check_members_present(source, members)?;
 
     let mut counts = ExtractionCounts::default();
     for member in members {
         progress.report(Stage::Build, format!("Unpacking the {}.", member.label));
-        let member_counts = extract_member(source, member, sdk_root, staging, progress)?;
+        let member_counts = extract_member(source, member, sdk_root, progress)?;
         counts.files_written += member_counts.files_written;
         counts.bytes_written += member_counts.bytes_written;
     }
@@ -183,7 +62,7 @@ pub fn extract_members(
 /// member should have been, which is the one thing that makes a report about a wrong image
 /// actionable.
 fn check_members_present(
-    source: &mut dyn MemberSource,
+    source: &StagedMembers,
     members: &[IsoMember],
 ) -> Result<(), ToolchainError> {
     for member in members {
@@ -192,17 +71,16 @@ fn check_members_present(
                 continue;
             }
             let described = source.describe_near(file.path);
-            return Err(missing_member(file.path, "the disc image").context(described));
+            return Err(missing_member(file.path, "the downloaded SDK packages").context(described));
         }
     }
     Ok(())
 }
 
 fn extract_member(
-    source: &mut dyn MemberSource,
+    source: &StagedMembers,
     member: &IsoMember,
     sdk_root: &Path,
-    staging: &Path,
     progress: &ProgressReporter,
 ) -> Result<ExtractionCounts, ToolchainError> {
     let msi_bytes = source
@@ -232,13 +110,13 @@ fn extract_member(
             ));
         }
         let member_path = locate_cabinet(member, &cabinet_name)?;
-        let staged = stage_cabinet(source, &member_path, staging)?;
-        let result = extract_from_cabinet(staged.path(), &files, sdk_root, member, progress);
-        // A copy is scratch: remove it whether or not the extraction worked, so a failed
-        // bootstrap does not leave hundreds of megabytes behind. A member that was already a
-        // file of its own is not ours to delete — it is what a retry resumes from.
-        staged.discard();
-        let cabinet_counts = result?;
+        let cabinet_counts = extract_from_cabinet(
+            &source.file_for(&member_path),
+            &files,
+            sdk_root,
+            member,
+            progress,
+        )?;
         counts.files_written += cabinet_counts.files_written;
         counts.bytes_written += cabinet_counts.bytes_written;
     }
@@ -266,49 +144,6 @@ fn locate_cabinet(member: &IsoMember, cabinet_name: &str) -> Result<String, Tool
                 &format!("the pinned member list for {}", member.msi.path),
             )
         })
-}
-
-/// A cabinet ready for the `cab` crate to seek in, and whether cleaning up means deleting it.
-enum StagedCabinet {
-    /// Copied out of a disc image into scratch space.
-    Copy(PathBuf),
-    /// Already a file in its own right — the member the installer downloaded.
-    Existing(PathBuf),
-}
-
-impl StagedCabinet {
-    fn path(&self) -> &Path {
-        match self {
-            Self::Copy(path) | Self::Existing(path) => path,
-        }
-    }
-
-    fn discard(self) {
-        if let Self::Copy(path) = self {
-            let _ = fs::remove_file(path);
-        }
-    }
-}
-
-/// Put one CAB where the `cab` crate can seek in it — which for a downloaded member is
-/// exactly where it already is.
-fn stage_cabinet(
-    source: &mut dyn MemberSource,
-    member_path: &str,
-    staging: &Path,
-) -> Result<StagedCabinet, ToolchainError> {
-    if let Some(existing) = source.local_path(member_path) {
-        return Ok(StagedCabinet::Existing(existing));
-    }
-    let staged = disc::staged_path(staging, member_path);
-    let file = File::create(&staged)
-        .map_err(|error| io_error("write a temporary cabinet", &staged, &error))?;
-    let mut writer = BufWriter::new(file);
-    source
-        .copy_to(member_path, &mut writer)
-        .map_err(|error| error.context(format!("member {member_path}")))?;
-    drop(writer);
-    Ok(StagedCabinet::Copy(staged))
 }
 
 fn extract_from_cabinet(
@@ -389,7 +224,10 @@ fn safe_destination(sdk_root: &Path, relative: &str) -> Result<PathBuf, Toolchai
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
+    use crate::disc;
     use crate::pinned::ISO_MEMBERS;
+    use std::fs::File;
+    use std::io::{BufWriter, Read as _};
 
     /// Measure the pinned member table against a real image: where each member's bytes lie,
     /// how many there are, and what they hash to.

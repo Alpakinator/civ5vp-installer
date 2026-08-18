@@ -215,6 +215,11 @@ impl<R: Read + Seek> Udf<R> {
     }
 
     /// Read a whole member into memory. For the MSIs, which are a few megabytes at most.
+    /// Read a whole member into memory.
+    ///
+    /// Test-only: the bootstrap streams members out with `copy_file_to`, so a 43 MB cabinet
+    /// is never held in memory. This is what the image-inspection tools read with.
+    #[cfg(test)]
     pub fn read_file(&mut self, path: &str) -> Result<Vec<u8>, ToolchainError> {
         let entry = self.resolve(path)?;
         // Deliberately not `with_capacity(entry.size)`: that length is whatever the image says

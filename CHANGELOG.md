@@ -4,17 +4,7 @@ Notable changes, newest first. Versions follow [semantic versioning](https://sem
 and each one is the tag the [releases page](https://github.com/Alpakinator/civ5vp-installer/releases)
 publishes binaries for.
 
-## 0.1.2 — unreleased
-
-### Added
-
-- **The LuaJIT engine, opt-in.** A new checkbox replaces the game's Lua engine
-  (`lua51_Win32.dll`) with LuaJIT 2.1, built from source by the same toolchain that builds
-  the mod's DLL. Map generation and interface scripts get faster; AI turn times do not
-  change, because those are the mod's C++ code and no Lua engine touches them. Your original
-  engine is saved before the first replacement and put back when you clear the box or
-  uninstall. Some older Lua mods do not work under it. See
-  [ADR-0006](docs/adr/0006-replaced-files-and-the-luajit-engine.md).
+## 0.1.3 — unreleased
 
 ### Changed
 
@@ -23,8 +13,12 @@ publishes binaries for.
   64-bit halves, none of which is ever used. Each of the eleven is now fetched on its own,
   checked against its own checksum, so a first install pulls about 1.1 GB in total rather than
   2.4 GB, and the slowest part of it — the archive server that holds the SDK — is asked for a
-  fourteenth of what it used to be. A disc image left by an earlier version of the installer is
-  still unpacked where it lies, so nobody downloads anything twice.
+  fourteenth of what it used to be.
+- **Upgrading reclaims about 1.4 GB of disk.** If an earlier installer left the whole SDK
+  image behind, this one takes the eleven files it needs out of it — off your own disk,
+  downloading nothing — and then deletes the image. The remains of a failed image download go
+  too: they were a resumable download of a file nothing asks for any more. This happens on the
+  next install even if nothing needs building, and the Activity log says how much came back.
 
 ### Fixed
 
@@ -41,6 +35,21 @@ publishes binaries for.
 - **A download that ends early is treated as interrupted, not as complete.** On the fallback
   single-connection path a truncated response was hashed as if it were the whole file, which
   discarded every byte that had arrived. It is now resumed from.
+
+## 0.1.2
+
+### Added
+
+- **The LuaJIT engine, opt-in.** A new checkbox replaces the game's Lua engine
+  (`lua51_Win32.dll`) with LuaJIT 2.1, built from source by the same toolchain that builds
+  the mod's DLL. Map generation and interface scripts get faster; AI turn times do not
+  change, because those are the mod's C++ code and no Lua engine touches them. Your original
+  engine is saved before the first replacement and put back when you clear the box or
+  uninstall. Some older Lua mods do not work under it. See
+  [ADR-0006](docs/adr/0006-replaced-files-and-the-luajit-engine.md).
+
+### Fixed
+
 - **Clearing the LuaJIT checkbox now restores the game's own engine.** Previously the choice
   was one-way: turning it on replaced the engine, turning it off did nothing, and the only
   route back was uninstalling everything. The restore is driven by the saved original rather

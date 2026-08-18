@@ -9,7 +9,6 @@
 //! read as UDF; anything else is read as ISO9660.
 
 use std::io::{Read, Seek, Write};
-use std::path::PathBuf;
 
 use crate::error::ToolchainError;
 use crate::iso9660::Iso9660;
@@ -81,6 +80,11 @@ impl<R: Read + Seek> Disc<R> {
         }
     }
 
+    /// Read a whole member into memory.
+    ///
+    /// Test-only: the bootstrap streams members out with `copy_file_to`, so a 43 MB cabinet
+    /// is never held in memory. This is what the image-inspection tools read with.
+    #[cfg(test)]
     pub fn read_file(&mut self, path: &str) -> Result<Vec<u8>, ToolchainError> {
         match self {
             Self::Udf(volume) => volume.read_file(path),
@@ -113,13 +117,6 @@ pub fn open(
     let file = std::fs::File::open(path)
         .map_err(|error| crate::error::io_error("open the SDK disc image", path, &error))?;
     Disc::open(std::io::BufReader::new(file))
-}
-
-/// Where a staged copy of one member goes. Here rather than in the extractor so the naming
-/// rule lives next to the reader that produces it.
-pub fn staged_path(staging: &std::path::Path, member_path: &str) -> PathBuf {
-    let name = member_path.rsplit('/').next().unwrap_or(member_path);
-    staging.join(format!("staged-{name}"))
 }
 
 #[cfg(test)]
@@ -179,16 +176,5 @@ mod tests {
 
         assert_eq!(disc.format(), "UDF");
         assert!(disc.contains("Setup/WinSDK/WinSDK_x86.msi"));
-    }
-
-    #[test]
-    fn staged_copies_are_named_after_the_member_not_its_folder() {
-        assert_eq!(
-            staged_path(
-                std::path::Path::new("/cache/staging"),
-                "Setup/WinSDKBuild/cab2.cab"
-            ),
-            std::path::Path::new("/cache/staging/staged-cab2.cab")
-        );
     }
 }

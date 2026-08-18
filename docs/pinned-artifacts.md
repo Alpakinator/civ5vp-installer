@@ -65,9 +65,11 @@ for it; the measuring test asserts that, so re-measuring against a differently-m
 fails loudly instead of quietly fetching nonsense. A wrong offset cannot pass silently either
 — the bytes would not match the member's SHA-256, and the download is refused.
 
-The whole-image SHA-256 above is still the pin of record, and still checked whenever a whole
-image is present: one downloaded by an earlier version of the installer is unpacked where it
-lies rather than re-fetched a member at a time.
+The whole-image SHA-256 above is still the pin of record. An image downloaded by a version of
+the installer that needed it (up to 0.1.2) is not re-fetched and not left to rot either: the
+members are read out of it locally, checked, and the image is then deleted — 1.35 GiB of a
+player's disk given back on the next install. A failed image download's `.part` and its ledger
+go with it, since nothing asks for the whole image any more.
 
 ### Corrections, measured against the real download (ticket 05)
 

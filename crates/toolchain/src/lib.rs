@@ -42,6 +42,7 @@ mod extract;
 mod fixups;
 mod iso9660;
 pub mod luajit;
+mod members;
 mod msi_layout;
 pub mod pinned;
 mod runner;
