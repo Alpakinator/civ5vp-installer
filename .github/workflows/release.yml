@@ -29,6 +29,7 @@ permissions:
 jobs:
   linux:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Rust toolchain (pinned by rust-toolchain.toml)
@@ -38,8 +39,18 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # The UI snapshot tests render through wgpu, and the runners have no GPU — Mesa's
       # lavapipe provides a software Vulkan adapter ("No adapter found" otherwise).
+      #
+      # Hardened because this sits on the critical path for publishing a Release, while being
+      # peripheral to it. The runner's local Ubuntu mirror went unreachable once and apt sat
+      # retrying for forty minutes before anyone noticed — with the job's default six-hour
+      # limit, it would have sat there for hours. So: bounded retries, a short per-request
+      # timeout, a cap on the step, and a refresh that is allowed to fail. The runner image
+      # ships package lists already, so a stale index is no reason not to try the install.
       - name: Software GPU for the snapshot tests
-        run: sudo apt-get update && sudo apt-get install -y libvulkan1 mesa-vulkan-drivers
+        timeout-minutes: 5
+        run: |
+          sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=15 || true
+          sudo apt-get install -y --no-install-recommends libvulkan1 mesa-vulkan-drivers
       # `--no-fail-fast`: cargo stops at the first failing test binary, which on a platform
       # nobody can reproduce locally means one failure per round trip. Reporting all of them
       # costs a few extra minutes and saves a whole cycle each time.
@@ -56,6 +67,7 @@ jobs:
 
   windows:
     runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Rust toolchain (pinned by rust-toolchain.toml)
@@ -95,6 +107,7 @@ jobs:
     needs: [linux, windows]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
