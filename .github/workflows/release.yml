@@ -53,16 +53,6 @@ jobs:
         with:
           name: civ5vp-installer-linux-x86_64
           path: target/release/civ5vp-installer
-      # On a tag build, the binary joins the GitHub Release — the page the README links to
-      # and the update ping watches. `gh` is preinstalled on the runners.
-      - name: Attach to the release
-        if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          cp target/release/civ5vp-installer civ5vp-installer-linux-x86_64
-          gh release create "${GITHUB_REF_NAME}" --verify-tag --title "${GITHUB_REF_NAME}" --generate-notes || true
-          gh release upload "${GITHUB_REF_NAME}" civ5vp-installer-linux-x86_64 --clobber
 
   windows:
     runs-on: windows-latest
@@ -91,12 +81,37 @@ jobs:
         with:
           name: civ5vp-installer-windows-x86_64
           path: target/release/civ5vp-installer.exe
-      - name: Attach to the release
-        if: startsWith(github.ref, 'refs/tags/v')
+
+  # Publishing is its own job, and it needs both builds.
+  #
+  # It used to be a step inside each platform job, which meant either one could create the
+  # Release on its own. That is exactly what happened to 0.1.2: Linux went green, published
+  # the Release and attached its binary, while Windows was still failing — leaving a Release
+  # marked Latest that Windows users could not download anything from, from a commit that had
+  # since been superseded several times over. `needs` makes a partial Release unrepresentable
+  # rather than merely unlikely, and one publisher removes the race that made the old
+  # `gh release create ... || true` necessary.
+  release:
+    needs: [linux, windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Publish both binaries
         env:
           GH_TOKEN: ${{ github.token }}
-        shell: bash
         run: |
-          cp target/release/civ5vp-installer.exe civ5vp-installer-windows-x86_64.exe
-          gh release create "${GITHUB_REF_NAME}" --verify-tag --title "${GITHUB_REF_NAME}" --generate-notes || true
-          gh release upload "${GITHUB_REF_NAME}" civ5vp-installer-windows-x86_64.exe --clobber
+          set -euo pipefail
+          mv artifacts/civ5vp-installer-linux-x86_64/civ5vp-installer \
+             civ5vp-installer-linux-x86_64
+          mv artifacts/civ5vp-installer-windows-x86_64/civ5vp-installer.exe \
+             civ5vp-installer-windows-x86_64.exe
+          # `--verify-tag` refuses to invent a tag that is not really there.
+          gh release create "${GITHUB_REF_NAME}" --verify-tag \
+            --title "${GITHUB_REF_NAME}" --generate-notes
+          gh release upload "${GITHUB_REF_NAME}" \
+            civ5vp-installer-linux-x86_64 civ5vp-installer-windows-x86_64.exe --clobber
