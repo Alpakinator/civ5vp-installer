@@ -138,6 +138,11 @@ impl<R: Read + Seek> Iso9660<R> {
     }
 
     /// Read a whole member into memory. For the MSIs, which are a few megabytes at most.
+    /// Read a whole member into memory.
+    ///
+    /// Test-only: the bootstrap streams members out with `copy_file_to`, so a 43 MB cabinet
+    /// is never held in memory. This is what the image-inspection tools read with.
+    #[cfg(test)]
     pub fn read_file(&mut self, path: &str) -> Result<Vec<u8>, ToolchainError> {
         let entry = self.resolve(path)?;
         let mut bytes = Vec::with_capacity(entry.size as usize);
@@ -158,6 +163,25 @@ impl<R: Read + Seek> Iso9660<R> {
 
     pub fn contains(&mut self, path: &str) -> bool {
         self.resolve(path).is_ok()
+    }
+
+    /// Where `path`'s bytes actually lie in the image: absolute `(offset, length)` pairs, in
+    /// order.
+    ///
+    /// Test-only, because at runtime the offsets come from the pin rather than from the
+    /// image: this is the tool that *measured* the pin (see `describe_the_pinned_members`),
+    /// and the check that each member really is one run of bytes.
+    ///
+    /// Byte offsets rather than the sector numbers the format stores, so this reader and the
+    /// UDF one answer the same question in the same units.
+    #[cfg(test)]
+    pub fn extents(&mut self, path: &str) -> Result<Vec<(u64, u64)>, ToolchainError> {
+        Ok(self
+            .resolve(path)?
+            .extents
+            .iter()
+            .map(|&(sector, length)| (sector * LOGICAL_SECTOR_SIZE, length))
+            .collect())
     }
 
     /// Walk a `/`-separated path from the root, matching case-insensitively.

@@ -215,6 +215,11 @@ impl<R: Read + Seek> Udf<R> {
     }
 
     /// Read a whole member into memory. For the MSIs, which are a few megabytes at most.
+    /// Read a whole member into memory.
+    ///
+    /// Test-only: the bootstrap streams members out with `copy_file_to`, so a 43 MB cabinet
+    /// is never held in memory. This is what the image-inspection tools read with.
+    #[cfg(test)]
     pub fn read_file(&mut self, path: &str) -> Result<Vec<u8>, ToolchainError> {
         let entry = self.resolve(path)?;
         // Deliberately not `with_capacity(entry.size)`: that length is whatever the image says
@@ -239,6 +244,20 @@ impl<R: Read + Seek> Udf<R> {
 
     pub fn contains(&mut self, path: &str) -> bool {
         self.resolve(path).is_ok()
+    }
+
+    /// Where `path`'s bytes actually lie in the image: absolute `(offset, length)` pairs, in
+    /// order.
+    ///
+    /// Test-only, because at runtime the offsets come from the pin rather than from the
+    /// image: this is the tool that *measured* the pin (see `describe_the_pinned_members`),
+    /// and the check that each member really is one run of bytes.
+    ///
+    /// A file small enough to live inside its own File Entry has no extents at all, which is
+    /// why the answer can be empty.
+    #[cfg(test)]
+    pub fn extents(&mut self, path: &str) -> Result<Vec<(u64, u64)>, ToolchainError> {
+        Ok(self.resolve(path)?.extents)
     }
 
     /// Walk a `/`-separated path from the root, matching case-insensitively.

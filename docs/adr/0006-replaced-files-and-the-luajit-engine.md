@@ -68,3 +68,13 @@ compile. The pin is in `docs/pinned-artifacts.md`.
   LuaJIT, which never implemented it. That is the known source of breakage (InGame Editor,
   CivWillard, Cultural Capitals), and it is why the option is one a player turns on rather than
   one they inherit.
+- **The engine is built from patched source.** A drop-in replacement has to agree with the
+  engine it replaces about behaviour Lua leaves undefined, because that is what the mods were
+  written against — not the standard. Vox Populi's own top panel proved it: `table.insert` with
+  an explicit position measures the table with `#t`, `#t` on a table with a hole is undefined,
+  and the two engines answer differently, which cost the panel every strategic resource icon but
+  horses. Divergences of that kind are closed in `crates/toolchain/src/luajit/patches.rs` and
+  documented in `docs/pinned-artifacts.md` §7. The rule for adding one: it must be behaviour the
+  language leaves undefined *and* a case where the shipped engine's answer is the one mods
+  depend on. Anything where LuaJIT is simply stricter than a mod expected — the `arg` table
+  above — is the mod's bug and stays the mod's bug.

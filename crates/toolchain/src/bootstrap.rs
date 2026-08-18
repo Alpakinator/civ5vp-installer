@@ -2,15 +2,19 @@
 //!
 //! The sequence is fixed and every step is restartable from wherever the last one stopped:
 //!
-//! 1. Is the Toolchain Cache complete? Then nothing happens at all.
-//! 2. Throw away any half-finished tree — a killed bootstrap must not leave a cache that
+//! 1. Give back whatever an older version of the installer downloaded and this one does not
+//!    need — see [`ToolchainBootstrap::reclaim_superseded_downloads`]. Before the next step,
+//!    because a cache that is already complete is exactly the one still holding it.
+//! 2. Is the Toolchain Cache complete? Then nothing else happens at all.
+//! 3. Throw away any half-finished tree — a killed bootstrap must not leave a cache that
 //!    looks usable.
-//! 3. Download the Windows SDK image and the portable LLVM, resuming and hash-checking both.
-//! 4. Extract the four pinned members through MSI and CAB, in process.
-//! 5. Check the extraction produced an `Include` and a `Lib` at all.
-//! 6. Apply the six Linux fix-ups.
-//! 7. Verify the six names from `docs/pinned-artifacts.md` §4 resolve.
-//! 8. Only then write the completeness marker.
+//! 4. Download the eleven pinned members of the Windows SDK image and the portable LLVM,
+//!    resuming and hash-checking each.
+//! 5. Extract the four pinned members through MSI and CAB, in process.
+//! 6. Check the extraction produced an `Include` and a `Lib` at all.
+//! 7. Apply the six Linux fix-ups.
+//! 8. Verify the six names from `docs/pinned-artifacts.md` §4 resolve.
+//! 9. Only then write the completeness marker.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -20,11 +24,19 @@ use civ5vp_core::{ProgressReporter, Stage};
 use crate::cache::{Toolchain, ToolchainCache};
 use crate::download::{ByteSource, HttpByteSource, fetch};
 use crate::error::{ToolchainError, io_error};
+use crate::members;
 use crate::pinned::{
-    PinnedDownload, PinnedLibrary, PinnedLlvm, SDK_ISO, libtinfo_for_host, llvm_for_host,
+    ISO_MEMBERS, IsoMember, PinnedDownload, PinnedLibrary, PinnedLlvm, SDK_ISO, libtinfo_for_host,
+    llvm_for_host,
 };
 use crate::verify::{require_complete, verify_extraction};
 use crate::{deb, extract, fixups, sdk_layout, tarball};
+
+/// Where the members fetched out of the disc image are kept, inside the downloads folder.
+///
+/// Beside the whole-artifact downloads rather than among them: they are pieces of one
+/// artifact, and a folder makes that obvious to anyone looking at the cache.
+const SDK_MEMBERS_DIR: &str = "sdk";
 
 /// Acquires the Toolchain into a [`ToolchainCache`].
 ///
@@ -37,6 +49,8 @@ pub struct ToolchainBootstrap {
     /// the *real* [`ToolchainBootstrap::ensure`] at artifacts it built itself instead of
     /// re-implementing the sequence in a test helper.
     sdk_iso: PinnedDownload,
+    /// Which pieces of the image are fetched out of it, and where they are.
+    sdk_members: &'static [IsoMember],
     llvm: Option<PinnedLlvm>,
     libtinfo: Option<PinnedLibrary>,
 }
@@ -56,6 +70,7 @@ impl ToolchainBootstrap {
             cache: ToolchainCache::new(cache_root),
             source,
             sdk_iso: SDK_ISO,
+            sdk_members: ISO_MEMBERS,
             llvm: llvm_for_host(),
             libtinfo: libtinfo_for_host(),
         }
@@ -67,10 +82,12 @@ impl ToolchainBootstrap {
     fn with_artifacts(
         mut self,
         sdk_iso: PinnedDownload,
+        sdk_members: &'static [IsoMember],
         llvm: PinnedLlvm,
         libtinfo: Option<PinnedLibrary>,
     ) -> Self {
         self.sdk_iso = sdk_iso;
+        self.sdk_members = sdk_members;
         self.llvm = Some(llvm);
         self.libtinfo = libtinfo;
         self
@@ -82,6 +99,12 @@ impl ToolchainBootstrap {
 
     /// Return the Toolchain, bootstrapping it first if the cache does not already hold one.
     pub fn ensure(&self, progress: &ProgressReporter) -> Result<Toolchain, ToolchainError> {
+        // Before anything else, including the shortcut below: a machine whose toolchain is
+        // already built is exactly the machine still holding what an older version of the
+        // installer downloaded, and nobody is going to look in there and work out what is
+        // safe to delete.
+        self.reclaim_superseded_downloads(progress);
+
         if let Some(toolchain) = self.cache.installed() {
             progress.report(
                 Stage::Build,
@@ -96,7 +119,7 @@ impl ToolchainBootstrap {
         // Say how much before starting, and say it from the pinned sizes rather than from a
         // number typed into a sentence — a stale figure here is how a 2.5 GB download comes
         // as a surprise.
-        let total = self.sdk_iso.approximate_bytes
+        let total = self.sdk_member_bytes()
             + self.llvm.map_or(0, |llvm| llvm.download.approximate_bytes)
             + self
                 .libtinfo
@@ -116,7 +139,13 @@ impl ToolchainBootstrap {
         self.cache.discard_partial_state()?;
 
         let downloads = self.cache.downloads_dir();
-        let iso = fetch(self.source.as_ref(), &self.sdk_iso, &downloads, progress)?;
+        let sdk = members::fetch_missing(
+            self.source.as_ref(),
+            &self.sdk_iso,
+            self.sdk_members,
+            &downloads.join(SDK_MEMBERS_DIR),
+            progress,
+        )?;
 
         let Some(llvm) = self.llvm else {
             return Err(ToolchainError::new(
@@ -131,9 +160,8 @@ impl ToolchainBootstrap {
         };
         let llvm_archive = fetch(self.source.as_ref(), &llvm.download, &downloads, progress)?;
 
-        let staging = self.cache.staging_dir();
         let sdk_root = self.cache.sdk_root();
-        let counts = extract::extract_sdk(&iso, &sdk_root, &staging, progress)?;
+        let counts = extract::extract_members(&sdk, self.sdk_members, &sdk_root, progress)?;
 
         progress.report(Stage::Build, "Unpacking the compiler.");
         tarball::extract_llvm(
@@ -172,35 +200,97 @@ impl ToolchainBootstrap {
             ));
         }
 
-        let fixups = fixups::apply(&sdk_root, progress)?;
+        fixups::apply(&sdk_root, progress)?;
 
         let report = verify_extraction(&sdk_root)?;
         require_complete(&report, &sdk_root)?;
 
-        // The numbers a maintainer would want are in the log whether or not anything
-        // went wrong, because the interesting failures are the ones that do not error. The
-        // include and lib paths are in there because they are the surprising part — the MSIs
-        // bury them under the path Windows would have installed to, and a build that cannot
-        // find a header is otherwise a guessing game.
+        // A finishing line with a figure in it, and nothing else: the header counts, the
+        // fix-up tallies and the include and lib paths that used to be here are diagnostics,
+        // and the Activity panel is read by players rather than by maintainers.
         progress.report(
             Stage::Build,
             format!(
-                "Build tools ready — {} files unpacked ({} MB), {} headers, {} libraries, \
-                 fix-ups: {fixups:?}, include: {:?}, lib: {:?}.",
+                "Build tools ready — {} files unpacked ({} MB).",
                 counts.files_written,
-                counts.bytes_written / (1024 * 1024),
-                report.headers,
-                report.libs,
-                roots.include,
-                roots.lib
+                counts.bytes_written / (1024 * 1024)
             ),
         );
 
-        if staging.exists() {
-            fs::remove_dir_all(&staging)
-                .map_err(|error| io_error("clear a temporary folder", &staging, &error))?;
-        }
         self.cache.mark_complete()
+    }
+
+    /// How much of the disc image a first bootstrap actually pulls down.
+    ///
+    /// From the member table this bootstrap was given rather than from the pinned constant,
+    /// so the fast suite's sentences describe the fixture it is really fetching.
+    fn sdk_member_bytes(&self) -> u64 {
+        self.sdk_members
+            .iter()
+            .flat_map(IsoMember::files)
+            .map(|file| file.bytes)
+            .sum()
+    }
+
+    /// Give back the disk an older version of the installer is still using.
+    ///
+    /// Up to 0.1.2 the bootstrap downloaded the whole 1.45 GiB disc image and extracted
+    /// straight from it, so that is what those installs have sitting in their downloads
+    /// folder — plus, on a machine where the download kept failing, a part-finished copy of
+    /// it. This version reads eleven files totalling ~102 MiB and never wants the rest, so
+    /// the image is turned into those eleven — locally, with nothing downloaded — and then
+    /// removed, and the half-finished remains of one go too.
+    ///
+    /// Deliberately not fatal. This is housekeeping: if the image turns out to be damaged or
+    /// the disk refuses the write, the bootstrap carries on and fetches what it needs, which
+    /// is what it would have done had the image never been there.
+    fn reclaim_superseded_downloads(&self, progress: &ProgressReporter) {
+        let downloads = self.cache.downloads_dir();
+        let image = downloads.join(self.sdk_iso.file_name);
+        let mut freed = 0u64;
+
+        if image.is_file() {
+            match members::harvest_from_image(
+                &image,
+                self.sdk_members,
+                &downloads.join(SDK_MEMBERS_DIR),
+                progress,
+            ) {
+                Ok(bytes) => freed += bytes,
+                Err(error) => progress.report(
+                    Stage::Build,
+                    format!(
+                        "Could not reuse the Windows SDK already on this computer, so it was \
+                         left alone: {}",
+                        error.message()
+                    ),
+                ),
+            }
+        }
+
+        // A `.part` and its ledger are a download of the whole image that will never be
+        // resumed, because nothing asks for the whole image any more. On the machine that
+        // reported this, that was 352 MB of nothing.
+        for leftover in [
+            downloads.join(format!("{}.part", self.sdk_iso.file_name)),
+            downloads.join(format!("{}.parts", self.sdk_iso.file_name)),
+        ] {
+            if let Ok(metadata) = fs::metadata(&leftover)
+                && fs::remove_file(&leftover).is_ok()
+            {
+                freed += metadata.len();
+            }
+        }
+
+        if freed > 0 {
+            progress.report(
+                Stage::Build,
+                format!(
+                    "Freed {:.1} GB of space the build tools no longer need.",
+                    freed as f64 / (1024.0 * 1024.0 * 1024.0)
+                ),
+            );
+        }
     }
 }
 
@@ -245,7 +335,7 @@ fn install_support_library(
 mod tests {
     use super::*;
     use crate::download::Transfer;
-    use crate::pinned::ISO_MEMBERS;
+    use crate::pinned::{ISO_MEMBERS, PinnedMember};
     use crate::test_fixtures;
     use sha2::{Digest, Sha256};
     use std::collections::BTreeMap;
@@ -295,13 +385,13 @@ mod tests {
     fn synthetic_sdk_iso() -> Vec<u8> {
         let mut builder = test_fixtures::iso::IsoBuilder::new();
         for member in ISO_MEMBERS {
-            let plan = member_contents(member.msi_path);
+            let plan = member_contents(member.msi.path);
 
             // One `Media` row per pinned cabinet, covering the sequences assigned to it.
             let mut media: Vec<(i32, &str)> = Vec::new();
             let mut last = 0;
-            for (index, cab_path) in member.cab_paths.iter().enumerate() {
-                let name = cab_path.rsplit('/').next().unwrap_or(cab_path);
+            for (index, cab) in member.cabs.iter().enumerate() {
+                let name = cab.path.rsplit('/').next().unwrap_or(cab.path);
                 last = plan
                     .files
                     .iter()
@@ -324,9 +414,9 @@ mod tests {
                 .collect();
             let msi =
                 test_fixtures::package::build(&plan.directories, &plan.components, &rows, &media);
-            builder = builder.file(member.msi_path, msi);
+            builder = builder.file(member.msi.path, msi);
 
-            for (index, cab_path) in member.cab_paths.iter().enumerate() {
+            for (index, cab) in member.cabs.iter().enumerate() {
                 let payloads: Vec<(&str, &[u8])> = plan
                     .files
                     .iter()
@@ -340,7 +430,7 @@ mod tests {
                 } else {
                     payloads
                 };
-                builder = builder.file(cab_path, test_fixtures::cabinet::build(&payloads));
+                builder = builder.file(cab.path, test_fixtures::cabinet::build(&payloads));
             }
         }
         builder.build()
@@ -553,15 +643,54 @@ mod tests {
     /// The pinned constants hold `&'static str` digests, so the fixtures' own digests are
     /// leaked to stand in for them. Everything else — including which URLs are asked for — is
     /// what production does.
+    /// Measure the fixture image the way `describe_the_pinned_members` measures the real one.
+    ///
+    /// The offsets and checksums in `pinned.rs` came off a real image; a fixture needs its
+    /// own, because it is a different image with the same member paths. Measuring rather than
+    /// hard-coding is also what keeps the fast suite honest about the windowed download: the
+    /// bootstrap under test asks for byte ranges nobody typed in by hand.
+    fn measure_members(image: &[u8]) -> &'static [IsoMember] {
+        let mut disc = crate::disc::Disc::open(Cursor::new(image.to_vec())).unwrap();
+        let mut measured = Vec::new();
+        for member in ISO_MEMBERS {
+            let mut measure = |path: &'static str| {
+                let extents = disc.extents(path).unwrap();
+                let bytes = disc.read_file(path).unwrap();
+                assert_eq!(
+                    extents.len(),
+                    1,
+                    "{path} is in {} pieces; a window cannot fetch it",
+                    extents.len()
+                );
+                PinnedMember {
+                    path,
+                    offset: extents[0].0,
+                    bytes: bytes.len() as u64,
+                    sha256: leak_digest(&bytes),
+                }
+            };
+            let msi = measure(member.msi.path);
+            let cabs: Vec<PinnedMember> = member.cabs.iter().map(|cab| measure(cab.path)).collect();
+            measured.push(IsoMember {
+                msi,
+                cabs: Box::leak(cabs.into_boxed_slice()),
+                label: member.label,
+            });
+        }
+        Box::leak(measured.into_boxed_slice())
+    }
+
     fn fake_internet() -> (
         FakeInternet,
         PinnedDownload,
+        &'static [IsoMember],
         PinnedLlvm,
         Option<PinnedLibrary>,
     ) {
         let iso = synthetic_sdk_iso();
         let mut sdk = SDK_ISO;
         sdk.sha256 = leak_digest(&iso);
+        let members = measure_members(&iso);
 
         let mut llvm = llvm_for_host().unwrap_or(PinnedLlvm {
             download: PinnedDownload {
@@ -595,6 +724,7 @@ mod tests {
                 requests: std::sync::Arc::new(Mutex::new(0)),
             },
             sdk,
+            members,
             llvm,
             libtinfo,
         )
@@ -614,11 +744,12 @@ mod tests {
         root: &std::path::Path,
         internet: &FakeInternet,
         sdk: PinnedDownload,
+        members: &'static [IsoMember],
         llvm: PinnedLlvm,
         libtinfo: Option<PinnedLibrary>,
     ) -> ToolchainBootstrap {
         ToolchainBootstrap::with_byte_source(root.to_path_buf(), Box::new(internet.clone()))
-            .with_artifacts(sdk, llvm, libtinfo)
+            .with_artifacts(sdk, members, llvm, libtinfo)
     }
 
     /// The whole sequence, end to end, with no network: download, ISO, MSI, CAB, fix-ups,
@@ -626,9 +757,9 @@ mod tests {
     #[test]
     fn a_bootstrap_produces_a_verified_toolchain() {
         let dir = tempfile::tempdir().unwrap();
-        let (internet, sdk, llvm, libtinfo) = fake_internet();
+        let (internet, sdk, members, llvm, libtinfo) = fake_internet();
 
-        let toolchain = bootstrap_over(dir.path(), &internet, sdk, llvm, libtinfo)
+        let toolchain = bootstrap_over(dir.path(), &internet, sdk, members, llvm, libtinfo)
             .ensure(&ProgressReporter::silent())
             .unwrap();
 
@@ -647,9 +778,9 @@ mod tests {
     #[test]
     fn files_land_where_the_msi_says_not_where_the_cab_names_them() {
         let dir = tempfile::tempdir().unwrap();
-        let (internet, sdk, llvm, libtinfo) = fake_internet();
+        let (internet, sdk, members, llvm, libtinfo) = fake_internet();
 
-        let toolchain = bootstrap_over(dir.path(), &internet, sdk, llvm, libtinfo)
+        let toolchain = bootstrap_over(dir.path(), &internet, sdk, members, llvm, libtinfo)
             .ensure(&ProgressReporter::silent())
             .unwrap();
 
@@ -662,24 +793,160 @@ mod tests {
         assert!(!sdk_root.join("f1").exists());
     }
 
+    /// The point of the member table: the 1.45 GiB image is never downloaded at all.
+    #[test]
+    fn a_bootstrap_fetches_the_pinned_members_and_not_the_image() {
+        let dir = tempfile::tempdir().unwrap();
+        let (internet, sdk, members, llvm, libtinfo) = fake_internet();
+
+        bootstrap_over(dir.path(), &internet, sdk, members, llvm, libtinfo)
+            .ensure(&ProgressReporter::silent())
+            .unwrap();
+
+        let downloads = ToolchainCache::new(dir.path().to_path_buf()).downloads_dir();
+        assert!(
+            !downloads.join(sdk.file_name).exists(),
+            "the whole disc image must never be downloaded"
+        );
+        let staged: Vec<String> = std::fs::read_dir(downloads.join(SDK_MEMBERS_DIR))
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            staged.len(),
+            members.iter().flat_map(IsoMember::files).count(),
+            "every pinned member should be here and nothing else: {staged:?}"
+        );
+        // Flattened, so the two different `cab1.cab`s do not land on each other.
+        assert!(staged.contains(&"WinSDK-cab1.cab".to_owned()), "{staged:?}");
+        assert!(
+            staged.contains(&"WinSDKBuild-cab1.cab".to_owned()),
+            "{staged:?}"
+        );
+    }
+
+    /// An image downloaded by an earlier version of the installer is turned into the eleven
+    /// packages this one needs — locally, with nothing downloaded — and then removed.
+    ///
+    /// This is the upgrade path: 0.1.2 left a 1.45 GiB file in the downloads folder that
+    /// nothing reads any more, and a player is not going to work out for themselves which of
+    /// those files are safe to delete.
+    #[test]
+    fn an_image_from_an_older_installer_becomes_the_packages_and_is_deleted() {
+        let dir = tempfile::tempdir().unwrap();
+        let (internet, sdk, members, llvm, libtinfo) = fake_internet();
+        let cache = ToolchainCache::new(dir.path().to_path_buf());
+        let image = cache.downloads_dir().join(sdk.file_name);
+        std::fs::create_dir_all(cache.downloads_dir()).unwrap();
+        std::fs::write(&image, internet.bodies.get(sdk.url).unwrap()).unwrap();
+
+        bootstrap_over(dir.path(), &internet, sdk, members, llvm, libtinfo)
+            .ensure(&ProgressReporter::silent())
+            .unwrap();
+
+        assert!(!image.exists(), "the superseded image must be removed");
+        let staged: Vec<String> = std::fs::read_dir(cache.downloads_dir().join(SDK_MEMBERS_DIR))
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            staged.len(),
+            members.iter().flat_map(IsoMember::files).count(),
+            "every package should have come out of the image: {staged:?}"
+        );
+        // Only the compiler and, where the host needs it, the support library travelled: the
+        // packages came off the disk, not the network.
+        let expected = 2 + usize::from(libtinfo_for_host().is_some());
+        assert_eq!(internet.requests(), expected);
+    }
+
+    /// The same tidy-up on a machine that already has a working toolchain — which is most of
+    /// the machines holding a superseded image, since they only kept it by finishing.
+    #[test]
+    fn a_superseded_image_is_reclaimed_even_when_nothing_needs_building() {
+        let dir = tempfile::tempdir().unwrap();
+        let (internet, sdk, members, llvm, libtinfo) = fake_internet();
+        bootstrap_over(dir.path(), &internet, sdk, members, llvm, libtinfo)
+            .ensure(&ProgressReporter::silent())
+            .unwrap();
+
+        // As if this cache had been built by the older installer: the image is back, and so
+        // is the half-finished download of it that a flaky connection left behind.
+        let cache = ToolchainCache::new(dir.path().to_path_buf());
+        let image = cache.downloads_dir().join(sdk.file_name);
+        std::fs::write(&image, internet.bodies.get(sdk.url).unwrap()).unwrap();
+        let partial = cache
+            .downloads_dir()
+            .join(format!("{}.part", sdk.file_name));
+        let ledger = cache
+            .downloads_dir()
+            .join(format!("{}.parts", sdk.file_name));
+        std::fs::write(&partial, vec![0u8; 4096]).unwrap();
+        std::fs::write(&ledger, "chunks v1 65536 300000\n").unwrap();
+
+        let (sender, receiver) = std::sync::mpsc::channel();
+        bootstrap_over(dir.path(), &internet, sdk, members, llvm, libtinfo)
+            .ensure(&ProgressReporter::to_channel(sender))
+            .unwrap();
+
+        assert!(!image.exists(), "the image is not needed by this version");
+        assert!(!partial.exists(), "a download nobody will ever resume");
+        assert!(!ledger.exists());
+        let messages: Vec<String> = receiver.iter().map(|event| event.message).collect();
+        assert!(
+            messages.iter().any(|message| message.contains("Freed")),
+            "the reclaimed space should be reported: {messages:?}"
+        );
+    }
+
+    /// A damaged image is not something to build from, and not something to delete on the
+    /// strength of: the run says so and fetches the packages instead.
+    #[test]
+    fn a_damaged_image_from_an_older_installer_is_left_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let (internet, sdk, members, llvm, libtinfo) = fake_internet();
+        let cache = ToolchainCache::new(dir.path().to_path_buf());
+        let image = cache.downloads_dir().join(sdk.file_name);
+        std::fs::create_dir_all(cache.downloads_dir()).unwrap();
+        let mut damaged = internet.bodies.get(sdk.url).unwrap().clone();
+        damaged.truncate(20 * 2048);
+        std::fs::write(&image, &damaged).unwrap();
+
+        bootstrap_over(dir.path(), &internet, sdk, members, llvm, libtinfo)
+            .ensure(&ProgressReporter::silent())
+            .unwrap();
+
+        assert!(
+            image.exists(),
+            "a file we could not read is not ours to delete"
+        );
+        // Everything the build needed was fetched instead.
+        let members_fetched: usize = members.iter().flat_map(IsoMember::files).count();
+        let expected = members_fetched + 2 + usize::from(libtinfo_for_host().is_some());
+        assert_eq!(internet.requests(), expected);
+    }
+
     /// Bootstrap runs once; subsequent builds detect the populated Toolchain Cache and
     /// skip it.
     #[test]
     fn a_second_bootstrap_does_nothing_at_all() {
         let dir = tempfile::tempdir().unwrap();
-        let (internet, sdk, llvm, libtinfo) = fake_internet();
-        let first = bootstrap_over(dir.path(), &internet, sdk, llvm, libtinfo)
+        let (internet, sdk, members, llvm, libtinfo) = fake_internet();
+        let first = bootstrap_over(dir.path(), &internet, sdk, members, llvm, libtinfo)
             .ensure(&ProgressReporter::silent())
             .unwrap();
-        // The SDK image and the compiler are pinned large, so each costs a parallel-path
-        // probe first; the probe discovers the fixture is tiny and the fetch drops to the
-        // sequential path — two requests each. The libtinfo package, where the host needs
-        // it, is pinned small and fetches in one.
-        let expected = 2 * 2 + usize::from(libtinfo_for_host().is_some());
+        // One request per pinned member of the disc image — the whole image is never asked
+        // for — plus the compiler, which is pinned large and so costs a parallel-path probe
+        // that discovers the fixture is tiny and drops to the sequential path. The libtinfo
+        // package, where the host needs one, is pinned small and fetches in one.
+        let members_fetched: usize = members.iter().flat_map(IsoMember::files).count();
+        let expected = members_fetched + 2 + usize::from(libtinfo_for_host().is_some());
         assert_eq!(internet.requests(), expected);
 
-        let (second_internet, sdk, llvm, libtinfo) = fake_internet();
-        let second = bootstrap_over(dir.path(), &second_internet, sdk, llvm, libtinfo)
+        let (second_internet, sdk, members, llvm, libtinfo) = fake_internet();
+        let second = bootstrap_over(dir.path(), &second_internet, sdk, members, llvm, libtinfo)
             .ensure(&ProgressReporter::silent())
             .unwrap();
 
@@ -695,8 +962,8 @@ mod tests {
     #[test]
     fn a_bootstrap_interrupted_halfway_repairs_itself() {
         let dir = tempfile::tempdir().unwrap();
-        let (internet, sdk, llvm, libtinfo) = fake_internet();
-        bootstrap_over(dir.path(), &internet, sdk, llvm, libtinfo)
+        let (internet, sdk, members, llvm, libtinfo) = fake_internet();
+        bootstrap_over(dir.path(), &internet, sdk, members, llvm, libtinfo)
             .ensure(&ProgressReporter::silent())
             .unwrap();
 
@@ -709,8 +976,8 @@ mod tests {
         fs::write(cache.staging_dir().join("staged-cab1.cab"), b"stale").unwrap();
         assert!(cache.installed().is_none());
 
-        let (retry_internet, sdk, llvm, libtinfo) = fake_internet();
-        let repaired = bootstrap_over(dir.path(), &retry_internet, sdk, llvm, libtinfo)
+        let (retry_internet, sdk, members, llvm, libtinfo) = fake_internet();
+        let repaired = bootstrap_over(dir.path(), &retry_internet, sdk, members, llvm, libtinfo)
             .ensure(&ProgressReporter::silent())
             .unwrap();
 
@@ -730,13 +997,13 @@ mod tests {
     #[test]
     fn a_damaged_iso_leaves_no_toolchain_behind() {
         let dir = tempfile::tempdir().unwrap();
-        let (mut internet, sdk, llvm, libtinfo) = fake_internet();
+        let (mut internet, sdk, members, llvm, libtinfo) = fake_internet();
         if let Some(body) = internet.bodies.get_mut(sdk.url) {
             // Truncate the ISO's payload area, leaving the descriptors intact.
             body.truncate(20 * 2048);
         }
 
-        let error = bootstrap_over(dir.path(), &internet, sdk, llvm, libtinfo)
+        let error = bootstrap_over(dir.path(), &internet, sdk, members, llvm, libtinfo)
             .ensure(&ProgressReporter::silent())
             .unwrap_err();
 
@@ -752,10 +1019,10 @@ mod tests {
     #[test]
     fn progress_reaches_the_user_in_plain_language() {
         let dir = tempfile::tempdir().unwrap();
-        let (internet, sdk, llvm, libtinfo) = fake_internet();
+        let (internet, sdk, members, llvm, libtinfo) = fake_internet();
         let (sender, receiver) = std::sync::mpsc::channel();
 
-        bootstrap_over(dir.path(), &internet, sdk, llvm, libtinfo)
+        bootstrap_over(dir.path(), &internet, sdk, members, llvm, libtinfo)
             .ensure(&ProgressReporter::to_channel(sender))
             .unwrap();
 

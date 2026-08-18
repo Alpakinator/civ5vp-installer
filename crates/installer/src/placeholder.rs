@@ -6,7 +6,7 @@
 //! * [`DirectorySourceProvider`] handles the Local Repo case for real — a folder is a folder
 //!   — and refuses the Upstream Cache, which would need the network.
 //! * [`PlaceholderToolchainRunner`] writes a marker file instead of compiling, keeping the
-//!   2.4 GB Toolchain Bootstrap and the multi-minute compile out of the fast suite.
+//!   1.1 GB Toolchain Bootstrap and the multi-minute compile out of the fast suite.
 //! * [`PlaceholderModpackAssembler`] writes marker dumps instead of merging databases,
 //!   keeping SQLite work out of the shell suite.
 
@@ -220,7 +220,7 @@ impl ToolchainRunner for PlaceholderToolchainRunner {
             return None;
         }
         Some(
-            "First install downloads about 2.4 GB of build tools — one time — and \
+            "First install downloads about 1.1 GB of build tools — one time — and \
              typically takes 10–25 minutes. Later installs take seconds to minutes."
                 .to_owned(),
         )

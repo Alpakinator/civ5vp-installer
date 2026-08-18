@@ -78,14 +78,6 @@ pub fn apply(sdk_root: &Path, progress: &ProgressReporter) -> Result<FixupReport
         report.lib_case_links += link_lib_spellings(root)?;
     }
 
-    progress.report(
-        Stage::Build,
-        format!(
-            "SDK adjusted: {} headers renamed, {} link names added.",
-            report.lowercased,
-            report.include_case_links + report.lib_case_links + report.directory_links
-        ),
-    );
     Ok(report)
 }
 

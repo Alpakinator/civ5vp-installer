@@ -652,7 +652,7 @@ impl InstallerApp {
         }
 
         ui.add_space(8.0);
-        // The Core's up-front cost warning: the 2.4 GB first-run bootstrap
+        // The Core's up-front cost warning: the 1.1 GB first-run bootstrap
         // must be known before the click, and the sentence disappears the moment the
         // Toolchain Cache makes it untrue.
         if let Some(note) = &self.first_run_note {
@@ -1385,10 +1385,14 @@ impl InstallerApp {
             while let Ok(event) = run.progress.try_recv() {
                 lines.push(format!("{}: {}", event.stage.label(), event.message));
             }
-            lines.push(format!(
-                "Finished in {}.",
-                elapsed_label(run.started.elapsed())
-            ));
+            // A failed run that signs off with "Finished" is how a user comes to believe the
+            // mod is installed when it is not — the red notice above says otherwise, but the
+            // last line of the log is what gets read and reported.
+            let elapsed = elapsed_label(run.started.elapsed());
+            lines.push(match &self.status {
+                Status::Failed { .. } => format!("Stopped after {elapsed} without finishing."),
+                _ => format!("Finished in {elapsed}."),
+            });
         }
 
         self.activity.extend(lines);

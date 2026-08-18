@@ -4,7 +4,50 @@ Notable changes, newest first. Versions follow [semantic versioning](https://sem
 and each one is the tag the [releases page](https://github.com/Alpakinator/civ5vp-installer/releases)
 publishes binaries for.
 
-## 0.1.2 — unreleased
+## 0.1.3
+
+### Changed
+
+- **The first install downloads 102 MB of the Windows SDK instead of 1.4 GB.** The build needs
+  eleven files out of that disc image — the rest is samples, documentation, debuggers and the
+  64-bit halves, none of which is ever used. Each of the eleven is now fetched on its own,
+  checked against its own checksum, so a first install pulls about 1.1 GB in total rather than
+  2.4 GB, and the slowest part of it — the archive server that holds the SDK — is asked for a
+  fourteenth of what it used to be.
+- **The LuaJIT engine is built once, not once per install.** Nothing about it depends on which
+  Vox Populi version you install, so installing a new one reused the engine already built
+  instead of spending a minute rebuilding an identical file. It is rebuilt when something it is
+  actually made of changes — the pinned LuaJIT source or the build tools.
+- **Upgrading reclaims about 1.4 GB of disk.** If an earlier installer left the whole SDK
+  image behind, this one takes the eleven files it needs out of it — off your own disk,
+  downloading nothing — and then deletes the image. The remains of a failed image download go
+  too: they were a resumable download of a file nothing asks for any more. This happens on the
+  next install even if nothing needs building, and the Activity log says how much came back.
+
+### Fixed
+
+- **The LuaJIT engine no longer breaks the top panel's resource icons.** With the engine turned
+  on, the strategic resources across the top of the screen showed horses and nothing else —
+  iron, coal, oil, aluminium, uranium and paper all vanished. Vox Populi builds that row with
+  `table.insert` at each resource's own priority, which depends on how the engine measures a
+  table with a gap in it; Lua 5.1 and LuaJIT answer that differently, and LuaJIT's answer left a
+  gap that stopped the row after the first icon. The engine is now built to answer the way the
+  game's own Lua does, so the row is identical either way.
+- **A dropped connection no longer ends the SDK download.** The Windows SDK image comes from
+  the Wayback Machine, which drops ranged requests routinely; one drop used to abandon the
+  whole 1.4 GB download and hand the player a failure. Each piece is now asked for again with
+  a widening pause, the download as a whole is picked up twice more after that, and every
+  request carries a deadline — before this, a wedged connection could hold one of the four
+  download threads open indefinitely. Pieces are 8 MB rather than 32 MB, so a failure costs
+  seconds, and the progress lines name the transfer rate.
+- **A failed install no longer signs off with "Finished".** The last line of the Activity log
+  read "Finished in 4 min 50 s" whatever had happened, which read as success even though the
+  failure was on screen above it. A run that did not finish now says it stopped.
+- **A download that ends early is treated as interrupted, not as complete.** On the fallback
+  single-connection path a truncated response was hashed as if it were the whole file, which
+  discarded every byte that had arrived. It is now resumed from.
+
+## 0.1.2
 
 ### Added
 

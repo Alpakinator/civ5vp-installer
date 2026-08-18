@@ -5,8 +5,10 @@
 //! before any build is allowed near the Game Installation.
 
 pub mod build;
+pub mod cache;
 pub mod exports;
 pub mod host;
+pub mod patches;
 
 use std::path::{Path, PathBuf};
 
@@ -56,6 +58,20 @@ pub fn run(
         wine_prefix: wine_prefix.clone(),
     };
 
+    // Where LuaJIT and the engine it replaces disagree about behaviour Lua leaves undefined,
+    // the game's mods were written against the other answer. This is where that is closed.
+    patches::apply(&src)?;
+
+    // Nothing about this engine depends on the mod: it is the pinned source, the patches, and
+    // the bootstrapped compiler. A player who installs a new Version would spend a minute
+    // producing a byte-identical DLL, so an engine already built from these inputs is used as
+    // it is — and still checked against the game before it goes anywhere.
+    let fingerprint = cache::fingerprint(&request.source_root, toolchain.identity())?;
+    if let Some(engine) = cache::look_up(toolchain.engines_dir(), &fingerprint) {
+        progress.report(Stage::Build, "The LuaJIT engine is already built.");
+        return deliver(&engine, request);
+    }
+
     // `genversion.lua` reads this rather than being told; upstream's own script writes it the
     // same way, from `git` where we use the pinned constant.
     std::fs::write(src.join("luajit_relver.txt"), LUAJIT_RELVER)
@@ -86,13 +102,27 @@ pub fn run(
     }
 
     let built = src.join(ENGINE_FILE_NAME);
-    check_the_game_can_use_it(&built, &request.game_root)?;
+    // Kept before it is delivered, so the next install skips the minute this one spent. A
+    // cache that could not be written is a slower next install and nothing worse, which is
+    // why this cannot fail the build.
+    let engine = cache::keep(toolchain.engines_dir(), &fingerprint, &built).unwrap_or(built);
+    deliver(&engine, request)
+}
+
+/// Check the engine against the game that is going to load it, then put it where the Core
+/// asked for it.
+///
+/// The check is on this side of the cache as well as the build: an engine is only ever handed
+/// over having been measured against the binaries actually in the Game Installation, which is
+/// not the same set every time.
+fn deliver(engine: &Path, request: &LuaJitBuildRequest) -> Result<(), ToolchainError> {
+    check_the_game_can_use_it(engine, &request.game_root)?;
 
     if let Some(parent) = request.output_path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|error| crate::error::io_error("create the build folder", parent, &error))?;
     }
-    std::fs::copy(&built, &request.output_path).map_err(|error| {
+    std::fs::copy(engine, &request.output_path).map_err(|error| {
         crate::error::io_error("copy the built engine", &request.output_path, &error)
     })?;
     Ok(())

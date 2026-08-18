@@ -27,6 +27,7 @@ pub struct Toolchain {
     identity: String,
     llvm_root: PathBuf,
     sdk_root: PathBuf,
+    engines_dir: PathBuf,
 }
 
 impl Toolchain {
@@ -43,6 +44,12 @@ impl Toolchain {
     /// Root of the portable LLVM: `bin/clang-cl`, `bin/lld-link`, `lib/clang/18/include`.
     pub fn llvm_root(&self) -> &Path {
         &self.llvm_root
+    }
+
+    /// Where engines this Toolchain has already built are kept. See
+    /// [`crate::luajit::cache`] for what the directories inside it are named after.
+    pub fn engines_dir(&self) -> &Path {
+        &self.engines_dir
     }
 
     /// Root of the extracted Windows SDK 7.0 and VC9 CRT.
@@ -84,6 +91,7 @@ impl Toolchain {
 /// <root>/llvm-18.1.8/          the portable compiler
 /// <root>/winsdk-7.0/           the extracted SDK and VC9 CRT
 /// <root>/staging/              scratch, deleted when the bootstrap finishes
+/// <root>/engines/              LuaJIT engines already built, by what they were built from
 /// <root>/.toolchain-complete   written last; its contents are the Toolchain identity
 /// ```
 #[derive(Debug, Clone)]
@@ -120,6 +128,13 @@ impl ToolchainCache {
         self.root.join("staging")
     }
 
+    /// Engines already built with this Toolchain. Kept across bootstraps for the same reason
+    /// the downloads are: what is in here is named after everything it was built from, so it
+    /// is either exactly what a build would produce or it is not used at all.
+    pub fn engines_dir(&self) -> PathBuf {
+        self.root.join("engines")
+    }
+
     /// What a complete cache would be identified as.
     pub fn expected_identity(&self) -> String {
         format!("clang-{LLVM_VERSION}+{LLVM_TARGET_TRIPLE}+winsdk-7.0+layout-{LAYOUT_VERSION}")
@@ -146,6 +161,7 @@ impl ToolchainCache {
             identity: recorded.to_string(),
             llvm_root,
             sdk_root,
+            engines_dir: self.engines_dir(),
         })
     }
 
@@ -182,6 +198,7 @@ impl ToolchainCache {
             identity,
             llvm_root: self.llvm_root(),
             sdk_root: self.sdk_root(),
+            engines_dir: self.engines_dir(),
         })
     }
 }

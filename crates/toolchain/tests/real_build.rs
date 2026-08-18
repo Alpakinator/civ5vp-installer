@@ -12,7 +12,7 @@
 //!
 //! `CIV5VP_DLL_SOURCE_ROOT` must point at a checkout of the mod (any recent Version — the
 //! Upstream Cache from a real `civ5vp-sources` run works). With an empty Toolchain Cache the
-//! bootstrap downloads ~2.4 GB first; with a populated one the build starts immediately.
+//! bootstrap downloads ~1.1 GB first; with a populated one the build starts immediately.
 //!
 //! The result is compared against the DLL checked into the same checkout at
 //! `(1) Community Patch/CvGameCore_Expansion2.dll` — the maintainer-built binary players get
@@ -109,7 +109,7 @@ fn build_into(output_dir: &PathBuf) -> PathBuf {
 /// The whole thing: bootstrap (or reuse) the Toolchain, build the Release DLL through the
 /// `ToolchainRunner` boundary, and compare it with the checked-in reference DLL.
 #[test]
-#[ignore = "needs CIV5VP_DLL_SOURCE_ROOT and a (populated or 2.4 GB-downloadable) Toolchain Cache"]
+#[ignore = "needs CIV5VP_DLL_SOURCE_ROOT and a (populated or 1.1 GB-downloadable) Toolchain Cache"]
 fn the_real_dll_builds_and_matches_the_reference() {
     let output_dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("real-dll-build");
     let output_path = build_into(&output_dir);

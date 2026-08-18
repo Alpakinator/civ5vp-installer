@@ -30,6 +30,47 @@ Setup/vc_stdx86/vc_stdx86.msi                   + vc_stdx86.cab          (VC9 CR
 
 Each MSI carries the mapping from CAB-internal names to real file paths — that mapping must be honoured, not guessed. The reference implementation shells out to `7z` and `msiextract`; **ours parses UDF, MSI, and CAB in-process** (ADR-0001), so this list is the extraction contract to verify against.
 
+### The installer downloads the members, not the image
+
+Those eleven files are **106,487,437 bytes — 6.9% of the image**. The rest is samples,
+documentation, debuggers and the amd64/ia64 halves, none of which is ever read. Since the only
+surviving source serves the image at a fraction of a megabyte a second (see below), fetching
+all of it means spending hours on bytes nothing looks at.
+
+So each member is fetched as its own windowed download: same URL, a `Range` over that member's
+own bytes, checked against that member's own SHA-256. The offsets and hashes are part of the
+pin. They were measured off a copy of the image whose whole-file SHA-256 matches the one above:
+
+```bash
+CIV5VP_SDK_ISO=/path/to/GRMSDK_EN_DVD.iso \
+  cargo test --release -p civ5vp-toolchain --lib -- --ignored --nocapture describe_the_pinned_members
+```
+
+| member | offset | bytes | sha256 |
+| --- | ---: | ---: | --- |
+| `Setup/WinSDK/WinSDK_x86.msi` | 2,975,744 | 2,374,144 | `1e22e5f4c7324a77088d33aa9d3f555c85a525639e14a624b033ded032fd4da8` |
+| `Setup/WinSDK/cab1.cab` | 5,351,424 | 29,986,366 | `c5076c9cd324161ec6e8fbf893be0aab75dd1c68866cdc93d6c043d2d69dd063` |
+| `Setup/WinSDKBuild/WinSDKBuild_x86.msi` | 76,539,904 | 979,968 | `f1268291829854745ed2ab80e854c8a8514e876e71e3f810fdc06f40ca97edc3` |
+| `Setup/WinSDKBuild/cab1.cab` | 77,520,896 | 5,742,456 | `bd2b525187d30f1d7cf7132cab080e212ec33f248226b4b5a6aa2a02ef0cf6ba` |
+| `Setup/WinSDKBuild/cab2.cab` | 83,263,488 | 6,193,571 | `baa12eca0e63a31f3d9d5eddd0003a26bf7e49e69373eddc882cc74d6b8573c4` |
+| `Setup/WinSDKBuild/cab3.cab` | 89,458,688 | 4,789,860 | `e69199e1c281838ecc70263296f5cc4b3a569cb1bf7bcfdb93775d8696264b33` |
+| `Setup/WinSDKBuild/cab4.cab` | 94,248,960 | 1,020,063 | `c4635d2eae946c088b84d6c1e8874c5ade865440e9ac8325e472e529f28ed9e6` |
+| `Setup/WinSDKWin32Tools/WinSDKWin32Tools_x86.msi` | 1,444,061,184 | 766,976 | `ba17c91c2fbdc09cf23ad126a489b6cd7b38ae2ff7098cc748348bf4bbe895f7` |
+| `Setup/WinSDKWin32Tools/cab1.cab` | 1,444,829,184 | 10,896,725 | `551a7ccea577f8d2fea8a059e463e9e3ead1d9a03b73aa26b2886b8647ec8b29` |
+| `Setup/vc_stdx86/vc_stdx86.msi` | 1,548,064,768 | 408,576 | `0a524433918357e8476fbf0191ad3a7fb45fad11ec929f5bd69b0d2713306ade` |
+| `Setup/vc_stdx86/vc_stdx86.cab` | 1,504,735,232 | 43,328,732 | `d91cdb54fe5b4328b811b3b0bdd0b660a84b09e87cdce4da7d07ead63069e192` |
+
+Each member is one unbroken run of bytes, which is what makes a single ranged request enough
+for it; the measuring test asserts that, so re-measuring against a differently-mastered image
+fails loudly instead of quietly fetching nonsense. A wrong offset cannot pass silently either
+— the bytes would not match the member's SHA-256, and the download is refused.
+
+The whole-image SHA-256 above is still the pin of record. An image downloaded by a version of
+the installer that needed it (up to 0.1.2) is not re-fetched and not left to rot either: the
+members are read out of it locally, checked, and the image is then deleted — 1.35 GiB of a
+player's disk given back on the next install. A failed image download's `.part` and its ledger
+go with it, since nothing asks for the whole image any more.
+
 ### Corrections, measured against the real download (ticket 05)
 
 Three things this document originally said were wrong. All three were found by pointing code at
@@ -210,3 +251,38 @@ check.
 `LUAJIT_ENABLE_LUA52COMPAT` is listed here rather than left to the build code because it is a pin
 in the same sense the others are: Civilization V and Vox Populi are written against Lua 5.1, and
 5.2 semantics would only add divergence from the engine the scripts were tested on.
+
+### The engine is kept, not rebuilt
+
+What comes out of this build is a function of three things — the pinned commit, the patches
+below, and the bootstrapped compiler — and of nothing else, least of all which mod version is
+being installed. So a built engine is kept in the Toolchain Cache under a name that is a hash
+of exactly those inputs (`crates/toolchain/src/luajit/cache.rs`), and a later install that
+would produce the same bytes uses it instead of spending the minute. Editing a patch or moving
+the pin changes the name, so a stale engine cannot be handed back by accident; the engine is
+still checked against the game's own imports every time, cache or no cache.
+
+### The source is patched before it is built
+
+The engine is a replacement for the exact Lua 5.1 the game ships, so where LuaJIT and PUC-Lua
+5.1 disagree about behaviour the language leaves *undefined*, the mods were written against
+PUC's answer and the engine has to give it. Those edits live in
+`crates/toolchain/src/luajit/patches.rs`, one exact-text replacement each, applied to the
+checkout before the first compile. A source that does not contain the expected text fails the
+build rather than silently dropping the patch — which is the failure a maintainer wants when
+the pinned commit moves.
+
+**`table.insert(t, pos, v)` measures the table by its contiguous prefix.** `#t` on a table with
+a hole is undefined — any index whose successor is nil is a valid answer — and PUC-Lua and
+LuaJIT pick different ones, because their tables grow differently. `table.insert` uses that
+number to decide how far to shift, so on a holey table the two engines build *different arrays*.
+Vox Populi's top panel hits this: it inserts each strategic resource at its `StrategicPriority`,
+the resources arrive in ID order (iron first) while the priorities put horses first, so the first
+insert lands at position 2 of an empty table. PUC-Lua calls that table empty; LuaJIT calls it
+length 2, shifts iron aside, and the next insert overwrites it — leaving a hole at index 2 that
+stops the panel's `ipairs` after one icon. The patch measures the prefix instead, which is the
+smallest valid border and equals `#t` exactly for any table without holes.
+
+Measured against PUC-Lua 5.1.5 and stock LuaJIT across every shape of insert (append, at 1, in
+the middle, at `#t+1`, past the end, into a hole), the only case whose resulting array differs
+is the broken one, and there the patched engine matches PUC byte for byte.

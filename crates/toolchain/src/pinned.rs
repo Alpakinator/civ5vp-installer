@@ -89,7 +89,7 @@ pub struct PinnedLibrary {
 /// Everything a first Toolchain Bootstrap downloads, in bytes — what the up-front
 /// expectation sentences are computed from, so the figure can never go stale.
 pub fn approximate_download_total() -> u64 {
-    SDK_ISO.approximate_bytes
+    sdk_member_bytes()
         + llvm_for_host().map_or(0, |llvm| llvm.download.approximate_bytes)
         + libtinfo_for_host().map_or(0, |library| library.download.approximate_bytes)
 }
@@ -158,49 +158,158 @@ pub const fn llvm_for_host() -> Option<PinnedLlvm> {
     }
 }
 
+/// One file inside the disc image, pinned by where its bytes are and what they hash to.
+///
+/// The offset is part of the pin because the installer fetches these out of the *middle* of
+/// the image — the four members together are ~102 MiB of its 1.45 GiB, and asking for only
+/// those bytes is the difference between a couple of minutes and a couple of hours on the
+/// one source that still has the image (`docs/pinned-artifacts.md` §1).
+///
+/// A wrong offset cannot pass unnoticed: the bytes it fetched would not hash to `sha256`, and
+/// the download is refused. The numbers were measured off a copy of the image whose whole-file
+/// SHA-256 matches [`SDK_ISO`], by `describe_the_pinned_members` in `extract.rs`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PinnedMember {
+    /// Path inside the image, forward-slashed, as `docs/pinned-artifacts.md` writes it.
+    pub path: &'static str,
+    /// Where this member's bytes start in the image.
+    pub offset: u64,
+    pub bytes: u64,
+    /// Lowercase hex. Bytes that do not hash to this are discarded, never used.
+    pub sha256: &'static str,
+}
+
+impl PinnedMember {
+    /// What this member is cached as inside the downloads folder.
+    pub fn cache_name(&self) -> String {
+        member_cache_name(self.path)
+    }
+}
+
+/// The file name a member inside the image is cached under: its path, flattened.
+///
+/// Flattened rather than nested so the folder stays flat, and the whole path is kept because
+/// `Setup/WinSDK/cab1.cab` and `Setup/WinSDKBuild/cab1.cab` are different files with the same
+/// base name — one overwriting the other would be an extraction that silently unpacks the
+/// wrong cabinet.
+pub fn member_cache_name(path: &str) -> String {
+    path.trim_start_matches("Setup/").replace(['/', '\\'], "-")
+}
+
 /// One MSI inside the ISO, with the CABs that hold its payload.
 ///
 /// `docs/pinned-artifacts.md` §1 calls this list "the extraction contract": everything else
 /// in the 1.45 GiB image is ignored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IsoMember {
-    /// Path of the MSI inside the ISO, forward-slashed, as the document writes it.
-    pub msi_path: &'static str,
-    /// The CABs beside it, in sequence order. The MSI's `Media` table names these; the list
-    /// is here so a truncated or renamed image is caught before extraction starts.
-    pub cab_paths: &'static [&'static str],
+    /// The MSI. Its `Media` table names the cabinets; the list below is here so a truncated
+    /// or renamed image is caught before extraction starts.
+    pub msi: PinnedMember,
+    /// The cabinets beside it, in sequence order.
+    pub cabs: &'static [PinnedMember],
     /// What this member contributes, for progress and for error messages.
     pub label: &'static str,
+}
+
+impl IsoMember {
+    /// Every pinned file this member is made of, MSI first.
+    pub fn files(&self) -> impl Iterator<Item = &PinnedMember> {
+        std::iter::once(&self.msi).chain(self.cabs.iter())
+    }
 }
 
 /// The four members the bootstrap pulls out of the ISO, in extraction order.
 pub const ISO_MEMBERS: &[IsoMember] = &[
     IsoMember {
-        msi_path: "Setup/WinSDK/WinSDK_x86.msi",
-        cab_paths: &["Setup/WinSDK/cab1.cab"],
+        msi: PinnedMember {
+            path: "Setup/WinSDK/WinSDK_x86.msi",
+            offset: 2_975_744,
+            bytes: 2_374_144,
+            sha256: "1e22e5f4c7324a77088d33aa9d3f555c85a525639e14a624b033ded032fd4da8",
+        },
+        cabs: &[PinnedMember {
+            path: "Setup/WinSDK/cab1.cab",
+            offset: 5_351_424,
+            bytes: 29_986_366,
+            sha256: "c5076c9cd324161ec6e8fbf893be0aab75dd1c68866cdc93d6c043d2d69dd063",
+        }],
         label: "Windows SDK core",
     },
     IsoMember {
-        msi_path: "Setup/WinSDKBuild/WinSDKBuild_x86.msi",
-        cab_paths: &[
-            "Setup/WinSDKBuild/cab1.cab",
-            "Setup/WinSDKBuild/cab2.cab",
-            "Setup/WinSDKBuild/cab3.cab",
-            "Setup/WinSDKBuild/cab4.cab",
+        msi: PinnedMember {
+            path: "Setup/WinSDKBuild/WinSDKBuild_x86.msi",
+            offset: 76_539_904,
+            bytes: 979_968,
+            sha256: "f1268291829854745ed2ab80e854c8a8514e876e71e3f810fdc06f40ca97edc3",
+        },
+        cabs: &[
+            PinnedMember {
+                path: "Setup/WinSDKBuild/cab1.cab",
+                offset: 77_520_896,
+                bytes: 5_742_456,
+                sha256: "bd2b525187d30f1d7cf7132cab080e212ec33f248226b4b5a6aa2a02ef0cf6ba",
+            },
+            PinnedMember {
+                path: "Setup/WinSDKBuild/cab2.cab",
+                offset: 83_263_488,
+                bytes: 6_193_571,
+                sha256: "baa12eca0e63a31f3d9d5eddd0003a26bf7e49e69373eddc882cc74d6b8573c4",
+            },
+            PinnedMember {
+                path: "Setup/WinSDKBuild/cab3.cab",
+                offset: 89_458_688,
+                bytes: 4_789_860,
+                sha256: "e69199e1c281838ecc70263296f5cc4b3a569cb1bf7bcfdb93775d8696264b33",
+            },
+            PinnedMember {
+                path: "Setup/WinSDKBuild/cab4.cab",
+                offset: 94_248_960,
+                bytes: 1_020_063,
+                sha256: "c4635d2eae946c088b84d6c1e8874c5ade865440e9ac8325e472e529f28ed9e6",
+            },
         ],
         label: "SDK headers and import libraries",
     },
     IsoMember {
-        msi_path: "Setup/WinSDKWin32Tools/WinSDKWin32Tools_x86.msi",
-        cab_paths: &["Setup/WinSDKWin32Tools/cab1.cab"],
+        msi: PinnedMember {
+            path: "Setup/WinSDKWin32Tools/WinSDKWin32Tools_x86.msi",
+            offset: 1_444_061_184,
+            bytes: 766_976,
+            sha256: "ba17c91c2fbdc09cf23ad126a489b6cd7b38ae2ff7098cc748348bf4bbe895f7",
+        },
+        cabs: &[PinnedMember {
+            path: "Setup/WinSDKWin32Tools/cab1.cab",
+            offset: 1_444_829_184,
+            bytes: 10_896_725,
+            sha256: "551a7ccea577f8d2fea8a059e463e9e3ead1d9a03b73aa26b2886b8647ec8b29",
+        }],
         label: "Win32 tools",
     },
     IsoMember {
-        msi_path: "Setup/vc_stdx86/vc_stdx86.msi",
-        cab_paths: &["Setup/vc_stdx86/vc_stdx86.cab"],
+        msi: PinnedMember {
+            path: "Setup/vc_stdx86/vc_stdx86.msi",
+            offset: 1_548_064_768,
+            bytes: 408_576,
+            sha256: "0a524433918357e8476fbf0191ad3a7fb45fad11ec929f5bd69b0d2713306ade",
+        },
+        cabs: &[PinnedMember {
+            path: "Setup/vc_stdx86/vc_stdx86.cab",
+            offset: 1_504_735_232,
+            bytes: 43_328_732,
+            sha256: "d91cdb54fe5b4328b811b3b0bdd0b660a84b09e87cdce4da7d07ead63069e192",
+        }],
         label: "VC9 CRT",
     },
 ];
+
+/// Every pinned member together — what a first bootstrap actually pulls down of the image.
+pub fn sdk_member_bytes() -> u64 {
+    ISO_MEMBERS
+        .iter()
+        .flat_map(IsoMember::files)
+        .map(|file| file.bytes)
+        .sum()
+}
 
 /// The names that must resolve under the extracted SDK root for the bootstrap to count as
 /// complete (`docs/pinned-artifacts.md` §4).
@@ -246,7 +355,7 @@ mod tests {
 
     #[test]
     fn the_extraction_contract_lists_exactly_the_documented_members() {
-        let paths: Vec<&str> = ISO_MEMBERS.iter().map(|m| m.msi_path).collect();
+        let paths: Vec<&str> = ISO_MEMBERS.iter().map(|m| m.msi.path).collect();
         assert_eq!(
             paths,
             vec![
@@ -256,7 +365,7 @@ mod tests {
                 "Setup/vc_stdx86/vc_stdx86.msi",
             ]
         );
-        let cab_count: usize = ISO_MEMBERS.iter().map(|m| m.cab_paths.len()).sum();
+        let cab_count: usize = ISO_MEMBERS.iter().map(|m| m.cabs.len()).sum();
         assert_eq!(cab_count, 7);
     }
 

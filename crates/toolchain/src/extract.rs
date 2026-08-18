@@ -9,17 +9,17 @@
 //! See [`crate::disc`].
 
 use std::collections::BTreeMap;
-use std::fs::{self, File};
-use std::io::{BufWriter, Cursor, Read, Seek};
+use std::fs;
+use std::io::Cursor;
 use std::path::{Component, Path, PathBuf};
 
 use civ5vp_core::{ProgressReporter, Stage};
 
 use crate::cabinet::{Cabinet, Wanted};
-use crate::disc::{self, Disc};
 use crate::error::{ToolchainError, io_error, missing_member};
+use crate::members::StagedMembers;
 use crate::msi_layout::{self, PlannedFile};
-use crate::pinned::{ISO_MEMBERS, IsoMember};
+use crate::pinned::IsoMember;
 
 /// What one run of the extractor produced.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -28,79 +28,64 @@ pub struct ExtractionCounts {
     pub bytes_written: u64,
 }
 
-/// Extract the pinned members of `iso` into `sdk_root`.
+/// Extract the pinned members into `sdk_root`.
 ///
-/// `staging` is scratch space for the CABs on their way out of the image — they are up to a
-/// couple of hundred megabytes each, which is more than belongs in memory. It is emptied of
-/// each CAB as soon as that CAB is done with.
-pub fn extract_sdk(
-    image_path: &Path,
+/// Each member is a file of its own by the time it gets here — downloaded, or taken out of a
+/// disc image — so the cabinets are read where they lie. Nothing is copied into scratch space
+/// first, which for the two large cabinets is 73 MB of writing that no longer happens.
+pub fn extract_members(
+    source: &StagedMembers,
+    members: &[IsoMember],
     sdk_root: &Path,
-    staging: &Path,
     progress: &ProgressReporter,
 ) -> Result<ExtractionCounts, ToolchainError> {
-    let mut image = disc::open(image_path)?;
-
     fs::create_dir_all(sdk_root)
         .map_err(|error| io_error("create the toolchain folder", sdk_root, &error))?;
-    fs::create_dir_all(staging)
-        .map_err(|error| io_error("create a temporary folder", staging, &error))?;
 
-    check_members_present(&mut image)?;
+    check_members_present(source, members)?;
 
     let mut counts = ExtractionCounts::default();
-    for member in ISO_MEMBERS {
+    for member in members {
         progress.report(Stage::Build, format!("Unpacking the {}.", member.label));
-        let member_counts = extract_member(&mut image, member, sdk_root, staging, progress)?;
+        let member_counts = extract_member(source, member, sdk_root, progress)?;
         counts.files_written += member_counts.files_written;
         counts.bytes_written += member_counts.bytes_written;
     }
     Ok(counts)
 }
 
-/// Fail before writing anything if the image is not the one the extraction contract
+/// Fail before writing anything if what arrived is not what the extraction contract
 /// describes.
 ///
 /// Worth the extra pass: the alternative is discovering the fourth member is missing after
-/// half a gigabyte of headers has already been written. The log gets a listing of the
-/// directory the member should have been in, which is the one thing that makes a report about
-/// a wrong image actionable.
-fn check_members_present<R: Read + Seek>(image: &mut Disc<R>) -> Result<(), ToolchainError> {
-    for member in ISO_MEMBERS {
-        for path in std::iter::once(member.msi_path).chain(member.cab_paths.iter().copied()) {
-            if image.contains(path) {
+/// half a gigabyte of headers has already been written. The log gets a listing of where the
+/// member should have been, which is the one thing that makes a report about a wrong image
+/// actionable.
+fn check_members_present(
+    source: &StagedMembers,
+    members: &[IsoMember],
+) -> Result<(), ToolchainError> {
+    for member in members {
+        for file in member.files() {
+            if source.contains(file.path) {
                 continue;
             }
-            let (directory, _) = path.rsplit_once('/').unwrap_or(("", path));
-            let siblings = image
-                .read_dir(directory)
-                .map(|entries| {
-                    entries
-                        .into_iter()
-                        .map(|entry| entry.name)
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                })
-                .unwrap_or_else(|_| "<no such folder>".to_string());
-            return Err(missing_member(path, "the disc image").context(format!(
-                "the image reads as {}; {directory} contains: {siblings}",
-                image.format()
-            )));
+            let described = source.describe_near(file.path);
+            return Err(missing_member(file.path, "the downloaded SDK packages").context(described));
         }
     }
     Ok(())
 }
 
-fn extract_member<R: Read + Seek>(
-    image: &mut Disc<R>,
+fn extract_member(
+    source: &StagedMembers,
     member: &IsoMember,
     sdk_root: &Path,
-    staging: &Path,
     progress: &ProgressReporter,
 ) -> Result<ExtractionCounts, ToolchainError> {
-    let msi_bytes = image
-        .read_file(member.msi_path)
-        .map_err(|error| error.context(format!("member {}", member.msi_path)))?;
+    let msi_bytes = source
+        .read(member.msi.path)
+        .map_err(|error| error.context(format!("member {}", member.msi.path)))?;
     let layout = msi_layout::read(Cursor::new(msi_bytes), member.label)?;
 
     // Group by cabinet so each one is pulled out of the image and opened exactly once.
@@ -119,18 +104,19 @@ fn extract_member<R: Read + Seek>(
                 "The Windows SDK download is not the file the installer expected.",
                 format!(
                     "{} routes {} files to no cabinet at all",
-                    member.msi_path,
+                    member.msi.path,
                     files.len()
                 ),
             ));
         }
         let member_path = locate_cabinet(member, &cabinet_name)?;
-        let staged = stage_cabinet(image, &member_path, staging)?;
-        let result = extract_from_cabinet(&staged, &files, sdk_root, member, progress);
-        // The staged copy is scratch: remove it whether or not the extraction worked, so a
-        // failed bootstrap does not leave hundreds of megabytes behind.
-        let _ = fs::remove_file(&staged);
-        let cabinet_counts = result?;
+        let cabinet_counts = extract_from_cabinet(
+            &source.file_for(&member_path),
+            &files,
+            sdk_root,
+            member,
+            progress,
+        )?;
         counts.files_written += cabinet_counts.files_written;
         counts.bytes_written += cabinet_counts.bytes_written;
     }
@@ -143,37 +129,21 @@ fn extract_member<R: Read + Seek>(
 /// that `docs/pinned-artifacts.md` does not list means the image is not the one described.
 fn locate_cabinet(member: &IsoMember, cabinet_name: &str) -> Result<String, ToolchainError> {
     member
-        .cab_paths
+        .cabs
         .iter()
-        .find(|path| {
-            path.rsplit('/')
+        .find(|cab| {
+            cab.path
+                .rsplit('/')
                 .next()
                 .is_some_and(|base| base.eq_ignore_ascii_case(cabinet_name))
         })
-        .map(|path| (*path).to_string())
+        .map(|cab| cab.path.to_string())
         .ok_or_else(|| {
             missing_member(
                 cabinet_name,
-                &format!("the pinned member list for {}", member.msi_path),
+                &format!("the pinned member list for {}", member.msi.path),
             )
         })
-}
-
-/// Copy one CAB out of the image into scratch space, so the `cab` crate can seek in it.
-fn stage_cabinet<R: Read + Seek>(
-    image: &mut Disc<R>,
-    member_path: &str,
-    staging: &Path,
-) -> Result<PathBuf, ToolchainError> {
-    let staged = disc::staged_path(staging, member_path);
-    let file = File::create(&staged)
-        .map_err(|error| io_error("write a temporary cabinet", &staged, &error))?;
-    let mut writer = BufWriter::new(file);
-    image
-        .copy_file_to(member_path, &mut writer)
-        .map_err(|error| error.context(format!("member {member_path}")))?;
-    drop(writer);
-    Ok(staged)
 }
 
 fn extract_from_cabinet(
@@ -203,12 +173,7 @@ fn extract_from_cabinet(
 
     progress.report(
         Stage::Build,
-        format!(
-            "Unpacking the {} — {} files from {}.",
-            member.label,
-            wanted.len(),
-            staged.file_name().unwrap_or_default().display()
-        ),
+        format!("Unpacking the {} — {} files.", member.label, wanted.len()),
     );
     let extracted = cabinet.extract(&wanted)?;
     Ok(ExtractionCounts {
@@ -254,6 +219,85 @@ fn safe_destination(sdk_root: &Path, relative: &str) -> Result<PathBuf, Toolchai
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
+    use crate::disc;
+    use crate::pinned::ISO_MEMBERS;
+    use std::fs::File;
+    use std::io::{BufWriter, Read as _};
+
+    /// Measure the pinned member table against a real image: where each member's bytes lie,
+    /// how many there are, and what they hash to.
+    ///
+    /// This is the tool behind the per-member checksums in `docs/pinned-artifacts.md` §1. The
+    /// installer fetches those members out of the middle of the image rather than the whole
+    /// 1.45 GiB of it, which is only sound if each member is one run of bytes at a known
+    /// offset — so this prints the extents too, and says plainly when a member is in more
+    /// than one piece.
+    ///
+    /// Run it against an image whose SHA-256 you have already checked against the pin: these
+    /// numbers become the pin, so they can only be as trustworthy as the file they came from.
+    ///
+    /// ```bash
+    /// CIV5VP_SDK_ISO=/path/to/GRMSDK_EN_DVD.iso \
+    ///   cargo test --release -p civ5vp-toolchain --lib -- --ignored --nocapture describe_the_pinned_members
+    /// ```
+    #[test]
+    #[ignore = "needs a real Windows SDK disc image in CIV5VP_SDK_ISO"]
+    fn describe_the_pinned_members() {
+        use sha2::{Digest, Sha256};
+
+        /// A sink that hashes what is written through it, so a 71 MB cabinet never needs to
+        /// exist twice.
+        struct Hashing(Sha256, u64);
+        impl std::io::Write for Hashing {
+            fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+                self.0.update(buffer);
+                self.1 += buffer.len() as u64;
+                Ok(buffer.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let Some(path) = std::env::var_os("CIV5VP_SDK_ISO") else {
+            panic!("set CIV5VP_SDK_ISO to a Windows SDK 7.0 disc image");
+        };
+        let mut image = disc::open(&PathBuf::from(path)).unwrap();
+        println!("image reads as {}", image.format());
+
+        let mut total = 0u64;
+        let mut fragmented = Vec::new();
+        for member in ISO_MEMBERS {
+            println!("\n=== {} ===", member.label);
+            for file in member.files() {
+                let name = file.path;
+                let extents = image.extents(name).unwrap();
+                let mut sink = Hashing(Sha256::new(), 0);
+                image.copy_file_to(name, &mut sink).unwrap();
+                let Hashing(hasher, bytes) = sink;
+                let digest = hasher.finalize();
+                let hex: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+                total += bytes;
+                let shape = match extents.as_slice() {
+                    [(offset, length)] => format!("offset {offset}, {length} bytes"),
+                    [] => "stored inside its own entry".to_owned(),
+                    many => {
+                        fragmented.push(name);
+                        format!("{} pieces: {many:?}", many.len())
+                    }
+                };
+                println!("  {name}");
+                println!("    {shape}");
+                println!("    {bytes} bytes, sha256 {hex}");
+            }
+        }
+        println!("\nevery pinned member together: {total} bytes");
+        assert!(
+            fragmented.is_empty(),
+            "these members are not one run of bytes, so one ranged request will not fetch \
+             them: {fragmented:?}"
+        );
+    }
 
     /// Describe a real disc image without extracting it: which pinned members are present,
     /// what each MSI's layout says, and how each cabinet is structured.
@@ -297,18 +341,22 @@ mod tests {
         }
 
         for member in ISO_MEMBERS {
-            println!("\n=== {} ({}) ===", member.msi_path, member.label);
-            for cab in member.cab_paths {
-                println!("  cabinet listed: {cab} present={}", iso.contains(cab));
+            println!("\n=== {} ({}) ===", member.msi.path, member.label);
+            for cab in member.cabs {
+                println!(
+                    "  cabinet listed: {} present={}",
+                    cab.path,
+                    iso.contains(cab.path)
+                );
             }
-            if !iso.contains(member.msi_path) {
+            if !iso.contains(member.msi.path) {
                 println!("  MSI ABSENT");
                 continue;
             }
             // Report and carry on rather than stopping: an image that is truncated or
             // damaged usually is so in one place, and "here is everything, and here is the
             // one thing that failed" is the whole point of this test.
-            let bytes = match iso.read_file(member.msi_path) {
+            let bytes = match iso.read_file(member.msi.path) {
                 Ok(bytes) => bytes,
                 Err(error) => {
                     println!("  MSI UNREADABLE: {}", error.detail());
@@ -338,7 +386,7 @@ mod tests {
             // reader gets to be the oracle for the compression these actually use.
             let staging = std::env::temp_dir().join("civ5vp-inspect");
             let _ = fs::create_dir_all(&staging);
-            for cab_path in member.cab_paths {
+            for cab_path in member.cabs.iter().map(|cab| cab.path) {
                 if !iso.contains(cab_path) {
                     continue;
                 }
