@@ -173,12 +173,7 @@ fn extract_from_cabinet(
 
     progress.report(
         Stage::Build,
-        format!(
-            "Unpacking the {} — {} files from {}.",
-            member.label,
-            wanted.len(),
-            staged.file_name().unwrap_or_default().display()
-        ),
+        format!("Unpacking the {} — {} files.", member.label, wanted.len()),
     );
     let extracted = cabinet.extract(&wanted)?;
     Ok(ExtractionCounts {

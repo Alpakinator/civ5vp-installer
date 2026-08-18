@@ -200,27 +200,20 @@ impl ToolchainBootstrap {
             ));
         }
 
-        let fixups = fixups::apply(&sdk_root, progress)?;
+        fixups::apply(&sdk_root, progress)?;
 
         let report = verify_extraction(&sdk_root)?;
         require_complete(&report, &sdk_root)?;
 
-        // The numbers a maintainer would want are in the log whether or not anything
-        // went wrong, because the interesting failures are the ones that do not error. The
-        // include and lib paths are in there because they are the surprising part — the MSIs
-        // bury them under the path Windows would have installed to, and a build that cannot
-        // find a header is otherwise a guessing game.
+        // A finishing line with a figure in it, and nothing else: the header counts, the
+        // fix-up tallies and the include and lib paths that used to be here are diagnostics,
+        // and the Activity panel is read by players rather than by maintainers.
         progress.report(
             Stage::Build,
             format!(
-                "Build tools ready — {} files unpacked ({} MB), {} headers, {} libraries, \
-                 fix-ups: {fixups:?}, include: {:?}, lib: {:?}.",
+                "Build tools ready — {} files unpacked ({} MB).",
                 counts.files_written,
-                counts.bytes_written / (1024 * 1024),
-                report.headers,
-                report.libs,
-                roots.include,
-                roots.lib
+                counts.bytes_written / (1024 * 1024)
             ),
         );
 
@@ -267,7 +260,7 @@ impl ToolchainBootstrap {
                 Err(error) => progress.report(
                     Stage::Build,
                     format!(
-                        "Could not reuse the Windows SDK image already here, so it is being \
+                        "Could not reuse the Windows SDK already on this computer, so it was \
                          left alone: {}",
                         error.message()
                     ),
@@ -293,8 +286,7 @@ impl ToolchainBootstrap {
             progress.report(
                 Stage::Build,
                 format!(
-                    "Freed {:.1} GB: this version needs four packages from inside the Windows \
-                     SDK image, not the image itself.",
+                    "Freed {:.1} GB of space the build tools no longer need.",
                     freed as f64 / (1024.0 * 1024.0 * 1024.0)
                 ),
             );

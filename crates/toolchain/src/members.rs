@@ -101,9 +101,7 @@ pub fn fetch_missing(
     progress.report(
         Stage::Build,
         format!(
-            "Getting the {} packages the Windows SDK build needs — {} MB, rather than the \
-             1.4 GB image they sit inside.",
-            members.iter().flat_map(IsoMember::files).count(),
+            "Downloading the Windows SDK — {} MB.",
             total / (1024 * 1024)
         ),
     );
@@ -141,8 +139,7 @@ pub fn harvest_from_image(
             .map_err(|error| io_error("create the downloads folder", into, &error))?;
         progress.report(
             Stage::Build,
-            "Taking the packages the build needs out of the Windows SDK image already here — \
-             nothing is downloaded.",
+            "Preparing the Windows SDK from the copy already on this computer.",
         );
         let mut image = disc::open(image_path)?;
         for member in members {

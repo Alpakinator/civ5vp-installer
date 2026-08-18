@@ -667,7 +667,7 @@ fn parallel_download(
     progress.report(
         Stage::Build,
         format!(
-            "Downloading {} ({}) on {connections} connections{}.",
+            "Downloading {} ({}){}.",
             wanted.label,
             human_bytes(total),
             if already > 0 {

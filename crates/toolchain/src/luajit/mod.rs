@@ -59,10 +59,7 @@ pub fn run(
 
     // Where LuaJIT and the engine it replaces disagree about behaviour Lua leaves undefined,
     // the game's mods were written against the other answer. This is where that is closed.
-    let patched = patches::apply(&src)?;
-    for what in patched.applied {
-        progress.report(Stage::Build, format!("Adjusted the LuaJIT source: {what}."));
-    }
+    patches::apply(&src)?;
 
     // `genversion.lua` reads this rather than being told; upstream's own script writes it the
     // same way, from `git` where we use the pinned constant.
