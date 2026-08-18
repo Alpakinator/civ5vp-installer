@@ -40,8 +40,11 @@ jobs:
       # lavapipe provides a software Vulkan adapter ("No adapter found" otherwise).
       - name: Software GPU for the snapshot tests
         run: sudo apt-get update && sudo apt-get install -y libvulkan1 mesa-vulkan-drivers
+      # `--no-fail-fast`: cargo stops at the first failing test binary, which on a platform
+      # nobody can reproduce locally means one failure per round trip. Reporting all of them
+      # costs a few extra minutes and saves a whole cycle each time.
       - name: Fast suite
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --locked --no-fail-fast
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Build
@@ -77,9 +80,9 @@ jobs:
       # lavapipe, and a different rasteriser produces different pixels, so running them here
       # would fail on the renderer rather than on the shell. Everything else runs.
       - name: Fast suite
-        run: cargo test --workspace --locked --exclude civ5vp-installer
+        run: cargo test --workspace --locked --exclude civ5vp-installer --no-fail-fast
       - name: Shell tests that do not render
-        run: cargo test --locked -p civ5vp-installer --lib --bins --test cli
+        run: cargo test --locked -p civ5vp-installer --lib --bins --test cli --no-fail-fast
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Build
