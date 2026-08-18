@@ -4,7 +4,7 @@ Notable changes, newest first. Versions follow [semantic versioning](https://sem
 and each one is the tag the [releases page](https://github.com/Alpakinator/civ5vp-installer/releases)
 publishes binaries for.
 
-## 0.1.3 — unreleased
+## 0.1.3
 
 ### Changed
 
