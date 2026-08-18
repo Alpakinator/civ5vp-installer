@@ -14,6 +14,10 @@ publishes binaries for.
   checked against its own checksum, so a first install pulls about 1.1 GB in total rather than
   2.4 GB, and the slowest part of it — the archive server that holds the SDK — is asked for a
   fourteenth of what it used to be.
+- **The LuaJIT engine is built once, not once per install.** Nothing about it depends on which
+  Vox Populi version you install, so installing a new one reused the engine already built
+  instead of spending a minute rebuilding an identical file. It is rebuilt when something it is
+  actually made of changes — the pinned LuaJIT source or the build tools.
 - **Upgrading reclaims about 1.4 GB of disk.** If an earlier installer left the whole SDK
   image behind, this one takes the eleven files it needs out of it — off your own disk,
   downloading nothing — and then deletes the image. The remains of a failed image download go

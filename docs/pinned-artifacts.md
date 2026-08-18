@@ -252,6 +252,16 @@ check.
 in the same sense the others are: Civilization V and Vox Populi are written against Lua 5.1, and
 5.2 semantics would only add divergence from the engine the scripts were tested on.
 
+### The engine is kept, not rebuilt
+
+What comes out of this build is a function of three things — the pinned commit, the patches
+below, and the bootstrapped compiler — and of nothing else, least of all which mod version is
+being installed. So a built engine is kept in the Toolchain Cache under a name that is a hash
+of exactly those inputs (`crates/toolchain/src/luajit/cache.rs`), and a later install that
+would produce the same bytes uses it instead of spending the minute. Editing a patch or moving
+the pin changes the name, so a stale engine cannot be handed back by accident; the engine is
+still checked against the game's own imports every time, cache or no cache.
+
 ### The source is patched before it is built
 
 The engine is a replacement for the exact Lua 5.1 the game ships, so where LuaJIT and PUC-Lua
