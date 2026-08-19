@@ -12,7 +12,7 @@ use egui::{Color32, Pos2, Rect, Shape, Stroke, pos2, vec2};
 use crate::theme;
 
 /// Page margin on every side of the window (visual language, "Proportions").
-const PAGE_MARGIN: i8 = 20;
+pub const PAGE_MARGIN: i8 = 20;
 /// Internal padding of a framed panel.
 const PANEL_PADDING: i8 = 10;
 /// Chamfer of a panel's outer line; the inner line follows at its inset with a smaller cut.
@@ -21,10 +21,18 @@ const PANEL_CHAMFER: f32 = 8.0;
 const FRAME_INSET: f32 = 3.0;
 
 /// The window surface: page-navy ground, page margin all round.
+///
+/// All round except on the right, where the margin belongs to the scroll bar: the page
+/// scrolls, and a bar drawn at the edge of the content would sit on the panels' right frame
+/// line. The scrolling area is given the whole width and puts the margin back inside itself,
+/// so the panels end where they always did and the bar rides in the space beyond them.
 pub fn page(style: &egui::Style) -> egui::Frame {
     egui::Frame::central_panel(style)
         .fill(theme::PAGE_NAVY)
-        .inner_margin(egui::Margin::same(PAGE_MARGIN))
+        .inner_margin(egui::Margin {
+            right: 0,
+            ..egui::Margin::same(PAGE_MARGIN)
+        })
 }
 
 /// The eight corners of a rectangle with its corners cut at 45°.

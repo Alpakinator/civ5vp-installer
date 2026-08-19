@@ -121,7 +121,24 @@ fn style() -> egui::Style {
     };
     style.spacing.item_spacing = egui::vec2(8.0, 5.0);
     style.spacing.button_padding = egui::vec2(14.0, 5.0);
+    style.spacing.scroll = scroll();
     style
+}
+
+/// The scroll bar, centred in the page margin that `deco::page` leaves it.
+///
+/// egui right-aligns the bar against the edge of the scrolling area, so the outer margin is
+/// what centres it: half the page margin, less half the bar. The width is held constant -
+/// the default bar swells when the pointer is near it, which would slide a centred bar
+/// sideways every time it was touched.
+fn scroll() -> egui::style::ScrollStyle {
+    let bar_width = 8.0;
+    egui::style::ScrollStyle {
+        bar_width,
+        floating_width: bar_width,
+        bar_outer_margin: (f32::from(crate::deco::PAGE_MARGIN) - bar_width) / 2.0,
+        ..egui::style::ScrollStyle::floating()
+    }
 }
 
 fn visuals() -> egui::Visuals {
