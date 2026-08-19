@@ -8,8 +8,8 @@ use civ5vp_core::BoundaryError;
 
 /// A Toolchain Bootstrap failure.
 ///
-/// The shape is deliberately the same as [`BoundaryError`]'s — a sentence for the user and
-/// everything else for the log — because that is what this crate hands back across the Core
+/// The shape is deliberately the same as [`BoundaryError`]'s - a sentence for the user and
+/// everything else for the log - because that is what this crate hands back across the Core
 /// seam. It is a separate type only so the bootstrap's internals can build errors without
 /// pretending every internal step is a boundary failure.
 #[derive(Debug, Clone)]
@@ -32,7 +32,7 @@ impl ToolchainError {
         &self.message
     }
 
-    /// Full detail — the IO error, the byte offset, the URL, the hash that did not match.
+    /// Full detail - the IO error, the byte offset, the URL, the hash that did not match.
     pub fn detail(&self) -> &str {
         &self.detail
     }
@@ -74,7 +74,7 @@ pub fn io_error(action: &str, path: &Path, error: &std::io::Error) -> ToolchainE
     )
 }
 
-/// Wrap an IO error that has no single path — a stream, a decoder, an in-memory reader.
+/// Wrap an IO error that has no single path - a stream, a decoder, an in-memory reader.
 pub fn stream_error(action: &str, error: &std::io::Error) -> ToolchainError {
     ToolchainError::new(
         "The installer could not read the downloaded toolchain files. They may be damaged; \

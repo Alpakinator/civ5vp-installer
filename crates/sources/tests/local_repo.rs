@@ -8,7 +8,7 @@ use civ5vp_core::{InstallationSource, ProgressReporter, SourceProvider};
 use civ5vp_sources::{InstallationSources, LuaJitCache, UpstreamCache};
 use support::UpstreamFixture;
 
-/// A provider whose Upstream Cache is never reached — these tests only use the Local Repo arm.
+/// A provider whose Upstream Cache is never reached - these tests only use the Local Repo arm.
 fn sources(fixture: &UpstreamFixture) -> InstallationSources {
     InstallationSources::new(
         UpstreamCache::new(fixture.cache_root(), fixture.unreachable_url()),
@@ -83,7 +83,7 @@ fn a_local_repo_that_is_not_a_folder_is_refused_before_anything_happens() {
     assert!(failure.detail().contains("NotADirectory"));
 }
 
-/// A folder that exists but is not the repository — a Steam library, a mods folder — is
+/// A folder that exists but is not the repository - a Steam library, a mods folder - is
 /// named as such, before any Deployment starts.
 #[test]
 fn a_folder_that_is_not_a_checkout_is_refused_with_a_sentence() {

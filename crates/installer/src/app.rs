@@ -3,7 +3,7 @@
 //! Nothing here decides anything. It collects paths, hands them to the Core, and
 //! renders what comes back. Which folders are Claimed, whether a Flavor is legal, what order
 //! things happen in, whether a folder really is the game, where the MODS Folder lives inside
-//! it, what to tell a player whose game cannot be used — all of that lives behind [`Core`] and
+//! it, what to tell a player whose game cannot be used - all of that lives behind [`Core`] and
 //! the Core's detection functions. Every sentence this file puts on screen either came out of
 //! the Core or is a fixed label.
 
@@ -24,13 +24,13 @@ use crate::{deco, placeholder, theme};
 ///
 /// A fixed promise rather than a leftover. The log was previously sized from whatever height
 /// the widgets above had not taken, and because the whole page sits in one `ScrollArea` that
-/// is near zero on a full page — so it collapsed to a single line exactly when an install had
+/// is near zero on a full page - so it collapsed to a single line exactly when an install had
 /// the most to report. Pinning it to the window bottom instead was tried and rejected: at the
 /// design size it leaves too little for the configuration panels, which then clip mid-border.
 /// The page scrolls, so a fixed height here is always honoured, if sometimes below the fold.
 const MIN_ACTIVITY_LINES: f32 = 5.0;
 
-/// Presentation state, not domain state — deliberately not public.
+/// Presentation state, not domain state - deliberately not public.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Status {
     Ready,
@@ -70,17 +70,17 @@ impl Screen {
     }
 }
 
-/// A Deployment or an Uninstall on the worker thread. The result is the finished sentence —
-/// built by the worker from the Core's outcome — so both operations share one shape.
+/// A Deployment or an Uninstall on the worker thread. The result is the finished sentence -
+/// built by the worker from the Core's outcome - so both operations share one shape.
 struct RunningInstall {
     progress: Receiver<ProgressEvent>,
     result: Receiver<Result<String, InstallError>>,
-    /// When the click happened — the finished line reports the honest wall-clock cost,
+    /// When the click happened - the finished line reports the honest wall-clock cost,
     /// which on a first run is dominated by the Toolchain Bootstrap.
     started: std::time::Instant,
 }
 
-/// Which kind of Installation Source the player is using. Presentation state — the Core
+/// Which kind of Installation Source the player is using. Presentation state - the Core
 /// receives a concrete [`InstallationSource`] either way and rules on it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SourceChoice {
@@ -105,7 +105,7 @@ enum PickedVersion {
     /// The default: whatever the newest Release turns out to be.
     NewestRelease,
     Release(String),
-    /// No longer offered by the picker — kept so a configuration remembered
+    /// No longer offered by the picker - kept so a configuration remembered
     /// before that still restores and installs.
     Development,
     /// One commit after the newest Release, from the unofficial list.
@@ -113,11 +113,11 @@ enum PickedVersion {
         label: String,
         commit: String,
     },
-    /// Any branch, tag, or commit — the advanced escape hatch.
+    /// Any branch, tag, or commit - the advanced escape hatch.
     Custom,
 }
 
-/// The unofficial-versions lookup — same life cycle as [`VersionsState`], but
+/// The unofficial-versions lookup - same life cycle as [`VersionsState`], but
 /// started only when the toggle is on and the catalog has named the newest Release.
 enum UnofficialState {
     NotAsked,
@@ -141,7 +141,7 @@ pub struct InstallerApp {
     versions: VersionsState,
     picked_version: PickedVersion,
     /// Whether the picker also lists every change since the newest Release.
-    /// Off by default — official Releases are the offer; this is the opt-in.
+    /// Off by default - official Releases are the offer; this is the opt-in.
     show_unofficial: bool,
     unofficial: UnofficialState,
     custom_ref: String,
@@ -150,12 +150,12 @@ pub struct InstallerApp {
     /// Whether the player asked for the game's Lua engine to be replaced with LuaJIT.
     /// Off unless it was turned on: this is the only choice that overwrites a file the game
     /// owns, so a player has to reach for it rather than inherit it. Public so the choice can
-    /// be set without a click — the tests prefer clicking, but nothing here needs hiding.
+    /// be set without a click - the tests prefer clicking, but nothing here needs hiding.
     pub luajit: bool,
     build_configuration: BuildConfiguration,
     install_mode: InstallMode,
     /// The player's own MODS-folder mods a Modpack could bake in: what the
-    /// Core found, and which of those are ticked. Recomputed when the folders resolve —
+    /// Core found, and which of those are ticked. Recomputed when the folders resolve -
     /// listing means reading every modinfo, not a per-frame job.
     extra_mods_available: Vec<String>,
     extra_mods_picked: Vec<String>,
@@ -163,22 +163,22 @@ pub struct InstallerApp {
     status: Status,
     running: Option<RunningInstall>,
     /// Whether the art-deco theme has been installed on the context yet. Fonts and style
-    /// are set once per context, not per frame — rebuilding the font atlas is not free.
+    /// are set once per context, not per frame - rebuilding the font atlas is not free.
     skinned: bool,
     /// The App Data Store's measured size, when the storage panel is open. `None` between
-    /// looks — measuring a multi-gigabyte store is not a per-frame job.
+    /// looks - measuring a multi-gigabyte store is not a per-frame job.
     store_size: Option<u64>,
     /// The Core's up-front cost warning, drawn near Install while the first build would
-    /// still bootstrap the toolchain. Refreshed when a Deployment finishes — that is the
+    /// still bootstrap the toolchain. Refreshed when a Deployment finishes - that is the
     /// moment it can stop being true.
     first_run_note: Option<String>,
     /// The launch-time update ping's channel and answer. Wired only by the
-    /// real binary — the shell tests and previews never open a socket.
+    /// real binary - the shell tests and previews never open a socket.
     update_check: Option<Receiver<String>>,
     newer_installer: Option<String>,
 }
 
-/// The first `max` characters of a commit summary, with an ellipsis when it was cut —
+/// The first `max` characters of a commit summary, with an ellipsis when it was cut -
 /// dropdown rows are narrow and commit messages are not.
 fn truncated(summary: &str, max: usize) -> String {
     let mut taken: String = summary.chars().take(max).collect();
@@ -188,22 +188,29 @@ fn truncated(summary: &str, max: usize) -> String {
     taken
 }
 
+/// How far a caption is pushed in to clear the radio button above it.
+const RADIO_INDENT: f32 = 22.0;
+
 /// The Flavor choices, as the player reads them.
 ///
 /// There are three, not two-plus-a-checkbox, and that is the point: EUI is legal only with Vox
 /// Populi, and listing the legal combinations means the shell cannot offer the illegal one
 /// without a rule of its own to enforce. [`Flavor`] makes the same guarantee at the
 /// type level; this is that guarantee drawn.
-fn flavor_choices() -> [(Flavor, &'static str); 3] {
+fn flavor_choices() -> [(Flavor, &'static str, Option<&'static str>); 3] {
     [
-        (Flavor::CommunityPatch, "Community Patch only"),
+        (Flavor::CommunityPatch, "Community Patch only", None),
         (
             Flavor::VoxPopuli { eui: Eui::Disabled },
             "Community Patch + Vox Populi",
+            None,
         ),
         (
             Flavor::VoxPopuli { eui: Eui::Enabled },
             "Community Patch + Vox Populi + EUI",
+            // The other two names are the mods as people say them; this one is an
+            // abbreviation, so it gets spelled out once underneath.
+            Some("EUI - enhanced user interface"),
         ),
     ]
 }
@@ -218,13 +225,13 @@ impl InstallerApp {
         }
 
         // The remembered Installation Source, translated into picker state. A new player
-        // starts on the GitHub path with the newest Release — the spec's default.
+        // starts on the GitHub path with the newest Release - the spec's default.
         let mut source_choice = SourceChoice::GitHub;
         let mut source_folder = String::new();
         let mut picked_version = PickedVersion::NewestRelease;
         let mut custom_ref = String::new();
         // A checkout named once is pre-filled forever, even while GitHub is the active
-        // source — the field is only drawn in Dev mode, but it must not come back empty.
+        // source - the field is only drawn in Dev mode, but it must not come back empty.
         if let Some(path) = &startup.dev_checkout {
             source_folder = display_path(path);
         }
@@ -288,7 +295,7 @@ impl InstallerApp {
             .as_deref()
             .map_or_else(String::new, display_path);
 
-        // Start-up may have something more specific to say than a field-by-field rejection —
+        // Start-up may have something more specific to say than a field-by-field rejection -
         // that the game is the native Aspyr port, say. Which of the two a player sees is the
         // Core's judgement, made by `Startup::explanation`, not the shell's.
         let resolved = resolve(&game_folder, &documents_folder)
@@ -334,7 +341,7 @@ impl InstallerApp {
     }
 
     /// An app frozen in one screen, for `--screenshot` and for snapshot baselines. Nothing is
-    /// installed from a preview and nothing is remembered — it only ever gets rendered.
+    /// installed from a preview and nothing is remembered - it only ever gets rendered.
     pub fn preview(screen: Screen) -> Self {
         let store = AppDataStore::at(PathBuf::from("/preview/app-data"));
         let core = Arc::new(placeholder::core(store.root().to_path_buf()));
@@ -394,7 +401,7 @@ impl InstallerApp {
             }
             Screen::Installing => {
                 app.status = Status::Installing;
-                // Illustrative sample lines, not asserted against the Core's wording — a
+                // Illustrative sample lines, not asserted against the Core's wording - a
                 // preview never runs an install.
                 app.activity = vec![
                     "Fetching sources: Getting the mod files ready.".to_owned(),
@@ -428,7 +435,7 @@ impl InstallerApp {
     }
 
     /// The one line describing where the install has got to. Rendered as a label, which is
-    /// also how the tests read it — there is no accessor for the shell's state, so the tests
+    /// also how the tests read it - there is no accessor for the shell's state, so the tests
     /// see exactly what a user (or a screen reader) sees.
     fn status_line(&self) -> String {
         match &self.status {
@@ -440,12 +447,12 @@ impl InstallerApp {
     }
 
     /// Draw the whole UI. Shared by the real binary, `--screenshot`, and the kittest harness,
-    /// so all three show the same pixels — which is what makes a snapshot baseline mean
+    /// so all three show the same pixels - which is what makes a snapshot baseline mean
     /// anything about the shipped window.
     pub fn show(&mut self, ui: &mut egui::Ui) {
         if !self.skinned {
-            // Takes effect from the next frame, which every caller — the window, the
-            // screenshot renderer, the kittest harness — runs plenty of before anyone looks.
+            // Takes effect from the next frame, which every caller - the window, the
+            // screenshot renderer, the kittest harness - runs plenty of before anyone looks.
             theme::apply(ui.ctx());
             self.skinned = true;
         }
@@ -519,7 +526,7 @@ impl InstallerApp {
             if let Ok(folders) = &self.resolved {
                 deco::hairline(ui);
                 for (label, path) in [
-                    // MODS and Text first — they are siblings in the Documents folder, so
+                    // MODS and Text first - they are siblings in the Documents folder, so
                     // the two related paths sit together and the DLC one stands apart.
                     ("MODS folder", &folders.mods),
                     ("Text folder", &folders.text),
@@ -549,15 +556,27 @@ impl InstallerApp {
         ui.add_space(6.0);
         let mut chosen = false;
         deco::panel(ui, Some("What to install"), |ui| {
-            for (choice, label) in flavor_choices() {
+            for (choice, label, caption) in flavor_choices() {
                 chosen |= ui.radio_value(&mut self.flavor, choice, label).changed();
+                if let Some(caption) = caption {
+                    ui.horizontal(|ui| {
+                        // Clear of the radio button, so the caption reads as belonging to
+                        // the line above it rather than as a fourth choice.
+                        ui.add_space(RADIO_INDENT);
+                        ui.label(
+                            egui::RichText::new(caption)
+                                .small()
+                                .color(theme::PARCHMENT_DIM),
+                        );
+                    });
+                }
             }
             ui.add_space(4.0);
             // 43 Civs is legal with either Flavor and with or without EUI, so it is the one
             // genuinely independent toggle.
             let mut enabled = self.forty_three_civs == FortyThreeCivs::Enabled;
             if ui
-                .checkbox(&mut enabled, "43 Civs — room for 43 civilizations on a map")
+                .checkbox(&mut enabled, "43 Civs - room for 43 civilizations on a map")
                 .changed()
             {
                 self.forty_three_civs = if enabled {
@@ -590,14 +609,14 @@ impl InstallerApp {
                 .radio_value(
                     &mut self.install_mode,
                     InstallMode::Mods,
-                    "Install as mods — activate them in the game's Mods menu",
+                    "Install as mods - activate them in the game's Mods menu",
                 )
                 .changed();
             chosen |= ui
                 .radio_value(
                     &mut self.install_mode,
                     InstallMode::Modpack,
-                    "Install as a modpack — loads automatically, works in multiplayer",
+                    "Install as a modpack - loads automatically, works in multiplayer",
                 )
                 .changed();
             if self.install_mode == InstallMode::Modpack {
@@ -629,12 +648,12 @@ impl InstallerApp {
             ui.add_space(4.0);
             // Dev mode: pointing the installer at your own checkout is what makes you a mod
             // developer, and the Debug choice appears only then. The Core is
-            // the one that *refuses* Debug anywhere else — this is just not drawing a
+            // the one that *refuses* Debug anywhere else - this is just not drawing a
             // checkbox that could only be refused.
             if self.dev_mode() {
                 let mut debug = self.build_configuration == BuildConfiguration::Debug;
                 if ui
-                    .checkbox(&mut debug, "Debug build — for stepping through the DLL")
+                    .checkbox(&mut debug, "Debug build - for stepping through the DLL")
                     .changed()
                 {
                     self.build_configuration = if debug {
@@ -732,8 +751,8 @@ impl InstallerApp {
 
     /// The Activity log, at the foot of the page.
     ///
-    /// Its height is [`MIN_ACTIVITY_LINES`] lines of the style it actually renders in — not a
-    /// pixel constant — so it keeps its promise at any font scale. Scrolls within itself,
+    /// Its height is [`MIN_ACTIVITY_LINES`] lines of the style it actually renders in - not a
+    /// pixel constant - so it keeps its promise at any font scale. Scrolls within itself,
     /// stuck to the newest line.
     fn activity_panel(&self, ui: &mut egui::Ui) {
         ui.add_space(6.0);
@@ -808,7 +827,7 @@ impl InstallerApp {
 
     /// The Installation Source: the Version picker for the GitHub path, or the checkout
     /// field for Dev mode. Which combinations are legal, and what a Version means, stay the
-    /// Core's business — this draws choices and reports the pick.
+    /// Core's business - this draws choices and reports the pick.
     fn source_section(&mut self, ui: &mut egui::Ui) {
         let mut chosen = false;
         deco::panel(ui, Some("Install from"), |ui| {
@@ -816,14 +835,14 @@ impl InstallerApp {
                 .radio_value(
                     &mut self.source_choice,
                     SourceChoice::GitHub,
-                    "Download from GitHub — pick a version",
+                    "Download from GitHub - pick a version",
                 )
                 .changed();
             chosen |= ui
                 .radio_value(
                     &mut self.source_choice,
                     SourceChoice::OwnCheckout,
-                    "My own Community-Patch-DLL checkout — Dev mode",
+                    "My own Community-Patch-DLL checkout - Dev mode",
                 )
                 .changed();
             ui.add_space(4.0);
@@ -849,7 +868,7 @@ impl InstallerApp {
 
     /// The Version combo and the states around it. Returns whether the pick changed.
     fn version_picker(&mut self, ui: &mut egui::Ui) -> bool {
-        // The list is looked up once, lazily, on a thread — one round trip of ref names,
+        // The list is looked up once, lazily, on a thread - one round trip of ref names,
         // nothing downloaded. Offline it fails into a sentence and a retry button.
         if matches!(self.versions, VersionsState::NotAsked) {
             let (sender, receiver) = channel();
@@ -945,7 +964,7 @@ impl InstallerApp {
                 let newest = catalog.newest_release();
                 let selected_label = match &self.picked_version {
                     PickedVersion::NewestRelease => match &newest {
-                        Some(Version::Release(tag)) => format!("Latest release — {tag}"),
+                        Some(Version::Release(tag)) => format!("Latest release - {tag}"),
                         _ => "Latest release".to_owned(),
                     },
                     PickedVersion::Release(tag) => tag.clone(),
@@ -968,11 +987,11 @@ impl InstallerApp {
                                 .selectable_value(
                                     &mut self.picked_version,
                                     PickedVersion::NewestRelease,
-                                    format!("Latest release — {tag}"),
+                                    format!("Latest release - {tag}"),
                                 )
                                 .changed();
                         }
-                        // Unofficial versions, newest first — the top entry is
+                        // Unofficial versions, newest first - the top entry is
                         // what "latest development version" used to mean. The whole commit
                         // message never fits a dropdown row, so the row truncates and the
                         // full message is the hover text.
@@ -984,7 +1003,7 @@ impl InstallerApp {
                                         label: build.label.clone(),
                                         commit: build.commit.clone(),
                                     },
-                                    format!("{} — {}", build.label, truncated(&build.summary, 44)),
+                                    format!("{} - {}", build.label, truncated(&build.summary, 44)),
                                 )
                                 .on_hover_text(format!(
                                     "{}\n{}",
@@ -993,7 +1012,7 @@ impl InstallerApp {
                                 ))
                                 .changed();
                         }
-                        // The newest release is already the "Latest release — …" entry.
+                        // The newest release is already the "Latest release - …" entry.
                         let newest_tag = match &newest {
                             Some(Version::Release(tag)) => Some(tag.as_str()),
                             _ => None,
@@ -1026,14 +1045,14 @@ impl InstallerApp {
                 }
                 ui.checkbox(
                     &mut self.show_unofficial,
-                    "Unofficial versions — every change since the newest release",
+                    "Unofficial versions - every change since the newest release",
                 );
                 if self.show_unofficial
                     && let UnofficialState::Ready(list) = &self.unofficial
                     && list.is_empty()
                 {
                     // Master sitting exactly at the newest Release is normal right after
-                    // one ships — say so, or an empty-looking toggle reads as broken.
+                    // one ships - say so, or an empty-looking toggle reads as broken.
                     ui.label(
                         egui::RichText::new(
                             "There are no unofficial versions after the newest release yet.",
@@ -1086,7 +1105,7 @@ impl InstallerApp {
             return false;
         }
         // "Latest release" must not quietly install something else while the lookup is
-        // still out (or failed) — wait until the catalog says which release that is.
+        // still out (or failed) - wait until the catalog says which release that is.
         !(self.source_choice == SourceChoice::GitHub
             && self.picked_version == PickedVersion::NewestRelease
             && !matches!(&self.versions, VersionsState::Ready(_)))
@@ -1106,7 +1125,7 @@ impl InstallerApp {
                 ui.label(
                     egui::RichText::new(format!(
                         "The installer keeps its downloads, build files and settings in \
-                         {location} — currently {}.",
+                         {location} - currently {}.",
                         human_size(self.store_size.unwrap_or(0)),
                     ))
                     .small(),
@@ -1141,7 +1160,7 @@ impl InstallerApp {
                 });
                 ui.label(
                     egui::RichText::new(
-                        "Clearing never touches the game or its mods — only the installer's \
+                        "Clearing never touches the game or its mods - only the installer's \
                          own folder.",
                     )
                     .small()
@@ -1149,14 +1168,14 @@ impl InstallerApp {
                 );
             });
         // While the panel is closed the size is left unknown, so a 5 GB walk does not run
-        // just to draw a collapsed header — and a stale number never lingers either.
+        // just to draw a collapsed header - and a stale number never lingers either.
         if response.body_response.is_none() {
             self.store_size = None;
         }
     }
 
     /// The copy/open row every failure surface carries. `headline` is what the notice says;
-    /// "Copy details" puts it on the clipboard plus the tail of the log file — enough for a
+    /// "Copy details" puts it on the clipboard plus the tail of the log file - enough for a
     /// useful report, small enough to paste anywhere.
     fn support_buttons(&self, ui: &mut egui::Ui, headline: &str) {
         ui.add_space(4.0);
@@ -1222,7 +1241,7 @@ impl InstallerApp {
             install_mode: self.install_mode,
             extra_mods: self.extra_mods_picked.clone(),
             // The checkbox, translated. Untouched it asks for the engine the game shipped
-            // with — what a Replaced File costs is the Core's business, but whether one is
+            // with - what a Replaced File costs is the Core's business, but whether one is
             // wanted at all is the player's, and silence means no.
             luajit: if self.luajit {
                 LuaJitEngine::LuaJit
@@ -1306,7 +1325,7 @@ impl InstallerApp {
             let reporter = ProgressReporter::to_channel(progress_sender);
             let finished = core.uninstall(&folders, &reporter).map(|outcome| {
                 if outcome.removed.is_empty() && outcome.removed_files.is_empty() {
-                    "Nothing of Vox Populi was installed — your game is already unmodded."
+                    "Nothing of Vox Populi was installed - your game is already unmodded."
                         .to_owned()
                 } else {
                     let names: Vec<_> = outcome
@@ -1353,7 +1372,7 @@ impl InstallerApp {
             Ok(Ok(summary)) => {
                 self.status = Status::Installed { summary };
                 // A finished Deployment is the moment the first-run warning can stop
-                // being true — ask again rather than guess.
+                // being true - ask again rather than guess.
                 self.first_run_note = self.core.first_run_expectation();
                 // The configuration that worked is the one worth starting from next time.
                 self.remember();
@@ -1367,11 +1386,11 @@ impl InstallerApp {
                 true
             }
             Err(TryRecvError::Empty) => false,
-            // The worker died without sending a result, so there is no Core error to quote —
+            // The worker died without sending a result, so there is no Core error to quote -
             // this is the one message the shell has to author itself.
             Err(TryRecvError::Disconnected) => {
                 self.status = Status::Failed {
-                    message: "This stopped unexpectedly — check the log for what happened."
+                    message: "This stopped unexpectedly - check the log for what happened."
                         .to_owned(),
                 };
                 true
@@ -1380,13 +1399,13 @@ impl InstallerApp {
 
         if finished {
             // The worker reports its result last, but events it sent just before that may
-            // still be sitting in the channel. Without this the tail of Sync — the lines
-            // saying what was actually installed — would be dropped.
+            // still be sitting in the channel. Without this the tail of Sync - the lines
+            // saying what was actually installed - would be dropped.
             while let Ok(event) = run.progress.try_recv() {
                 lines.push(format!("{}: {}", event.stage.label(), event.message));
             }
             // A failed run that signs off with "Finished" is how a user comes to believe the
-            // mod is installed when it is not — the red notice above says otherwise, but the
+            // mod is installed when it is not - the red notice above says otherwise, but the
             // last line of the log is what gets read and reported.
             let elapsed = elapsed_label(run.started.elapsed());
             lines.push(match &self.status {
@@ -1403,7 +1422,7 @@ impl InstallerApp {
 }
 
 /// One row of the folder grid: a caption and the box it names. The two are tied together for
-/// AccessKit, so a screen reader announces the box by its caption — which is also how the
+/// AccessKit, so a screen reader announces the box by its caption - which is also how the
 /// shell tests find it, meaning they reach the field the same way a user does.
 ///
 /// Returns whether the text changed this frame.

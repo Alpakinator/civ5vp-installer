@@ -1,7 +1,7 @@
 # Replaced Files, and LuaJIT as the game's Lua engine
 
 Civilization V loads its script engine from `lua51_Win32.dll` in the Game Installation root.
-The shipped file is stock Lua 5.1.4 (PUC-Rio) — verified by its version string — and the game's
+The shipped file is stock Lua 5.1.4 (PUC-Rio) - verified by its version string - and the game's
 own executables, its stock DLLs and Vox Populi's `CvGameCore_Expansion2.dll` import 80 symbols
 from it between them, every one of them a standard Lua 5.1 C API function. LuaJIT is
 ABI-compatible with Lua 5.1 by design, so a 32-bit LuaJIT build renamed to `lua51_Win32.dll`
@@ -39,13 +39,13 @@ compile. The pin is in `docs/pinned-artifacts.md`.
 
 ## Considered Options
 
-- **Ship a prebuilt LuaJIT DLL** — rejected: it contradicts ADR-0001, and the binaries on offer
-  are abandoned. The circulating community builds date from 2013–2017, and MoonJIT's repository
+- **Ship a prebuilt LuaJIT DLL** - rejected: it contradicts ADR-0001, and the binaries on offer
+  are abandoned. The circulating community builds date from 2013-2017, and MoonJIT's repository
   has been archived since 2021.
-- **Upgrade the game's SQLite as well** — not possible rather than rejected. SQLite 3.7.17 is
+- **Upgrade the game's SQLite as well** - not possible rather than rejected. SQLite 3.7.17 is
   statically linked into `CvGameDatabaseWin32Final Release.dll`, which exports 135 mangled C++
   symbols and no `sqlite3_*` entry points at all. There is nothing to bind a modern SQLite to.
-- **A fourth injected boundary in the Core, for LuaJIT** — rejected: the work splits cleanly along
+- **A fourth injected boundary in the Core, for LuaJIT** - rejected: the work splits cleanly along
   the two that already exist. Fetching pinned source is the source provider's job and compiling it
   is the toolchain runner's, and neither needs to learn anything it does not already do.
 
@@ -61,7 +61,7 @@ compile. The pin is in `docs/pinned-artifacts.md`.
   therefore treats a stock DLL in the game as "not deployed" and replaces it again on the next
   run, rather than assuming its own last write survived.
 - The honest performance claim is narrow. The measured community results are for Lua-dominated
-  work — map generation, the interface, script-heavy add-ons. Vox Populi's AI turn time is native
+  work - map generation, the interface, script-heavy add-ons. Vox Populi's AI turn time is native
   C++ in `CvGameCore_Expansion2.dll`, which LuaJIT cannot affect, so the UI must not promise
   faster turns.
 - Mods relying on Lua 5.1's deprecated implicit `arg` table in vararg functions break under
@@ -70,11 +70,11 @@ compile. The pin is in `docs/pinned-artifacts.md`.
   one they inherit.
 - **The engine is built from patched source.** A drop-in replacement has to agree with the
   engine it replaces about behaviour Lua leaves undefined, because that is what the mods were
-  written against — not the standard. Vox Populi's own top panel proved it: `table.insert` with
+  written against - not the standard. Vox Populi's own top panel proved it: `table.insert` with
   an explicit position measures the table with `#t`, `#t` on a table with a hole is undefined,
   and the two engines answer differently, which cost the panel every strategic resource icon but
   horses. Divergences of that kind are closed in `crates/toolchain/src/luajit/patches.rs` and
   documented in `docs/pinned-artifacts.md` §7. The rule for adding one: it must be behaviour the
   language leaves undefined *and* a case where the shipped engine's answer is the one mods
-  depend on. Anything where LuaJIT is simply stricter than a mod expected — the `arg` table
-  above — is the mod's bug and stays the mod's bug.
+  depend on. Anything where LuaJIT is simply stricter than a mod expected - the `arg` table
+  above - is the mod's bug and stays the mod's bug.

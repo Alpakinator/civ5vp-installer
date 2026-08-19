@@ -14,7 +14,7 @@ use crate::error::ToolchainError;
 use crate::iso9660::Iso9660;
 use crate::udf::{self, Udf};
 
-/// One entry in a directory, whichever filesystem it came from. Diagnostics only — the
+/// One entry in a directory, whichever filesystem it came from. Diagnostics only - the
 /// bootstrap navigates by the paths in `docs/pinned-artifacts.md`, never by listing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiscEntry {
@@ -70,7 +70,7 @@ impl<R: Read + Seek> Disc<R> {
     }
 
     /// Where `path`'s bytes lie in the image: absolute `(offset, length)` pairs, in order.
-    /// Empty when the filesystem stores the data inside the entry itself. Test-only — see
+    /// Empty when the filesystem stores the data inside the entry itself. Test-only - see
     /// [`crate::udf::Udf::extents`].
     #[cfg(test)]
     pub fn extents(&mut self, path: &str) -> Result<Vec<(u64, u64)>, ToolchainError> {

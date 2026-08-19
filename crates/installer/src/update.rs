@@ -1,12 +1,12 @@
 //! The launch-time new-version check.
 //!
 //! One GET against GitHub's "latest release" endpoint, on a background thread, entirely
-//! best-effort: offline, rate-limited, or unparsable all mean "say nothing" — the spec is
+//! best-effort: offline, rate-limited, or unparsable all mean "say nothing" - the spec is
 //! explicit that launch works offline and that there is no auto-update machinery. The only
 //! thing this can ever do is show one sentence with a link.
 //!
 //! The repository named here is where the installer's own releases will live. It must match
-//! the published repository or the check silently finds nothing — release checklist item.
+//! the published repository or the check silently finds nothing - release checklist item.
 
 /// The endpoint asked for the newest release.
 pub const RELEASES_API_URL: &str =
@@ -38,7 +38,7 @@ pub fn check_for_newer_release() -> Option<String> {
 }
 
 /// The decision half, separated so it can be tested without a socket: given this build's
-/// version and the latest-release JSON, the tag to announce — or `None`.
+/// version and the latest-release JSON, the tag to announce - or `None`.
 pub fn newer_release(current: &str, latest_json: &str) -> Option<String> {
     let tag = tag_name(latest_json)?;
     let latest = numbers(&tag);

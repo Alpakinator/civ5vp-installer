@@ -7,9 +7,9 @@
 //!
 //! Two Installation Sources, exactly as `CONTEXT.md` defines them:
 //!
-//! * the **Upstream Cache** — a managed clone of `LoneGazebo/Community-Patch-DLL`, fetched
+//! * the **Upstream Cache** - a managed clone of `LoneGazebo/Community-Patch-DLL`, fetched
 //!   incrementally, with one **Version** checked out at a time;
-//! * a **Local Repo** — a developer's own checkout, used as-is including uncommitted changes,
+//! * a **Local Repo** - a developer's own checkout, used as-is including uncommitted changes,
 //!   with no git operation performed on it at all.
 //!
 //! Beside them sits one more fetched thing, which is not an Installation Source because the

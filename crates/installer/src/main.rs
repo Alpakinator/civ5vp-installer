@@ -47,7 +47,7 @@ fn run_app() -> Result<(), String> {
     let core = Arc::new(wiring::core(&store));
     let locations = SearchLocations::for_this_platform();
     // The update ping: fired once, in the background, entirely best-effort.
-    // Offline or failing, nothing arrives and nothing is shown — launch never waits on it.
+    // Offline or failing, nothing arrives and nothing is shown - launch never waits on it.
     let (newer_sender, newer_receiver) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         if let Some(tag) = civ5vp_installer::update::check_for_newer_release() {
@@ -56,7 +56,7 @@ fn run_app() -> Result<(), String> {
     });
     // The window icon, by the two routes desktops actually use. `with_icon` carries the logo
     // on Windows and on X11; Wayland has no protocol for a client to set its own icon, so
-    // there the compositor matches `app_id` against an installed desktop entry —
+    // there the compositor matches `app_id` against an installed desktop entry -
     // `packaging/civ5vp-installer.desktop`, whose file name this must keep matching.
     let mut viewport = egui::ViewportBuilder::default().with_app_id("civ5vp-installer");
     if let Some(icon) = civ5vp_installer::theme::window_icon() {

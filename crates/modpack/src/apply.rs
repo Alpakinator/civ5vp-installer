@@ -1,16 +1,16 @@
 //! Applying one mod update file to the working databases.
 //!
-//! `.sql` files run as plain SQLite batches against the gameplay database — VP's SQL is
+//! `.sql` files run as plain SQLite batches against the gameplay database - VP's SQL is
 //! written for the game's own SQLite and nothing else. `.xml` files are the game's GameData
 //! format: a `<GameData>` root whose children either declare a table (`<Table name="…">`)
 //! or carry operations for one (`<Row>`, `<Replace>`, `<InsertOrIgnore>`, `<Update>`,
 //! `<Delete>`). `Language_*` tables live in the localization database and every other table
-//! in the gameplay database — routed per top-level element, exactly as the game routes them.
+//! in the gameplay database - routed per top-level element, exactly as the game routes them.
 //!
 //! Strictness is calibrated to what the game itself tolerates. A `<Row>` colliding with an
 //! existing primary key or unique value is logged and skipped, because activating the same
 //! mods in-game survives that too. An `<Update>` or `<Delete>` matching zero rows is silently
-//! fine. Everything else — a missing table, a malformed file, an unknown construct — is a mod
+//! fine. Everything else - a missing table, a malformed file, an unknown construct - is a mod
 //! bug and aborts the merge before anything is dumped.
 
 use std::collections::HashSet;
@@ -71,10 +71,10 @@ pub(crate) fn apply_update(
                 .map_err(|error| file_error(&name, error.to_string()))
         }
         _ => {
-            // Not a database update at all — .lua, .dds and friends are the Core's problem.
+            // Not a database update at all - .lua, .dds and friends are the Core's problem.
             progress.report(
                 Stage::Build,
-                format!("Skipping {name} — not a database update."),
+                format!("Skipping {name} - not a database update."),
             );
             Ok(())
         }
@@ -84,7 +84,7 @@ pub(crate) fn apply_update(
 fn file_error(file_name: &str, detail: String) -> BoundaryError {
     BoundaryError::new(
         format!(
-            "Building the Modpack failed while applying {file_name} — remove or update that mod and try again."
+            "Building the Modpack failed while applying {file_name} - remove or update that mod and try again."
         ),
         detail,
     )
@@ -130,7 +130,7 @@ fn apply_gamedata(
             }
             table => {
                 valid_name(table)?;
-                // Text for a language this game does not have — mods ship translations
+                // Text for a language this game does not have - mods ship translations
                 // for every language, the merged localization database only holds the
                 // installed ones, and the game drops the rest on the floor. So does the
                 // merge, out loud once per element.
@@ -138,7 +138,7 @@ fn apply_gamedata(
                     progress.report(
                         Stage::Build,
                         format!(
-                            "Skipped {table} text in {file_name} — this game does not \
+                            "Skipped {table} text in {file_name} - this game does not \
                              have that language."
                         ),
                     );
@@ -151,7 +151,7 @@ fn apply_gamedata(
     Ok(())
 }
 
-/// Does the database hold this table — or a view standing in for it, the way the merged
+/// Does the database hold this table - or a view standing in for it, the way the merged
 /// localization database exposes the active language?
 fn has_table(conn: &Connection, table: &str) -> Result<bool, String> {
     let count: i64 = conn
@@ -232,7 +232,7 @@ fn create_table(conn: &Connection, table: &str, declaration: &Element) -> Result
     }
 
     let primary_keys: Vec<&Column> = columns.iter().filter(|column| column.primary_key).collect();
-    // AUTOINCREMENT is only meaningful — and only legal — inline on a single INTEGER
+    // AUTOINCREMENT is only meaningful - and only legal - inline on a single INTEGER
     // primary key. A composite key becomes a trailing clause and loses it.
     let inline_autoincrement = match primary_keys.as_slice() {
         [only] => only.autoincrement && only.declared_type.eq_ignore_ascii_case("integer"),
@@ -260,7 +260,7 @@ fn create_table(conn: &Connection, table: &str, declaration: &Element) -> Result
     .map_err(|error| format!("creating table {table}: {error}"))
 }
 
-/// The declared type is spliced into the CREATE, so it gets the same guard as names — plus
+/// The declared type is spliced into the CREATE, so it gets the same guard as names - plus
 /// `(`, `)` and space, for the `varchar(64)`-shaped types older mods carry.
 fn valid_type(declared_type: &str) -> Result<(), String> {
     let plain = !declared_type.is_empty()
@@ -401,7 +401,7 @@ fn pairs_of(
 }
 
 /// true/false on a boolean-declared column becomes 1/0; everything else is bound as the
-/// text it came as — SQLite's column affinity does the rest, exactly as it does in-game.
+/// text it came as - SQLite's column affinity does the rest, exactly as it does in-game.
 fn convert(column: &str, value: &str, booleans: &HashSet<String>) -> Value {
     if booleans.contains(column) {
         if value.eq_ignore_ascii_case("true") {
@@ -454,7 +454,7 @@ fn insert(
     match result {
         Ok(_) => Ok(()),
         // The game does not abort a whole activation over a duplicate row and neither do we:
-        // log it, skip it, keep the first one — the same outcome an in-game activation has.
+        // log it, skip it, keep the first one - the same outcome an in-game activation has.
         Err(error) if kind == InsertKind::Plain && is_duplicate(&error) => {
             progress.report(
                 Stage::Build,
@@ -466,7 +466,7 @@ fn insert(
     }
 }
 
-/// A primary-key or unique-constraint collision — the one insert failure that is tolerated.
+/// A primary-key or unique-constraint collision - the one insert failure that is tolerated.
 fn is_duplicate(error: &rusqlite::Error) -> bool {
     matches!(
         error,
@@ -517,7 +517,7 @@ fn update(
     }
 
     let values = sets.iter().chain(conditions.iter()).map(|(_, value)| value);
-    // Zero rows matched is fine — the game tolerates updates aimed at content that is not
+    // Zero rows matched is fine - the game tolerates updates aimed at content that is not
     // installed. A missing table is not: execute fails and the merge stops.
     conn.execute(&sql, params_from_iter(values))
         .map(|_| ())

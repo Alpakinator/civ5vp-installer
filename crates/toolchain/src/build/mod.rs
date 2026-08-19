@@ -7,15 +7,15 @@
 //!
 //! * the source list comes from the project file at the selected Version
 //!   ([`project`]), not from a frozen list;
-//! * compilation is incremental within a build ([`state`]) — an unchanged object is not
+//! * compilation is incremental within a build ([`state`]) - an unchanged object is not
 //!   recompiled, and objects for other flags are never reused;
 //! * failures come back as a plain sentence with the full tool output saved to a build log,
 //!   not as a `sys.exit`.
 //!
-//! The flags themselves are transcribed, not derived — see [`flags`].
+//! The flags themselves are transcribed, not derived - see [`flags`].
 
 mod flags;
-// Visible to the crate because the LuaJIT build drives the same tools through the same seam —
+// Visible to the crate because the LuaJIT build drives the same tools through the same seam -
 // it is a second consumer of the invoker, not a second way of running processes.
 pub(crate) mod invoke;
 mod project;
@@ -42,7 +42,7 @@ pub struct DllBuild<'a> {
 }
 
 struct CompileTask {
-    /// Path relative to the source root — what clang is given, and what the log names.
+    /// Path relative to the source root - what clang is given, and what the log names.
     source: String,
     command: ToolCommand,
 }
@@ -53,8 +53,8 @@ const VC9_COMPAT_FILE: &str = "vc9-crt-compat.cpp";
 /// MSVC 2015+ CRT symbols the VC9 (2008) CRT does not provide, transcribed from `clang.cpp`
 /// on the docker branch.
 ///
-/// Newer upstream Versions trimmed their `clang.cpp` down to the float intrinsics — their
-/// own Windows clang builds link a modern CRT that has these — so building them against the
+/// Newer upstream Versions trimmed their `clang.cpp` down to the float intrinsics - their
+/// own Windows clang builds link a modern CRT that has these - so building them against the
 /// VC9 CRT needs the stubs supplied from outside the Version. At older Versions whose
 /// `clang.cpp` still carries them, the duplicates are tolerated by the reference build's own
 /// `/FORCE:MULTIPLE`. Generated into the variant directory, never into the sources.
@@ -122,8 +122,8 @@ impl<'a> DllBuild<'a> {
         // (a Local Repo is used as-is), so it generates
         // the file under the variant directory and adds one include directory whose parent
         // holds it. MSVC-style quoted includes try the including file's own directory first
-        // — so a `commit_id.inc` a developer's checkout already has still wins, which is
-        // exactly "as-is" — and fall back to each `/I` directory joined with the relative
+        // - so a `commit_id.inc` a developer's checkout already has still wins, which is
+        // exactly "as-is" - and fall back to each `/I` directory joined with the relative
         // path, where `<generated>/include/../commit_id.inc` resolves to ours.
         let generated_dir = variant_dir.join("generated");
         let generated_include = generated_dir.join("include");
@@ -218,7 +218,7 @@ impl<'a> DllBuild<'a> {
         }
 
         // The installer's own VC9 CRT stubs, also PCH-less. Compiled from the variant
-        // directory so the source argument stays relative — clang-cl can mistake a bare
+        // directory so the source argument stays relative - clang-cl can mistake a bare
         // absolute path for an option.
         let compat_source = variant_dir.join(VC9_COMPAT_FILE);
         state::write_if_changed(&compat_source, VC9_COMPAT_CONTENTS)?;
@@ -532,14 +532,14 @@ impl<'a> DllBuild<'a> {
 }
 
 /// A Version old enough to predate the clang build cannot be compiled by this toolchain at
-/// all — catch it with a sentence before the compiler produces a thousand-line one.
+/// all - catch it with a sentence before the compiler produces a thousand-line one.
 fn check_buildable(source_root: &Path) -> Result<(), ToolchainError> {
     let mut required: Vec<&str> = vec![flags::CLANG_SHIM, flags::DEF_FILE, flags::PCH_SOURCE];
     required.extend(flags::PREBUILT_LIBS);
     for file in required {
         if !source_root.join(file).is_file() {
             return Err(ToolchainError::new(
-                "This version is missing files the DLL build needs — it may be too old for \
+                "This version is missing files the DLL build needs - it may be too old for \
                  the installer to build. Pick a newer version.",
                 format!("{file} is missing under {}", source_root.display()),
             ));
@@ -585,7 +585,7 @@ fn ensure_parent(path: &Path) -> Result<(), ToolchainError> {
     Ok(())
 }
 
-/// The generated `commit_id.inc` — upstream generates it with `git describe` as a pre-build
+/// The generated `commit_id.inc` - upstream generates it with `git describe` as a pre-build
 /// step; the installer runs no git, so the selected Version stands in as the DLL's version
 /// string.
 fn commit_id_contents(version_label: &str) -> String {
@@ -634,7 +634,7 @@ fn crt_first(mut dirs: Vec<PathBuf>) -> Vec<PathBuf> {
     dirs
 }
 
-/// The first couple of thousand characters — enough for the actual error, which clang puts
+/// The first couple of thousand characters - enough for the actual error, which clang puts
 /// first, without copying a whole compile session into the error detail.
 fn excerpt(output: &str) -> &str {
     if output.len() <= 2000 {
@@ -726,7 +726,7 @@ mod tests {
             self.calls.lock().unwrap().clone()
         }
 
-        /// The first argument of each call — the source file, or `@rsp` for the linker.
+        /// The first argument of each call - the source file, or `@rsp` for the linker.
         fn call_inputs(&self) -> Vec<String> {
             self.calls()
                 .iter()
@@ -737,7 +737,7 @@ mod tests {
 
     /// Separators normalised to `/` for comparison.
     ///
-    /// These arguments are built with `Path::join`, which uses the platform's separator — `\`
+    /// These arguments are built with `Path::join`, which uses the platform's separator - `\`
     /// on Windows, `/` everywhere else. Both are correct, and clang-cl, lld-link and the
     /// Windows file APIs all accept either, so a test comparing against one written spelling
     /// has to normalise rather than assert which platform it is running on.
@@ -887,8 +887,8 @@ mod tests {
         assert_eq!(paths[2], "CvGameCoreDLL_Expansion2/_precompile.cpp");
         // The parallel section's order is nondeterministic; membership is not. Compared
         // without case as well as without separators: the project file spells one directory
-        // `lua\` where the disk has `Lua`, and correcting that is only needed — and only
-        // done — where the filesystem is case-sensitive.
+        // `lua\` where the disk has `Lua`, and correcting that is only needed - and only
+        // done - where the filesystem is case-sensitive.
         let sources: Vec<String> = paths[3..5].iter().map(|p| p.to_lowercase()).collect();
         assert!(sources.contains(&"cvgamecoredll_expansion2/cvcity.cpp".to_owned()));
         assert!(sources.contains(&"cvgamecoredll_expansion2/lua/cvluaarea.cpp".to_owned()));
@@ -896,7 +896,7 @@ mod tests {
         assert!(fixture.output_path.is_file());
 
         // The generated version include exists in the variant directory, carries the
-        // Version, and is reachable through the extra include directory — never written
+        // Version, and is reachable through the extra include directory - never written
         // into the Installation Source (a Local Repo is used as-is).
         let generated = fixture
             .output_path
@@ -974,7 +974,7 @@ mod tests {
         assert!(inputs[1].starts_with('@'));
     }
 
-    /// A header could affect anything, so everything behind the PCH fence rebuilds — but the
+    /// A header could affect anything, so everything behind the PCH fence rebuilds - but the
     /// shim, which does not use the headers, does not.
     #[test]
     fn touching_a_header_rebuilds_the_pch_and_every_source() {
@@ -1102,7 +1102,7 @@ mod tests {
         assert!(externals[1].contains("Microsoft SDKs"));
     }
 
-    /// A Version whose project file defines STACKWALKER gets `version.lib` — the library its
+    /// A Version whose project file defines STACKWALKER gets `version.lib` - the library its
     /// `#pragma comment` directive would have pulled in, which `/NODEFAULTLIB:VERSION`
     /// blocks.
     #[test]

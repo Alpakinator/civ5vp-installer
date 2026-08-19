@@ -4,7 +4,7 @@
 //! a wrapper over it. It is hand-rolled instead for one reason: `cab::Cabinet::read_file`
 //! builds a fresh folder reader per call and decompresses the folder from its start every
 //! time, so extracting *N* files out of one folder costs O(N × folder size). That is fine for
-//! the two-file cabinets its API was shaped for and quadratic here — `WinSDKBuild_x86.msi`
+//! the two-file cabinets its API was shaped for and quadratic here - `WinSDKBuild_x86.msi`
 //! routes 2836 files through four cabinets of one ~52 MB LZX folder each, which comes to
 //! roughly 69 GB of decompression to extract 168 MB.
 //!
@@ -12,7 +12,7 @@
 //! 168 MB. The format makes that easy: a folder's data is a chain of blocks, and its files
 //! sit end to end in the decompressed stream at offsets the file table gives.
 //!
-//! Decompression is *not* hand-rolled — `flate2` does MSZIP's deflate and `lzxd` does LZX,
+//! Decompression is *not* hand-rolled - `flate2` does MSZIP's deflate and `lzxd` does LZX,
 //! which is what the `cab` crate delegates to as well. Quantum is refused: nothing implements
 //! it in Rust and the Microsoft cabinets here do not use it.
 //!
@@ -58,7 +58,7 @@ impl Compression {
             1 => Ok(Self::MsZip(MsZip::new())),
             2 => Err(ToolchainError::new(
                 "This Windows SDK download uses a compression the installer cannot read. \
-                 Please report this — the installer cannot continue.",
+                 Please report this - the installer cannot continue.",
                 format!("cabinet folder uses Quantum compression (typeCompress {bits:#06x})"),
             )),
             3 => {
@@ -103,7 +103,7 @@ const DEFLATE_WINDOW: usize = 0x8000;
 /// dictionary is the previous block's last 32 KB.
 ///
 /// `flate2` offers no way to hand a decompressor a starting dictionary, so the window is
-/// primed the way the format itself would have filled it — by feeding a stored (literal)
+/// primed the way the format itself would have filled it - by feeding a stored (literal)
 /// deflate block holding the previous output, whose bytes are then discarded.
 struct MsZip {
     decompressor: flate2::Decompress,
@@ -195,7 +195,7 @@ pub struct Cabinet {
 
 /// One file to pull out, and where to put it.
 pub struct Wanted<'a> {
-    /// The name inside the cabinet — for an MSI's payload, the `File` key.
+    /// The name inside the cabinet - for an MSI's payload, the `File` key.
     pub name: &'a str,
     pub destination: PathBuf,
 }
@@ -342,7 +342,7 @@ impl Cabinet {
         let mut extracted = Extracted::default();
 
         // An empty member occupies no bytes in the folder's stream, so the decompression pass
-        // would never reach it — and one sitting at the end of a folder would look like a
+        // would never reach it - and one sitting at the end of a folder would look like a
         // file that runs past the data. Write those here and leave the pass to the rest.
         let mut empty = Vec::new();
         for files in by_folder.values_mut() {
@@ -780,7 +780,7 @@ mod tests {
 
     #[test]
     fn compression_types_are_decoded_from_the_folder_header() {
-        // `Lzx(MB2)` — what every cabinet on the real SDK image uses.
+        // `Lzx(MB2)` - what every cabinet on the real SDK image uses.
         let Ok(Compression::Lzx(_)) = Compression::parse(0x1503) else {
             panic!("0x1503 is LZX with a 2 MB window");
         };

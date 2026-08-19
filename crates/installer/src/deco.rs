@@ -1,6 +1,6 @@
 //! The painted art-deco components: page, header, panels, divider, progress.
 //!
-//! Everything here is drawn from the recipes in `docs/ui-reference/visual-language.md` —
+//! Everything here is drawn from the recipes in `docs/ui-reference/visual-language.md` -
 //! the four motifs (stepped frame, sunburst fan, diamond rule, hatched fill), the line
 //! weights, and the chamfered corners. All of it is original artwork painted in code; no
 //! game asset is embedded or traced (ADR-0003).
@@ -63,7 +63,7 @@ pub fn panel<R>(
 }
 
 /// The notice variant of the panel: the border takes an outcome accent and the ground warms
-/// very slightly toward it; the text stays parchment — the border carries the tone.
+/// very slightly toward it; the text stays parchment - the border carries the tone.
 pub fn notice<R>(
     ui: &mut egui::Ui,
     accent: Color32,
@@ -147,7 +147,7 @@ const CREST_HEIGHT: f32 = 34.0;
 
 /// The crowned portal, after the game's own main menu: an arched-fan medallion at the top
 /// centre, tiered wing lines sweeping outward from its base, their outer ends dropping as
-/// stems that flank the title and land on the rule below — crest, stems and rule as one
+/// stems that flank the title and land on the rule below - crest, stems and rule as one
 /// connected frame with the title inside. Original line-art in the skin's 1-px pen
 /// (ADR-0003: the game's asset is composition reference, never copied).
 fn crowned_portal(title_rect: Rect, rule_rect: Rect) -> Shape {
@@ -159,8 +159,8 @@ fn crowned_portal(title_rect: Rect, rule_rect: Rect) -> Shape {
     let bright = Stroke::new(1.2, theme::GOLD);
     let dim = Stroke::new(1.0, theme::GOLD_DARK);
 
-    // Side stems, chamfered into the shoulders — the same 45° corner cut every panel below
-    // carries — then down to the rule with a diamond foot at the join.
+    // Side stems, chamfered into the shoulders - the same 45° corner cut every panel below
+    // carries - then down to the rule with a diamond foot at the join.
     let stem_reach = title_rect.width() / 2.0 + 16.0;
     const CHAMFER: f32 = 5.0;
     for side in [-1.0_f32, 1.0] {
@@ -184,7 +184,7 @@ fn crowned_portal(title_rect: Rect, rule_rect: Rect) -> Shape {
     }
 
     // Wing tiers: four lines a side, tightly stepped, the longest at the bottom,
-    // alternating bright and dim — each with a feather tick at its outer end. Every tier
+    // alternating bright and dim - each with a feather tick at its outer end. Every tier
     // runs inward until it meets the arch's outer arc and stops exactly there, so the wings
     // join the dome rather than hiding behind it; the tier heights stay inside the arch's
     // radius so even the top one lands on the dome near its crown.
@@ -196,8 +196,8 @@ fn crowned_portal(title_rect: Rect, rule_rect: Rect) -> Shape {
             .sqrt();
         let outer = stem_reach - 10.0 - tier as f32 * 18.0;
         let stroke = if tier % 2 == 0 { bright } else { dim };
-        // The outer end drops all the way to the tier below — and the bottom tier all the
-        // way to the lintel — so the wing reads as one connected stepped setback, not four
+        // The outer end drops all the way to the tier below - and the bottom tier all the
+        // way to the lintel - so the wing reads as one connected stepped setback, not four
         // floating dashes.
         let step_down = if tier == 0 { height } else { 4.0 };
         for side in [-1.0_f32, 1.0] {
@@ -284,7 +284,7 @@ pub fn diamond_rule(ui: &mut egui::Ui) -> Rect {
 
 /// The progress bar: a well-navy trough with its own stepped frame. `Some(fraction)` draws
 /// the gold fill from the left with a bright highlight along its top edge; `None` draws the
-/// hatched-fill motif across the whole trough — working, but with nothing to measure.
+/// hatched-fill motif across the whole trough - working, but with nothing to measure.
 /// Never animated, so a still render is a faithful picture of it.
 pub fn progress(ui: &mut egui::Ui, fraction: Option<f32>) {
     let width = ui.available_width();

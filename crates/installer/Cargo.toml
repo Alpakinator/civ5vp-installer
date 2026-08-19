@@ -1,6 +1,6 @@
 [package]
 name = "civ5vp-installer"
-description = "Civ 5 VP Installer — the egui shell over the headless Core."
+description = "Civ 5 VP Installer - the egui shell over the headless Core."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -18,10 +18,10 @@ path = "src/main.rs"
 civ5vp-core = { path = "../core" }
 civ5vp-modpack = { path = "../modpack" }
 # The two real boundaries, composed in `src/wiring.rs`. The shell itself never touches their
-# internals — the Core sees them only as its two traits (rule 2).
+# internals - the Core sees them only as its two traits (rule 2).
 civ5vp-sources = { path = "../sources" }
 civ5vp-toolchain = { path = "../toolchain" }
-# The launch-time new-version ping (user story 27) — the same HTTP client the toolchain
+# The launch-time new-version ping (user story 27) - the same HTTP client the toolchain
 # already brings, so this adds no new tree.
 ureq = { version = "3.3", default-features = false, features = ["rustls"] }
 # ADR-0002: egui, hand-themed, no webview. Default features give us wgpu + AccessKit, and
@@ -31,7 +31,7 @@ egui = "0.35"
 # Writing the PNGs that `--screenshot` produces. Pure Rust; `png` only, no other decoders.
 image = { version = "0.25", default-features = false, features = ["png"] }
 
-# Only the Windows resource compiler needs this, and only on a Windows host — see `build.rs`.
+# Only the Windows resource compiler needs this, and only on a Windows host - see `build.rs`.
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"
 

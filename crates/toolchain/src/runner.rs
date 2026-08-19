@@ -98,8 +98,8 @@ impl ToolchainRunner for BootstrappedToolchain {
         let gigabytes =
             crate::pinned::approximate_download_total() as f64 / (1024.0 * 1024.0 * 1024.0);
         Some(format!(
-            "First install downloads about {gigabytes:.1} GB of build tools — one time — \
-             and typically takes 10–25 minutes. Later installs take seconds to minutes."
+            "First install downloads about {gigabytes:.1} GB of build tools - one time - \
+             and typically takes 10-25 minutes. Later installs take seconds to minutes."
         ))
     }
 }

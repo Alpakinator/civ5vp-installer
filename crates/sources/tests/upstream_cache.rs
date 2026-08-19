@@ -38,7 +38,7 @@ fn version_picker_reports_the_latest_development_version() {
     assert_eq!(catalog.latest_development_version(), fixture.master_head());
 }
 
-/// For a checked-out Version the Build Fingerprint's source half derives from the git tree —
+/// For a checked-out Version the Build Fingerprint's source half derives from the git tree -
 /// the tree id itself, so nothing is re-hashed and identical trees share it.
 #[test]
 fn the_source_identity_is_the_checked_out_tree() {
@@ -284,7 +284,7 @@ fn a_failed_fetch_leaves_the_cache_consistent_and_a_retry_succeeds() {
     let fixture = UpstreamFixture::new();
     let version = Version::Release("Release-2.0".to_owned());
 
-    // The upstream is unreachable — the cache directory may be created, but nothing else.
+    // The upstream is unreachable - the cache directory may be created, but nothing else.
     let offline = UpstreamCache::new(fixture.cache_root(), fixture.unreachable_url());
     let failure = offline
         .materialize(&version, &ProgressReporter::silent())

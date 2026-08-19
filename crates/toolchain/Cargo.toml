@@ -10,11 +10,11 @@ publish.workspace = true
 # (CODING_STANDARDS.md rule 1), and Toolchain Bootstrap needs an HTTP client, a hasher and
 # three archive parsers. Keeping them here leaves the Core plain std and still lets the Core
 # consume this crate through the `ToolchainRunner` boundary. Nothing here may depend on
-# egui/eframe either — this crate is as headless as the Core.
+# egui/eframe either - this crate is as headless as the Core.
 [dependencies]
 civ5vp-core = { path = "../core" }
 
-# HTTP for the two pinned downloads. Pure Rust with rustls — no OpenSSL, so the deliverable
+# HTTP for the two pinned downloads. Pure Rust with rustls - no OpenSSL, so the deliverable
 # stays one static binary with no runtime dependencies (rule 17, ADR-0002). `gzip` is off on
 # purpose: a resumed download counts bytes against a `Range` header, and transparent
 # content-decoding would make the count mean something different from the file on disk.
@@ -28,7 +28,7 @@ sha2 = "0.10"
 # `docs/pinned-artifacts.md` says must be honoured rather than guessed. Pure Rust (mdsteele).
 msi = "0.10"
 
-# CAB decompression. The container is parsed in `src/cabinet.rs` — see the note there: the
+# CAB decompression. The container is parsed in `src/cabinet.rs` - see the note there: the
 # `cab` crate's reader is O(files x folder size) and the SDK cabinets hold ~1000 files in one
 # folder each. These two do the actual decompression, which is what `cab` delegates to as
 # well: `flate2` for MSZIP's deflate, `lzxd` for LZX. Both pure Rust.
@@ -36,7 +36,7 @@ flate2 = "1"
 lzxd = "0.2"
 
 # The portable LLVM release is a .tar.xz. `tar` reads the archive, `lzma-rs` does the xz
-# decode — both pure Rust. `xattr` is off: extended attributes are not wanted here and the
+# decode - both pure Rust. `xattr` is off: extended attributes are not wanted here and the
 # feature only widens the platform surface.
 tar = { version = "0.4", default-features = false }
 lzma-rs = "0.3"
@@ -44,14 +44,14 @@ lzma-rs = "0.3"
 # Neither ISO9660 nor UDF is a dependency. Both are volume descriptors at a fixed sector plus
 # fixed-layout directory records, we need four known paths out of them, and every candidate
 # crate on crates.io is incomplete, bootloader-shaped, or unmaintained. See `src/iso9660.rs`
-# and `src/udf.rs` — the SDK image is UDF, whatever `docs/pinned-artifacts.md` says.
+# and `src/udf.rs` - the SDK image is UDF, whatever `docs/pinned-artifacts.md` says.
 
 [dev-dependencies]
 # Temporary Toolchain Cache roots and staging directories for the tests.
 tempfile = "3.27"
 
-# The reference CAB implementation (mdsteele, pure Rust). It writes the test fixtures — so
-# they are produced by an implementation independent of the one under test — and the tests
+# The reference CAB implementation (mdsteele, pure Rust). It writes the test fixtures - so
+# they are produced by an implementation independent of the one under test - and the tests
 # compare its reader's output against ours member for member. A dev-dependency only: the
 # shipped installer does not contain it.
 cab = "0.6"

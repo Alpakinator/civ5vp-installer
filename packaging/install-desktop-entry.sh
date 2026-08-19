@@ -5,7 +5,7 @@
 #
 #   packaging/install-desktop-entry.sh [path-to-civ5vp-installer]
 #
-# Everything lands under ~/.local/share — no root, nothing outside the user's own account.
+# Everything lands under ~/.local/share - no root, nothing outside the user's own account.
 set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

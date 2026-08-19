@@ -3,7 +3,7 @@
 //! The scenario is a mod developer's everyday drift: files added to the working tree that
 //! the modinfo does not list yet (the game will silently ignore them), and files deleted
 //! while the modinfo still lists them (the game would refuse the mod). The first must be
-//! said out loud, the second must stop the Deployment before the game is touched — and an
+//! said out loud, the second must stop the Deployment before the game is touched - and an
 //! Upstream Cache Version must trigger neither, because a player cannot act on upstream's
 //! manifest hygiene.
 
@@ -86,7 +86,7 @@ fn an_extra_unlisted_file_is_deployed_but_called_out() {
         game.game_root()
             .join("MODS/(2) Vox Populi/Experimental.lua")
             .is_file(),
-        "the file still deploys — blocking it would break normal dev iteration"
+        "the file still deploys - blocking it would break normal dev iteration"
     );
     let warnings: Vec<String> = receiver
         .try_iter()

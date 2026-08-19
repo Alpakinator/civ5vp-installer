@@ -1,7 +1,7 @@
 //! The Build Fingerprint, through the Core seam.
 //!
 //! Everything is observed from outside: the file tree, the progress events, and how many
-//! times the toolchain-runner boundary was asked to build — a skipped build is a build the
+//! times the toolchain-runner boundary was asked to build - a skipped build is a build the
 //! fake runner never saw. The fixture repository is copied into a temp directory first, so a
 //! test can edit a source file the way a developer would.
 
@@ -77,7 +77,7 @@ fn install(core: &Core, game: &GameFixture, configuration: &InstallConfiguration
         .collect()
 }
 
-/// The headline behaviour: same inputs, intact DLL, no second build — and the skip is said
+/// The headline behaviour: same inputs, intact DLL, no second build - and the skip is said
 /// out loud.
 #[test]
 fn an_unchanged_configuration_skips_the_build_and_says_so() {
@@ -104,7 +104,7 @@ fn an_unchanged_configuration_skips_the_build_and_says_so() {
     );
 }
 
-/// Editing a DLL source forces a rebuild; editing mod content does not, but still deploys —
+/// Editing a DLL source forces a rebuild; editing mod content does not, but still deploys -
 /// "no false skips, no needless rebuilds", both halves.
 #[test]
 fn an_edited_source_rebuilds_but_edited_mod_content_only_redeploys() {
@@ -215,7 +215,7 @@ fn configuration_toolchain_tamper_and_missing_sidecar_each_force_a_rebuild() {
 }
 
 /// Dev mode's Debug choice: it reaches the toolchain-runner boundary, it is its
-/// own fingerprint, and switching back to Release rebuilds again — Debug objects can never
+/// own fingerprint, and switching back to Release rebuilds again - Debug objects can never
 /// be skipped-to as Release ones.
 #[test]
 fn the_debug_configuration_reaches_the_runner_and_has_its_own_fingerprint() {

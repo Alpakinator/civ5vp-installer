@@ -6,7 +6,7 @@
 
 use std::sync::mpsc::Sender;
 
-/// The three stages of a Deployment, in order — Sync comes last so the game stays untouched
+/// The three stages of a Deployment, in order - Sync comes last so the game stays untouched
 /// until everything that can fail has succeeded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stage {
@@ -52,7 +52,7 @@ impl ProgressReporter {
         }
     }
 
-    /// Report one event. A hung-up receiver is not an error — the install carries on.
+    /// Report one event. A hung-up receiver is not an error - the install carries on.
     pub fn report(&self, stage: Stage, message: impl Into<String>) {
         if let Some(sender) = &self.sender {
             let _ = sender.send(ProgressEvent {

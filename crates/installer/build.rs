@@ -1,6 +1,6 @@
 //! Stamps the VP logo into the Windows executable as its resource icon, so Explorer, the
 //! taskbar and the shortcut a user makes all show it without the program having to run.
-//! Off Windows there is no such resource — the icon is the runtime window icon only, which
+//! Off Windows there is no such resource - the icon is the runtime window icon only, which
 //! `theme::window_icon` sets on every platform.
 
 fn main() {

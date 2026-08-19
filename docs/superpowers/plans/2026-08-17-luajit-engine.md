@@ -4,7 +4,7 @@
 
 **Goal:** Add an opt-in "Use LuaJIT" choice that builds LuaJIT 2.1 from pinned source with the installer's own bootstrapped toolchain and deploys it as the game's `lua51_Win32.dll`, backing up the stock engine and restoring it on uninstall.
 
-**Architecture:** LuaJIT reuses the two existing boundaries rather than adding a fourth: `SourceProvider` learns to materialize the pinned LuaJIT commit, and `ToolchainRunner` learns to build it into a 32-bit Windows DLL with the same clang-cl/lld-link already used for the VP DLL. Deployment introduces the installer's first *Replaced File* — a game-owned file that is backed up before being overwritten and restored on uninstall — which is a deliberate, ADR-recorded exception to the Claimed Folders invariant.
+**Architecture:** LuaJIT reuses the two existing boundaries rather than adding a fourth: `SourceProvider` learns to materialize the pinned LuaJIT commit, and `ToolchainRunner` learns to build it into a 32-bit Windows DLL with the same clang-cl/lld-link already used for the VP DLL. Deployment introduces the installer's first *Replaced File* - a game-owned file that is backed up before being overwritten and restored on uninstall - which is a deliberate, ADR-recorded exception to the Claimed Folders invariant.
 
 **Tech Stack:** Rust (workspace crates `core`, `sources`, `toolchain`, `installer`), `gix` for the pinned fetch, clang-cl + lld-link targeting `i386-pc-windows-msvc`, LuaJIT 2.1 (DynASM host tools), wine on Linux hosts.
 
@@ -12,14 +12,14 @@
 
 ## Global Constraints
 
-- **LuaJIT pin:** commit `1edc3e52b67eaf6ce5f809be8e17d6862594b8bc` of `https://github.com/LuaJIT/LuaJIT.git` (branch `v2.1`). Pinned by commit SHA, never by tag or tarball hash — GitHub archive tarballs are not byte-stable.
+- **LuaJIT pin:** commit `1edc3e52b67eaf6ce5f809be8e17d6862594b8bc` of `https://github.com/LuaJIT/LuaJIT.git` (branch `v2.1`). Pinned by commit SHA, never by tag or tarball hash - GitHub archive tarballs are not byte-stable.
 - **Never enable `LUAJIT_ENABLE_LUA52COMPAT`.** Civ 5 and VP are Lua 5.1; 5.2 semantics only add divergence.
 - **Target must be 32-bit x86.** `/MACHINE:X86`, `-m32`, `--target=i386-pc-windows-msvc`, `/arch:SSE2`. GC64 is x64-only and irrelevant.
 - **Deployed file name is exactly `lua51_Win32.dll`**, in the Game Installation root (beside `CivilizationV_DX11.exe`). Not `lua51.dll`.
 - **The stock DLL is backed up before the first replacement and never overwritten in the backup store.** A second Deployment must not back up LuaJIT over the stock engine.
 - **The DLL must export every symbol the game imports.** Verified as a test, not assumed. Current required set is 80 symbols across `CivilizationV_DX11.exe`, `CvGameCoreDLLFinal Release.dll`, `CvGameDatabaseWin32Final Release.dll` and VP's `CvGameCore_Expansion2.dll`.
-- **Lints:** `crates/installer/src/lib.rs` denies `clippy::unwrap_used`, `expect_used`, `panic`, `todo`, `unimplemented` — including in tests. Use `let ... else { unreachable!(...) }`.
-- **No external processes** except the bootstrapped clang/lld, driven through `ToolInvoker` — and, added by this plan, wine on Linux hosts as the only way to run LuaJIT's own host tools.
+- **Lints:** `crates/installer/src/lib.rs` denies `clippy::unwrap_used`, `expect_used`, `panic`, `todo`, `unimplemented` - including in tests. Use `let ... else { unreachable!(...) }`.
+- **No external processes** except the bootstrapped clang/lld, driven through `ToolInvoker` - and, added by this plan, wine on Linux hosts as the only way to run LuaJIT's own host tools.
 - **Rust edition/toolchain:** inherited from the workspace (`version.workspace`, `edition.workspace`).
 
 ---
@@ -48,8 +48,8 @@ Accepted (2026-08-17).
 ## Context
 
 Civilization V loads its script engine from `lua51_Win32.dll` in the Game
-Installation root. The shipped file is stock Lua 5.1.4 (PUC-Rio) — verified by
-its version string — and the game, both stock DLLs and Vox Populi's own
+Installation root. The shipped file is stock Lua 5.1.4 (PUC-Rio) - verified by
+its version string - and the game, both stock DLLs and Vox Populi's own
 `CvGameCore_Expansion2.dll` import 80 symbols from it, every one of them a
 standard Lua 5.1 C API function. LuaJIT is ABI-compatible with Lua 5.1 by
 design, so a 32-bit LuaJIT build renamed to `lua51_Win32.dll` satisfies all of
@@ -79,8 +79,8 @@ The only Replaced File is `lua51_Win32.dll`.
 We build LuaJIT from source with the bootstrapped toolchain rather than
 shipping a prebuilt DLL, for the reasons in ADR-0001: the installer already
 refuses to deploy binaries it did not compile. This also avoids depending on
-the abandoned community builds — the circulating LuaJIT DLLs date from
-2013–2017 and MoonJIT's repository has been archived since 2021.
+the abandoned community builds - the circulating LuaJIT DLLs date from
+2013-2017 and MoonJIT's repository has been archived since 2021.
 
 ## Consequences
 
@@ -94,7 +94,7 @@ the abandoned community builds — the circulating LuaJIT DLLs date from
   and redeploys on the next run, rather than assuming its own last write
   survived.
 - The honest performance claim is narrow. Measured community results are for
-  Lua-dominated work — map generation, UI, script-heavy add-ons. Vox Populi's
+  Lua-dominated work - map generation, UI, script-heavy add-ons. Vox Populi's
   AI turn time is native C++ in `CvGameCore_Expansion2.dll` and LuaJIT cannot
   affect it. The UI must not promise faster turns.
 - Mods relying on Lua 5.1's deprecated implicit `arg` table in vararg
@@ -120,7 +120,7 @@ Find the paragraph at `CONTEXT.md:49` reading "Together the Claimed Folders and 
 ```markdown
 Together the Claimed Folders and Claimed Files are everything the installer may
 write, move, or delete, with two exceptions: the game's `cache` folder, which is
-cleared after every Deployment, and the Replaced File — `lua51_Win32.dll` in the
+cleared after every Deployment, and the Replaced File - `lua51_Win32.dll` in the
 Game Installation root, which the opt-in LuaJIT engine overwrites after copying
 the original into the App Data Store. Uninstall restores it. See ADR-0006.
 ```
@@ -140,7 +140,7 @@ Add user story 28 to the story list:
 
 ```markdown
 28. As a player who wants a faster script engine, I want to opt into LuaJIT, so
-    that map generation and the interface are quicker — and I want my original
+    that map generation and the interface are quicker - and I want my original
     game file restored when I uninstall.
 ```
 
@@ -157,7 +157,7 @@ SQLite is statically linked with no exported C API, and the game ships only
 Append:
 
 ```markdown
-## §4 — LuaJIT
+## §4 - LuaJIT
 
 Pinned by commit, not by tag or tarball: GitHub's generated archives are not
 byte-stable, and a commit SHA is itself the content check.
@@ -217,14 +217,14 @@ fn an_empty_game_root_is_refused() {
 - [ ] **Step 2: Run it and watch it fail**
 
 Run: `cargo test -p civ5vp-core an_empty_game_root_is_refused`
-Expected: FAIL — `GameFolders` has no field `game_root`.
+Expected: FAIL - `GameFolders` has no field `game_root`.
 
 - [ ] **Step 3: Add the field and check it**
 
 In `crates/core/src/claimed.rs`, add to `GameFolders`:
 
 ```rust
-    /// `…/Sid Meier's Civilization V` — the Game Installation root.
+    /// `…/Sid Meier's Civilization V` - the Game Installation root.
     ///
     /// Held rather than derived from `dlc`'s grandparent: the Replaced File
     /// (`lua51_Win32.dll`, ADR-0006) is written here, and a path that decides where a
@@ -261,7 +261,7 @@ pub fn game_folders(game: &GameInstallation, documents: &DocumentsFolder) -> Gam
 - [ ] **Step 5: Fix every other construction**
 
 Run: `cargo build --workspace --all-targets 2>&1 | grep -n 'missing field'`
-For each site (test fixtures in `crates/core/tests/`, `crates/installer/tests/shell.rs`), add `game_root:` set to the fixture's game directory — the same directory whose `Assets/DLC` the fixture already uses.
+For each site (test fixtures in `crates/core/tests/`, `crates/installer/tests/shell.rs`), add `game_root:` set to the fixture's game directory - the same directory whose `Assets/DLC` the fixture already uses.
 
 - [ ] **Step 6: Run the suite**
 
@@ -292,7 +292,7 @@ git commit -m "core: GameFolders carries the Game Installation root"
 Add to the tests module in `crates/core/src/settings.rs`:
 
 ```rust
-/// The engine choice survives a restart, and its absence reads back as the stock engine —
+/// The engine choice survives a restart, and its absence reads back as the stock engine -
 /// an older settings file must not silently opt a player into replacing a game file.
 #[test]
 fn the_luajit_choice_round_trips_and_defaults_to_stock() {
@@ -322,7 +322,7 @@ If no `sample_configuration()` helper exists in that tests module, add one that 
 - [ ] **Step 2: Run it and watch it fail**
 
 Run: `cargo test -p civ5vp-core the_luajit_choice_round_trips`
-Expected: FAIL — `LuaJitEngine` not found.
+Expected: FAIL - `LuaJitEngine` not found.
 
 - [ ] **Step 3: Add the type and the field**
 
@@ -331,7 +331,7 @@ In `crates/core/src/configuration.rs`:
 ```rust
 /// Which Lua engine the game runs.
 ///
-/// `LuaJit` replaces the game's `lua51_Win32.dll` — the one file outside the Claimed set a
+/// `LuaJit` replaces the game's `lua51_Win32.dll` - the one file outside the Claimed set a
 /// Deployment writes (ADR-0006). `Stock` is the default, and a default that changes nothing
 /// about the game is the point: replacing a game file is always something the player asked
 /// for.
@@ -424,7 +424,7 @@ mod tests {
         assert!(LUAJIT_URL.ends_with("LuaJIT.git"));
     }
 
-    /// A cache that already holds the pinned commit is reused rather than refetched — the
+    /// A cache that already holds the pinned commit is reused rather than refetched - the
     /// same rule the Upstream Cache follows, and what keeps a second Deployment offline.
     #[test]
     fn an_existing_checkout_is_reused() {
@@ -441,7 +441,7 @@ mod tests {
 - [ ] **Step 2: Run it and watch it fail**
 
 Run: `cargo test -p civ5vp-sources luajit`
-Expected: FAIL — module not declared.
+Expected: FAIL - module not declared.
 
 - [ ] **Step 3: Implement the cache**
 
@@ -450,7 +450,7 @@ Prepend to `crates/sources/src/luajit.rs`:
 ```rust
 //! The pinned LuaJIT checkout: one commit, fetched once, reused forever.
 //!
-//! Pinned by commit rather than tag — see `docs/pinned-artifacts.md` §4. A stamp file
+//! Pinned by commit rather than tag - see `docs/pinned-artifacts.md` §4. A stamp file
 //! beside the checkout records which commit is on disk, so a second Deployment needs no
 //! network at all.
 
@@ -516,7 +516,7 @@ impl LuaJitCache {
 
 - [ ] **Step 4: Implement `fetch_pinned_commit` with `gix`**
 
-Add to `impl LuaJitCache`, mirroring the shallow-fetch shape already used in `crates/sources/src/upstream.rs` (read `open_or_init` and the `Shallow`/`Tags` usage there and follow it exactly — same error mapping, same `Shallow::DepthAtRemote` of 1, same checkout of the fetched commit into the worktree). The one difference is that the ref fetched is the pinned commit rather than a tag chosen at runtime.
+Add to `impl LuaJitCache`, mirroring the shallow-fetch shape already used in `crates/sources/src/upstream.rs` (read `open_or_init` and the `Shallow`/`Tags` usage there and follow it exactly - same error mapping, same `Shallow::DepthAtRemote` of 1, same checkout of the fetched commit into the worktree). The one difference is that the ref fetched is the pinned commit rather than a tag chosen at runtime.
 
 - [ ] **Step 5: Add the boundary method**
 
@@ -549,7 +549,7 @@ git commit -m "sources: fetch the pinned LuaJIT commit into the App Data Store"
 
 ### Task 5: Running LuaJIT's host tools
 
-LuaJIT's build generates its VM with two programs it compiles first — `minilua` and `buildvm` — and refuses to cross-build unless they have the *target's* pointer size. Building them as 32-bit Windows executables with the toolchain we already have makes that true by construction; on Linux they then need wine to run.
+LuaJIT's build generates its VM with two programs it compiles first - `minilua` and `buildvm` - and refuses to cross-build unless they have the *target's* pointer size. Building them as 32-bit Windows executables with the toolchain we already have makes that true by construction; on Linux they then need wine to run.
 
 **Files:**
 - Create: `crates/toolchain/src/luajit/host.rs`
@@ -608,7 +608,7 @@ mod tests {
 - [ ] **Step 2: Run it and watch it fail**
 
 Run: `cargo test -p civ5vp-toolchain host_runner`
-Expected: FAIL — module not declared.
+Expected: FAIL - module not declared.
 
 - [ ] **Step 3: Implement**
 
@@ -617,8 +617,8 @@ Expected: FAIL — module not declared.
 //!
 //! LuaJIT generates its interpreter with two programs it compiles first, `minilua` and
 //! `buildvm`, and refuses to cross-build unless they have the target's pointer size
-//! ("pointer size mismatch in cross-build"). Rather than require a 32-bit host compiler —
-//! multilib, which many Linux installs lack — we build them as 32-bit *Windows*
+//! ("pointer size mismatch in cross-build"). Rather than require a 32-bit host compiler -
+//! multilib, which many Linux installs lack - we build them as 32-bit *Windows*
 //! executables with the toolchain already bootstrapped, which makes the pointer size match
 //! by construction. On Windows they then run natively; on Linux they run under wine.
 //!
@@ -667,7 +667,7 @@ Add to `impl HostRunner`:
 
 ```rust
     /// Pick a runner for this host. `steam_roots` are the Steam libraries detection already
-    /// found — Proton ships a wine, so a player with no system wine still has one.
+    /// found - Proton ships a wine, so a player with no system wine still has one.
     pub fn for_this_host(steam_roots: &[PathBuf]) -> Result<Self, ToolchainError> {
         if cfg!(windows) {
             return Ok(Self::Native);
@@ -723,7 +723,7 @@ git commit -m "toolchain: run LuaJIT's win32 host tools natively or under wine"
 
 **Interfaces:**
 - Consumes: `HostRunner` (Task 5); `Toolchain::clang_path()`, `lld_link_path()`, `include_dirs()`, `lib_dirs()` from `crates/toolchain/src/cache.rs:43-77`.
-- Produces: `ToolchainRunner::build_luajit(&self, request: &LuaJitBuildRequest, progress: &ProgressReporter) -> Result<(), BoundaryError>`, with `pub struct LuaJitBuildRequest { pub source_root: PathBuf, pub output_path: PathBuf }`. `output_path` is where the finished `lua51_Win32.dll` is written — always inside the Core's build directory, never the game.
+- Produces: `ToolchainRunner::build_luajit(&self, request: &LuaJitBuildRequest, progress: &ProgressReporter) -> Result<(), BoundaryError>`, with `pub struct LuaJitBuildRequest { pub source_root: PathBuf, pub output_path: PathBuf }`. `output_path` is where the finished `lua51_Win32.dll` is written - always inside the Core's build directory, never the game.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -780,7 +780,7 @@ mod tests {
 - [ ] **Step 2: Run and watch it fail**
 
 Run: `cargo test -p civ5vp-toolchain luajit`
-Expected: FAIL — `luajit_commands` not found.
+Expected: FAIL - `luajit_commands` not found.
 
 - [ ] **Step 3: Implement the command plan**
 
@@ -803,7 +803,7 @@ const ALL_LIB: [&str; 12] = [
 ];
 ```
 
-Note: `lj_*.c` must be expanded by reading the directory, not passed as a glob — the invoker does not go through a shell.
+Note: `lj_*.c` must be expanded by reading the directory, not passed as a glob - the invoker does not go through a shell.
 
 - [ ] **Step 4: Wire the boundary**
 
@@ -829,7 +829,7 @@ git commit -m "toolchain: build LuaJIT 2.1 as a 32-bit lua51_Win32.dll"
 
 ---
 
-### Task 7: The Replaced File — backup and restore
+### Task 7: The Replaced File - backup and restore
 
 **Files:**
 - Create: `crates/core/src/replaced.rs`
@@ -880,7 +880,7 @@ mod tests {
     }
 
     /// A player who cleared the App Data Store between install and uninstall has no backup.
-    /// That is a thing to report, not a failure — uninstall still removes everything else.
+    /// That is a thing to report, not a failure - uninstall still removes everything else.
     #[test]
     fn restoring_without_a_backup_says_so_instead_of_failing() {
         let dir = tempfile::tempdir().expect("a temp dir");
@@ -899,7 +899,7 @@ mod tests {
 - [ ] **Step 2: Run and watch them fail**
 
 Run: `cargo test -p civ5vp-core replaced`
-Expected: FAIL — module not declared.
+Expected: FAIL - module not declared.
 
 - [ ] **Step 3: Implement**
 
@@ -907,7 +907,7 @@ Expected: FAIL — module not declared.
 //! The Replaced File: a game-owned file the installer may overwrite, and the copy that
 //! makes that reversible.
 //!
-//! ADR-0006. Everything here exists to keep one promise — a player who uninstalls gets back
+//! ADR-0006. Everything here exists to keep one promise - a player who uninstalls gets back
 //! the file the game shipped with.
 
 use std::path::{Path, PathBuf};
@@ -942,7 +942,7 @@ impl ReplacedFile {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Restored {
     FromBackup,
-    /// No backup was held — nothing was changed.
+    /// No backup was held - nothing was changed.
     NothingToRestore,
 }
 
@@ -965,7 +965,7 @@ impl BackupStore {
         self.path_of(file).is_file()
     }
 
-    /// Save the game's copy — but only the first time.
+    /// Save the game's copy - but only the first time.
     ///
     /// The guard is the entire point: by the second Deployment the file in the game is the
     /// installer's own replacement, and saving that would destroy the only copy of the
@@ -1019,7 +1019,7 @@ git commit -m "core: Replaced Files, backed up once and restored on uninstall"
 Add to the install integration tests:
 
 ```rust
-/// The game is not touched until everything that can fail has succeeded — including the
+/// The game is not touched until everything that can fail has succeeded - including the
 /// LuaJIT build. A build that fails must leave the stock engine exactly where it was.
 #[test]
 fn a_failing_luajit_build_leaves_the_game_engine_alone() {
@@ -1082,7 +1082,7 @@ Add `write_game_file` / `read_game_file` helpers to the test `World` if absent, 
 - [ ] **Step 2: Run and watch them fail**
 
 Run: `cargo test -p civ5vp-core luajit`
-Expected: FAIL — `luajit_deployed` not a field.
+Expected: FAIL - `luajit_deployed` not a field.
 
 - [ ] **Step 3: Build LuaJIT before Sync**
 
@@ -1117,7 +1117,7 @@ At the end of `sync`, after the Claimed work and before the cache is cleared:
 ```rust
         if let Some(built) = built_luajit {
             let destination = ReplacedFile::LuaEngine.path_in(&plan.folders);
-            // Once, and only from the game's own copy — after the first Deployment the file
+            // Once, and only from the game's own copy - after the first Deployment the file
             // sitting there is ours, and saving it would lose the original for good.
             self.backups()
                 .back_up_once(ReplacedFile::LuaEngine, &destination)?;
@@ -1200,7 +1200,7 @@ fn the_luajit_checkbox_reaches_the_configuration() {
 - [ ] **Step 2: Run and watch it fail**
 
 Run: `cargo test -p civ5vp-installer luajit_checkbox`
-Expected: FAIL — no field `luajit`.
+Expected: FAIL - no field `luajit`.
 
 - [ ] **Step 3: Add the state and the checkbox**
 
@@ -1273,7 +1273,7 @@ The one failure mode that silently bricks the game is a DLL missing a symbol the
 mod tests {
     use super::*;
 
-    /// The stock engine trivially satisfies the game — which is what proves the checker
+    /// The stock engine trivially satisfies the game - which is what proves the checker
     /// itself is right before it is trusted to judge our own build.
     #[test]
     #[ignore = "needs a real Civilization V installation"]
@@ -1289,7 +1289,7 @@ mod tests {
         assert!(missing.is_empty(), "stock must satisfy stock: {missing:?}");
     }
 
-    /// A DLL that exports nothing must be reported as missing everything — the checker has
+    /// A DLL that exports nothing must be reported as missing everything - the checker has
     /// to actually fail, or it would pass a broken build too.
     #[test]
     fn a_dll_exporting_nothing_is_reported_as_missing_everything() {
@@ -1303,12 +1303,12 @@ mod tests {
 }
 ```
 
-Build `exports_fixture` / `imports_fixture` as minimal in-memory PE images with just the headers, a section table and the relevant data directory — enough for the parser, no linker involved.
+Build `exports_fixture` / `imports_fixture` as minimal in-memory PE images with just the headers, a section table and the relevant data directory - enough for the parser, no linker involved.
 
 - [ ] **Step 2: Run and watch it fail**
 
 Run: `cargo test -p civ5vp-toolchain exports`
-Expected: FAIL — module not declared.
+Expected: FAIL - module not declared.
 
 - [ ] **Step 3: Implement the PE reader**
 
@@ -1322,7 +1322,7 @@ In `BootstrappedToolchain::build_luajit`, after linking and before copying to `o
 
 ```rust
         // A missing export is the one failure that would leave the player with a game that
-        // cannot start, and it is entirely checkable — so it is checked, every build.
+        // cannot start, and it is entirely checkable - so it is checked, every build.
         if let Some(missing) = luajit::exports::missing_for(&built, &consumers)
             && !missing.is_empty()
         {
@@ -1359,7 +1359,7 @@ git commit -m "toolchain: refuse a LuaJIT build that would not satisfy the game"
 
 ```rust
 /// The whole path, against a real Civilization V and a real network: fetch, build, replace,
-/// then put it back. Ignored by default — it downloads and compiles.
+/// then put it back. Ignored by default - it downloads and compiles.
 #[test]
 #[ignore = "downloads and compiles; needs a real Civilization V installation"]
 fn luajit_is_built_deployed_and_restored() {
@@ -1416,10 +1416,10 @@ git commit -m "test: end-to-end LuaJIT deployment and restore"
 
 ## Self-Review
 
-**Spec coverage.** User story 28 (opt in, get it built and deployed, get the original back on uninstall) is covered by Tasks 3, 8, 9 and 11. The ADR's three Replaced-File rules map to: backup-once (Task 7 Step 1 test), restore-on-uninstall (Task 8 Step 5), opt-in (Task 3's `#[default] Stock` plus Task 9's default-false checkbox). The "must not promise faster turns" consequence is enforced by the hover text in Task 9 Step 3. The Steam-verify consequence is handled implicitly — Sync copies the built DLL every Deployment, so a stock DLL restored by Steam is replaced again on the next run.
+**Spec coverage.** User story 28 (opt in, get it built and deployed, get the original back on uninstall) is covered by Tasks 3, 8, 9 and 11. The ADR's three Replaced-File rules map to: backup-once (Task 7 Step 1 test), restore-on-uninstall (Task 8 Step 5), opt-in (Task 3's `#[default] Stock` plus Task 9's default-false checkbox). The "must not promise faster turns" consequence is enforced by the hover text in Task 9 Step 3. The Steam-verify consequence is handled implicitly - Sync copies the built DLL every Deployment, so a stock DLL restored by Steam is replaced again on the next run.
 
-**Placeholder scan.** Two steps delegate to an existing pattern rather than repeating code: Task 4 Step 4 (`gix` shallow fetch, pointing at `crates/sources/src/upstream.rs`) and Task 6 Step 3's `lj_*.c` expansion. Both name the exact file to copy from and the exact behaviour required, which is the intent — the `gix` fetch options in this workspace are long and version-specific, and transcribing them from memory into a plan is how they get subtly wrong.
+**Placeholder scan.** Two steps delegate to an existing pattern rather than repeating code: Task 4 Step 4 (`gix` shallow fetch, pointing at `crates/sources/src/upstream.rs`) and Task 6 Step 3's `lj_*.c` expansion. Both name the exact file to copy from and the exact behaviour required, which is the intent - the `gix` fetch options in this workspace are long and version-specific, and transcribing them from memory into a plan is how they get subtly wrong.
 
-**Type consistency.** `LuaJitEngine` (not `LuaJit`) throughout Tasks 3, 8, 9, 11. `ReplacedFile::LuaEngine` throughout 7 and 8. `Restored::{FromBackup, NothingToRestore}` in 7 and 8. `LuaJitBuildRequest` gains `game_root` in Task 10 Step 4 — Task 6 Step 3 defines it with two fields and Task 10 adds the third, which is deliberate and flagged in both places.
+**Type consistency.** `LuaJitEngine` (not `LuaJit`) throughout Tasks 3, 8, 9, 11. `ReplacedFile::LuaEngine` throughout 7 and 8. `Restored::{FromBackup, NothingToRestore}` in 7 and 8. `LuaJitBuildRequest` gains `game_root` in Task 10 Step 4 - Task 6 Step 3 defines it with two fields and Task 10 adds the third, which is deliberate and flagged in both places.
 
-**One gap worth naming.** `HostRunner::for_this_host` takes `steam_roots`, but `ToolchainRunner::build_luajit` is not given them — `BootstrappedToolchain` is constructed in `crates/installer/src/wiring.rs` with only a cache path. Task 5 must therefore also add `SearchLocations::for_this_platform().steam_roots` to `BootstrappedToolchain::new`, or resolve them inside the toolchain crate. Resolve this when implementing Task 5; it is a wiring change, not a design one.
+**One gap worth naming.** `HostRunner::for_this_host` takes `steam_roots`, but `ToolchainRunner::build_luajit` is not given them - `BootstrappedToolchain` is constructed in `crates/installer/src/wiring.rs` with only a cache path. Task 5 must therefore also add `SearchLocations::for_this_platform().steam_roots` to `BootstrappedToolchain::new`, or resolve them inside the toolchain crate. Resolve this when implementing Task 5; it is a wiring change, not a design one.

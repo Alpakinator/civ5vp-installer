@@ -63,7 +63,7 @@ pub fn apply(sdk_root: &Path, progress: &ProgressReporter) -> Result<FixupReport
     }
     // One question asked once, across every include root: which of these headers does the
     // SDK actually ship? Asking per-root would stub a name in the CRT's include directory
-    // that the SDK's own directory supplies — and the CRT's is searched first.
+    // that the SDK's own directory supplies - and the CRT's is searched first.
     let shipped = header_names_present(&roots.include)?;
     for root in &roots.include {
         report.wdk_stubs += stub_wdk_headers(root, &shipped)?;
@@ -81,7 +81,7 @@ pub fn apply(sdk_root: &Path, progress: &ProgressReporter) -> Result<FixupReport
     Ok(report)
 }
 
-/// **Fix-up 1** — lowercase every filename under `Include/`, leaving a symlink from the
+/// **Fix-up 1** - lowercase every filename under `Include/`, leaving a symlink from the
 /// original mixed-case name to the lowercase one.
 ///
 /// Both directions are needed: the build's own sources include `<windows.h>` while the SDK's
@@ -101,7 +101,7 @@ fn lowercase_file_names(root: &Path) -> Result<usize, ToolchainError> {
         };
         let target = parent.join(&lowered);
         if target.exists() {
-            // Both spellings already present as real files — nothing to rename, and the
+            // Both spellings already present as real files - nothing to rename, and the
             // mixed-case one must not be clobbered.
             continue;
         }
@@ -114,7 +114,7 @@ fn lowercase_file_names(root: &Path) -> Result<usize, ToolchainError> {
     Ok(renamed)
 }
 
-/// **Fix-up 4** — rewrite backslashes to forward slashes inside `#include` directives.
+/// **Fix-up 4** - rewrite backslashes to forward slashes inside `#include` directives.
 ///
 /// Only inside the directive's delimiters: a backslash anywhere else in a header is a line
 /// continuation or a string escape and rewriting it would change the code.
@@ -122,7 +122,7 @@ fn rewrite_backslash_includes(root: &Path) -> Result<usize, ToolchainError> {
     let mut rewritten = 0;
     for file in walk_files(root)? {
         let Ok(text) = fs::read_to_string(&file) else {
-            // Not UTF-8 — not a header. The SDK ships a few binary blobs under Include/.
+            // Not UTF-8 - not a header. The SDK ships a few binary blobs under Include/.
             continue;
         };
         let updated = rewrite_include_lines(&text);
@@ -155,7 +155,7 @@ fn include_target_span(line: &str) -> Option<(usize, usize)> {
     let trimmed = line.trim_start();
     let indent = line.len() - trimmed.len();
     let rest = trimmed.strip_prefix('#')?.trim_start();
-    // `#` plus any whitespace after it — `#  include` is legal.
+    // `#` plus any whitespace after it - `#  include` is legal.
     let hash_and_gap = trimmed.len() - rest.len();
     let rest = rest.strip_prefix("include")?;
     let after_keyword = indent + hash_and_gap + "include".len();
@@ -192,7 +192,7 @@ fn header_names_present(roots: &[PathBuf]) -> Result<BTreeSet<String>, Toolchain
     Ok(names)
 }
 
-/// **Fix-up 6** — stub the headers the SDK references but does not ship.
+/// **Fix-up 6** - stub the headers the SDK references but does not ship.
 ///
 /// `windows.h` reaches `DriverSpecs.h` through `winnt.h` and `kernelspecs.h`. Where that
 /// header is genuinely absent an empty file satisfies the `#include` chain, because everything
@@ -201,8 +201,8 @@ fn header_names_present(roots: &[PathBuf]) -> Result<BTreeSet<String>, Toolchain
 /// # Only where it is genuinely absent
 ///
 /// `docs/pinned-artifacts.md` used to say `DriverSpecs.h` and `SpecStrings.h` ship only with
-/// the Driver Kit. That is wrong — the SDK ships both, as `driverspecs.h` (31 KB) and
-/// `specstrings.h` (23 KB) — and stubbing them anyway broke every build, for two compounding
+/// the Driver Kit. That is wrong - the SDK ships both, as `driverspecs.h` (31 KB) and
+/// `specstrings.h` (23 KB) - and stubbing them anyway broke every build, for two compounding
 /// reasons:
 ///
 /// * `kernelspecs.h` includes `"DriverSpecs.h"` with *quotes*, and a quoted include searches
@@ -235,7 +235,7 @@ fn stub_wdk_headers(root: &Path, shipped: &BTreeSet<String>) -> Result<usize, To
     Ok(created)
 }
 
-/// **Fix-up 2** — where a header includes a name that differs only in case from a file on
+/// **Fix-up 2** - where a header includes a name that differs only in case from a file on
 /// disk, add a symlink under the spelling the header used.
 ///
 /// Multi-segment names (`GL/gl.h`, `sys\types.h` before fix-up 4 gets to it) are resolved a
@@ -281,7 +281,7 @@ fn link_path_spelling(root: &Path, relative: &str) -> Result<usize, ToolchainErr
         }
         let Some(actual) = case_insensitive_match(&current, segment)? else {
             // The header includes something the SDK does not ship at all. Not this fix-up's
-            // problem — fix-up 6 stubs the known ones and the compiler reports the rest.
+            // problem - fix-up 6 stubs the known ones and the compiler reports the rest.
             return Ok(created);
         };
         platform::symlink(Path::new(&actual), &candidate)
@@ -292,7 +292,7 @@ fn link_path_spelling(root: &Path, relative: &str) -> Result<usize, ToolchainErr
     Ok(created)
 }
 
-/// **Fix-up 3** — make every spelling of an `Include` or `Lib` directory resolve.
+/// **Fix-up 3** - make every spelling of an `Include` or `Lib` directory resolve.
 ///
 /// The build asks for the capitalised names; the SDK MSI ships `Include`/`Lib` while the CRT
 /// MSI ships `include`/`lib`, so which spelling exists depends on which half of the image
@@ -330,7 +330,7 @@ fn capitalise(name: &str) -> String {
     lowered
 }
 
-/// **Fix-up 5** — a case symlink for every `.lib`.
+/// **Fix-up 5** - a case symlink for every `.lib`.
 ///
 /// The SDK ships `Kernel32.Lib`, the CRT ships `msvcrt.lib`, and the project file references
 /// both spellings and others besides. The set of extra spellings is fixed and sorted so two
@@ -409,7 +409,7 @@ fn case_insensitive_match(directory: &Path, name: &str) -> Result<Option<String>
 }
 
 /// Every regular file under `root`, deepest-last, in sorted order. Symlinks are not followed
-/// and are not returned — otherwise each pass would start operating on the previous pass's
+/// and are not returned - otherwise each pass would start operating on the previous pass's
 /// output.
 fn walk_files(root: &Path) -> Result<Vec<PathBuf>, ToolchainError> {
     let mut files = Vec::new();
@@ -658,7 +658,7 @@ mod tests {
         );
     }
 
-    /// A header the SDK really does not ship still gets its stub — the fix above must not
+    /// A header the SDK really does not ship still gets its stub - the fix above must not
     /// turn fix-up 6 into a no-op.
     #[test]
     fn fixup_6_links_the_spelling_a_header_asks_for_rather_than_stubbing_it() {
@@ -680,7 +680,7 @@ mod tests {
         );
     }
 
-    /// The same input twice produces the same tree, and the second run changes nothing —
+    /// The same input twice produces the same tree, and the second run changes nothing -
     /// a non-idempotent pass would turn every retried bootstrap into a slightly different
     /// toolchain.
     /// On Windows the fix-ups exist only to be skipped, and that has to stay true: every one

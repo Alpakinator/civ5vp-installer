@@ -1,12 +1,12 @@
 //! Running LuaJIT's own build tools.
 //!
 //! LuaJIT does not ship a prebuilt interpreter core. It generates one, using two programs it
-//! compiles first — `minilua`, which runs DynASM, and `buildvm`, which emits the virtual
+//! compiles first - `minilua`, which runs DynASM, and `buildvm`, which emits the virtual
 //! machine as an object file. Both are *host* tools: they run on the machine doing the build.
 //!
 //! That is a problem for a cross-build, because LuaJIT refuses one unless the host tools have
 //! the target's pointer size ("pointer size mismatch in cross-build"). The obvious answer on
-//! Linux — a 32-bit host compiler — means multilib, which plenty of installs do not have and
+//! Linux - a 32-bit host compiler - means multilib, which plenty of installs do not have and
 //! which the installer has no way to bootstrap.
 //!
 //! So the host tools are built as 32-bit *Windows* executables with the same clang the Built
@@ -16,7 +16,7 @@
 //!
 //! Requiring wine on Linux is not the imposition it looks like: Civilization V has no native
 //! build that can load the Built DLL, so every Linux player this installer serves already runs
-//! the game through Proton — and Proton ships a wine.
+//! the game through Proton - and Proton ships a wine.
 
 use std::path::{Path, PathBuf};
 
@@ -75,7 +75,7 @@ impl HostRunner {
     /// Pick a runner for this host.
     ///
     /// `steam_roots` are the Steam libraries detection already found. Proton lives in one of
-    /// them and ships a wine, which is why a player with no system-wide wine still has one —
+    /// them and ships a wine, which is why a player with no system-wide wine still has one -
     /// they must, or the game itself would not run.
     pub fn for_this_host(steam_roots: &[PathBuf]) -> Result<Self, ToolchainError> {
         if cfg!(windows) {
@@ -101,10 +101,10 @@ impl HostRunner {
 ///
 /// Deliberately *any* Proton, not the newest and not the one Steam has mapped to
 /// Civilization V. All this wine ever does is run two short console programs that write files
-/// and exit; every Proton can do that. Picking the last by name keeps the choice deterministic
-/// — note that is lexicographic, so `Proton 9.0` sorts after `Proton 11.0`, which is fine
-/// precisely because the version does not matter. Reading Steam's configuration to find the
-/// "right" one would be real machinery bought for no benefit.
+/// and exit; every Proton can do that. Picking the last by name keeps the choice
+/// deterministic - note that is lexicographic, so `Proton 9.0` sorts after `Proton 11.0`,
+/// which is fine precisely because the version does not matter. Reading Steam's configuration
+/// to find the "right" one would be real machinery bought for no benefit.
 fn proton_wine(steam_roots: &[PathBuf]) -> Option<PathBuf> {
     let mut found: Vec<PathBuf> = Vec::new();
     for root in steam_roots {

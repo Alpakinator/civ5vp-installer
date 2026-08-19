@@ -39,8 +39,8 @@ fn core_over(game: &GameFixture) -> Core {
 /// The tracer bullet: one configuration, all the way through, reported back to the caller.
 ///
 /// The resulting file tree is asserted in `matrix.rs`, which does it for all six legal
-/// configurations. What is checked here is the part the shell renders — what the Core says it
-/// did — and that the deployed DLL is the built one rather than the repository's stale copy
+/// configurations. What is checked here is the part the shell renders - what the Core says it
+/// did - and that the deployed DLL is the built one rather than the repository's stale copy
 /// (ADR-0001).
 #[test]
 fn a_deployment_reports_what_it_did() {
@@ -140,7 +140,7 @@ fn content_outside_the_claimed_folders_survives() {
 }
 
 /// The stale-cache corruption the community fixes by hand. The game's `cache`
-/// folder is emptied after Deployment, and `ModUserData` — its sibling — is left alone.
+/// folder is emptied after Deployment, and `ModUserData` - its sibling - is left alone.
 #[test]
 fn the_game_cache_is_cleared_and_mod_user_data_is_preserved() {
     let game = GameFixture::new();
@@ -171,7 +171,7 @@ fn the_game_cache_is_cleared_and_mod_user_data_is_preserved() {
     );
     assert!(
         game.game_root().join("cache").is_dir(),
-        "the cache folder itself should survive — the game expects to find it",
+        "the cache folder itself should survive - the game expects to find it",
     );
     assert_eq!(
         game.read("ModUserData/(1) Community Patch.db"),
@@ -232,7 +232,7 @@ fn uninstall_is_idempotent() {
     }
 }
 
-/// Uninstall deletes things, so it runs the same folder checks a Deployment does — otherwise
+/// Uninstall deletes things, so it runs the same folder checks a Deployment does - otherwise
 /// a relative MODS folder would aim `remove_dir_all` at the working directory.
 #[test]
 fn uninstall_refuses_game_folders_it_cannot_trust() {
@@ -256,7 +256,7 @@ fn uninstall_refuses_game_folders_it_cannot_trust() {
 }
 
 /// The `cache` folder Sync clears is the MODS and Text Folders' sibling. If those two do not
-/// agree on where the game is, there is no single right answer — so the configuration is
+/// agree on where the game is, there is no single right answer - so the configuration is
 /// refused rather than a `cache` somewhere being emptied on a guess.
 #[test]
 fn game_folders_that_disagree_about_where_the_game_is_are_refused() {
@@ -396,7 +396,7 @@ fn game_folders_that_are_not_real_absolute_directories_are_refused() {
     );
 }
 
-/// Vox Populi used to be refused at plan time — the walking skeleton could only deploy the
+/// Vox Populi used to be refused at plan time - the walking skeleton could only deploy the
 /// Community Patch. It plans now. What the whole matrix actually deploys is `matrix.rs`.
 #[test]
 fn vox_populi_is_a_legal_configuration() {
@@ -564,7 +564,7 @@ fn a_second_deployment_does_not_save_luajit_over_the_original() {
     );
 }
 
-/// The game is not touched until everything that can fail has succeeded — and that now
+/// The game is not touched until everything that can fail has succeeded - and that now
 /// includes the LuaJIT build, which happens after the DLL is already built.
 #[test]
 fn a_failing_luajit_build_leaves_the_game_untouched() {
@@ -596,7 +596,7 @@ fn a_failing_luajit_build_leaves_the_game_untouched() {
 }
 
 /// A player who cleared the App Data Store between installing and uninstalling has no saved
-/// original. That is reported, not treated as a failure — everything else still comes out.
+/// original. That is reported, not treated as a failure - everything else still comes out.
 #[test]
 fn uninstalling_without_a_backup_reports_it_rather_than_failing() {
     let game = GameFixture::new();

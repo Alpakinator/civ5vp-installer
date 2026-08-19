@@ -3,7 +3,7 @@
 //!
 //! Everything here is `#[cfg(test)]`: it is compiled into the test binary only and is not
 //! part of the crate's API. The CAB and MSI builders are thin wrappers over the writer halves
-//! of the `cab` and `msi` crates, which is what makes those fixtures worth trusting — they
+//! of the `cab` and `msi` crates, which is what makes those fixtures worth trusting - they
 //! are produced by the same format implementations the bootstrap reads with. The ISO builder
 //! has no such counterpart, so it writes the descriptors and directory records itself.
 
@@ -145,8 +145,8 @@ pub mod iso {
         writes: &mut Vec<(u32, Vec<u8>)>,
         next: &mut u32,
     ) -> Extent {
-        // `.` and `..` come first, as the format requires. Their extents are never followed —
-        // the reader skips both — so zeroes are enough.
+        // `.` and `..` come first, as the format requires. Their extents are never followed -
+        // the reader skips both - so zeroes are enough.
         let mut records = vec![
             Record {
                 name: DOT.to_string(),
@@ -290,7 +290,7 @@ pub mod iso {
 ///
 /// Shaped after the real `GRMSDK_EN_DVD.iso` rather than after the specification's full
 /// generality: 2048-byte blocks, one partition, short allocation descriptors, and directories
-/// embedded in their File Entry when they fit — which is exactly what that image does with
+/// embedded in their File Entry when they fit - which is exactly what that image does with
 /// its root.
 ///
 /// Descriptor tag checksums and CRCs are left zero. The reader does not check them, and a
@@ -403,7 +403,7 @@ pub mod udf {
         }
 
         // Embed the directory in its File Entry when it fits, and spill it into an extent
-        // when it does not — both shapes appear on the real image.
+        // when it does not - both shapes appear on the real image.
         if identifiers.len() <= BLOCK - FILE_ENTRY_HEADER {
             writes.push((
                 fe_block,
@@ -547,7 +547,7 @@ pub mod udf {
 pub mod cabinet {
     use std::io::{Cursor, Write};
 
-    /// Pack `files` — `(name inside the cabinet, contents)` — into an MSZIP cabinet.
+    /// Pack `files` - `(name inside the cabinet, contents)` - into an MSZIP cabinet.
     pub fn build(files: &[(&str, &[u8])]) -> Vec<u8> {
         let mut builder = cab::CabinetBuilder::new();
         {
@@ -577,7 +577,7 @@ pub mod package {
 
     /// One file as an MSI describes it.
     pub struct FileRow {
-        /// The `File` key — and, for a compressed package, the name inside the CAB.
+        /// The `File` key - and, for a compressed package, the name inside the CAB.
         pub key: &'static str,
         /// `FileName`, either `short` or `short|long`.
         pub file_name: &'static str,
@@ -593,7 +593,7 @@ pub mod package {
         pub default_dir: &'static str,
     }
 
-    /// Build an MSI whose `Media` table is `(last sequence, cabinet name)` rows — several of
+    /// Build an MSI whose `Media` table is `(last sequence, cabinet name)` rows - several of
     /// them for a package split across cabinets, as `WinSDKBuild_x86.msi` is.
     pub fn build(
         directories: &[DirectoryRow],

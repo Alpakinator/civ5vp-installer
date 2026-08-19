@@ -1,17 +1,17 @@
-//! What is already built, and whether it can be trusted — the incremental half of the build.
+//! What is already built, and whether it can be trusted - the incremental half of the build.
 //!
 //! The contract: within a build, only sources that changed since the last build
-//! recompile. The rules here are deliberately conservative — when in doubt, rebuild — because
+//! recompile. The rules here are deliberately conservative - when in doubt, rebuild - because
 //! a stale object linked into the game is a corrupt install nobody can diagnose, while an
 //! unnecessary recompile costs seconds.
 //!
 //! * Everything an object depends on beyond its own source funnels through the precompiled
 //!   header fence: if **any** project header is newer than the PCH, the PCH rebuilds, and a
-//!   rebuilt PCH makes every object stale. No per-file dependency tracking — headers change
+//!   rebuilt PCH makes every object stale. No per-file dependency tracking - headers change
 //!   rarely and a header change honestly invalidates close to everything anyway.
 //! * The flags, the toolchain, and the source root are recorded in a manifest file next to
 //!   the objects. If any of them differ from the manifest, the whole object directory is
-//!   discarded first — objects compiled with other flags or from another tree never mix.
+//!   discarded first - objects compiled with other flags or from another tree never mix.
 //! * Comparison is by file modification time, strictly newer-than. The Upstream Cache
 //!   rewrites the working tree only when the Version actually changes, so mtimes carry
 //!   honest information here.
@@ -41,13 +41,13 @@ pub fn variant_name(
     }
 }
 
-/// A file's modification time, or `None` for "does not exist" — which every staleness rule
+/// A file's modification time, or `None` for "does not exist" - which every staleness rule
 /// treats as infinitely old.
 pub fn mtime(path: &Path) -> Option<SystemTime> {
     fs::metadata(path).and_then(|meta| meta.modified()).ok()
 }
 
-/// `true` when `input` is strictly newer than `product`, or when either is unreadable —
+/// `true` when `input` is strictly newer than `product`, or when either is unreadable -
 /// an unreadable input is a build problem that surfaces best by rebuilding.
 pub fn newer_than(input: &Path, product: Option<SystemTime>) -> bool {
     let Some(product) = product else {
@@ -60,7 +60,7 @@ pub fn newer_than(input: &Path, product: Option<SystemTime>) -> bool {
 }
 
 /// The newest modification time of any header under `dirs` (recursively), plus any `extra`
-/// files — the input side of the PCH fence.
+/// files - the input side of the PCH fence.
 pub fn newest_header(dirs: &[PathBuf], extra: &[PathBuf]) -> Option<SystemTime> {
     let mut newest: Option<SystemTime> = None;
     let mut fold = |time: Option<SystemTime>| {
@@ -100,7 +100,7 @@ fn is_header(path: &Path) -> bool {
 
 /// Make the variant directory trustworthy for `manifest_content`.
 ///
-/// If the recorded manifest differs — other flags, other toolchain, other source root — every
+/// If the recorded manifest differs - other flags, other toolchain, other source root - every
 /// object in the directory is discarded and the new manifest written. Returns `true` when the
 /// existing contents were kept.
 pub fn ensure_manifest(variant_dir: &Path, manifest_content: &str) -> Result<bool, ToolchainError> {

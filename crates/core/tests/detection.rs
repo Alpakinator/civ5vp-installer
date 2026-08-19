@@ -2,8 +2,8 @@
 //!
 //! Everything here runs on Linux against fixture trees, including the Windows arrangement:
 //! detection takes the directories to look in as input, and the only platform-specific step
-//! is producing that list. So the decision logic — is this the
-//! Windows game? the native port? the Documents side? — is exercised on both layouts by the
+//! is producing that list. So the decision logic - is this the
+//! Windows game? the native port? the Documents side? - is exercised on both layouts by the
 //! same tests, on the one machine this project is verified on.
 
 #[path = "fixtures/steam.rs"]
@@ -99,7 +99,7 @@ fn the_old_style_libraryfolders_file_is_understood() {
 /// The Documents folder says "Civilization 5"; the game folder says "Civilization V". They are
 /// two different names, and neither is derived from the other.
 ///
-/// Both decoys here are complete and valid *as folders* — they carry every marker. The only
+/// Both decoys here are complete and valid *as folders* - they carry every marker. The only
 /// thing that tells them apart from the real ones is the name, so a detector that substituted
 /// one numeral for the other would return a decoy and this test would catch it.
 #[test]
@@ -110,7 +110,7 @@ fn the_two_folder_names_are_never_derived_from_each_other() {
     let documents = steam::create_proton_documents(&library);
 
     // A game folder named like the Documents folder, and a Documents folder named like the
-    // game folder — both fully marked, both wrong.
+    // game folder - both fully marked, both wrong.
     let game_decoy = library
         .join("steamapps/common")
         .join(steam::DOCUMENTS_FOLDER);
@@ -214,8 +214,8 @@ fn the_windows_arrangement_resolves_documents_from_the_user_profile() {
     assert_eq!(detected.folders().mods, documents.join("MODS"));
 }
 
-/// A game that has never been launched has no Documents side yet. That is not a refusal — the
-/// game folder is still worth handing back — but it is not a complete answer either.
+/// A game that has never been launched has no Documents side yet. That is not a refusal - the
+/// game folder is still worth handing back - but it is not a complete answer either.
 #[test]
 fn a_game_that_has_never_been_launched_reports_the_missing_documents_folder() {
     let temp = temp();
@@ -385,7 +385,7 @@ fn folder_names_are_matched_regardless_of_case() {
     );
 
     // The *spelling* is only observable where the filesystem is case-sensitive. On Windows
-    // `locate` finds `MODS` exists — it is the same directory as `Mods` there — takes the
+    // `locate` finds `MODS` exists - it is the same directory as `Mods` there - takes the
     // exact-match fast path, and never scans for the on-disk name. Nothing depends on which
     // of the two it hands back, because both open the same folder.
     #[cfg(unix)]

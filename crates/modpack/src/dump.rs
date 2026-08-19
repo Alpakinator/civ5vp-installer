@@ -4,19 +4,19 @@
 //! game demonstrably loads its output, so this module reproduces it exactly rather than
 //! emitting anything nicer. Its one structural habit matters everywhere: every
 //! `Game.WriteMPMP(chunk)` call appends a newline after the chunk. [`MakerFile::chunk`]
-//! models that call, so a chunk that itself ends in `\n` — the `<Table>` block, the
-//! `<X><Delete/>` opener, the `</X>` closer, the gameplay `</GameData>\n` — is followed by
-//! a blank line in the file, and a chunk that does not — `</Row>`, every localization line —
+//! models that call, so a chunk that itself ends in `\n` - the `<Table>` block, the
+//! `<X><Delete/>` opener, the `</X>` closer, the gameplay `</GameData>\n` - is followed by
+//! a blank line in the file, and a chunk that does not - `</Row>`, every localization line -
 //! is not. Those blank lines are load-bearing for byte-compatibility; do not tidy them.
 //!
 //! Two escaping sets, also the Lua's: tags/attributes escape `& < > " '`, text between tags
-//! escapes only `& < >`. Values are printed the way Lua's `tostring` prints them — integers
-//! bare, REALs through `%.14g` — and a value that is NULL or an empty string is simply not
+//! escapes only `& < >`. Values are printed the way Lua's `tostring` prints them - integers
+//! bare, REALs through `%.14g` - and a value that is NULL or an empty string is simply not
 //! written (zeros are).
 //!
 //! One known divergence from the in-game bytes: the column `type` attribute is whatever
 //! `PRAGMA table_info` reports, and the bundled SQLite interns standard type names at parse
-//! time — a column declared `integer` comes back `INTEGER`, where the game's 2010 SQLite
+//! time - a column declared `integer` comes back `INTEGER`, where the game's 2010 SQLite
 //! preserves the declared case. The game reads type names case-insensitively, and `boolean`
 //! is not a standard name so the Lua's boolean-default special case still fires; but a diff
 //! against an in-game dump must compare `type=` case-insensitively.
@@ -34,7 +34,7 @@ const HEADER: &str = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\
                       <!-- This modpack is only compatible with the Community Patch DLL -->\n\
                       <GameData>";
 
-/// Tables the game engine inserts into itself — the Lua dumps neither their schema nor
+/// Tables the game engine inserts into itself - the Lua dumps neither their schema nor
 /// their rows, and neither do we.
 const SKIPPED_TABLES: [&str; 7] = [
     "ApplicationInfo",
@@ -46,7 +46,7 @@ const SKIPPED_TABLES: [&str; 7] = [
     "ScannedFiles",
 ];
 
-/// Tables that exist in-game before any XML runs — their rows are dumped but their
+/// Tables that exist in-game before any XML runs - their rows are dumped but their
 /// `<Table>` declaration is not. The exact list from the Lua.
 const SKIPPED_SCHEMAS: [&str; 21] = [
     "ArtDefine_LandmarkTypes",
@@ -88,7 +88,7 @@ const LANGUAGES: [&str; 10] = [
 ];
 
 /// One dump file, written the way the game writes one: [`MakerFile::chunk`] is one
-/// `Game.WriteMPMP` call — the chunk, then the newline the game appends.
+/// `Game.WriteMPMP` call - the chunk, then the newline the game appends.
 struct MakerFile<W: Write> {
     out: W,
 }
@@ -102,7 +102,7 @@ impl<W: Write> MakerFile<W> {
 
 fn dump_error(detail: String) -> BoundaryError {
     BoundaryError::new(
-        "Writing the Modpack's database dump failed — check free disk space and try again.",
+        "Writing the Modpack's database dump failed - check free disk space and try again.",
         detail,
     )
 }
@@ -189,8 +189,8 @@ fn columns_of(conn: &Connection, table: &str) -> Result<Vec<ColumnInfo>, String>
 }
 
 /// The `<Table name="…">` block, attribute for attribute in the Lua's order. The
-/// `autoincrement` and `unique` attributes are emitted from the column's *name* — `ID` and
-/// `Type` — combined with the primary-key flag, because that is all the Lua looks at.
+/// `autoincrement` and `unique` attributes are emitted from the column's *name* - `ID` and
+/// `Type` - combined with the primary-key flag, because that is all the Lua looks at.
 fn table_structure(table: &str, columns: &[ColumnInfo]) -> String {
     let mut block = format!("\t<Table name=\"{table}\">\n");
     for column in columns {
@@ -279,7 +279,7 @@ pub(crate) fn dump_text(conn: &Connection, path: &Path) -> Result<(), BoundaryEr
     for language in LANGUAGES {
         let table = format!("Language_{language}");
         dump.chunk(&format!("\t<{table}>")).map_err(io)?;
-        // A language that was never loaded — table missing or empty — still gets its open
+        // A language that was never loaded - table missing or empty - still gets its open
         // and close tags; the Lua only warns about it.
         if table_exists(conn, &table).map_err(dump_error)? {
             dump_language(conn, &table, &mut dump, path)?;
@@ -295,7 +295,7 @@ fn table_exists(conn: &Connection, table: &str) -> Result<bool, String> {
     // Views count: in the game's merged localization database the active language is a
     // *view* over `LocalizedText` (with INSTEAD OF triggers carrying writes into it), and
     // the in-game Modpack Maker dumps straight through it. Only the never-loaded
-    // languages are plain — and empty — tables.
+    // languages are plain - and empty - tables.
     let count: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type IN ('table', 'view') AND name = ?1",
@@ -344,7 +344,7 @@ fn dump_language<W: Write>(
         dump.chunk(&format!("\t\t<Replace Tag=\"{}\">", escape_tag(&tag)))
             .map_err(io)?;
         for (index, element) in parts {
-            // Unlike the gameplay dump, an empty string is written here — the Lua only
+            // Unlike the gameplay dump, an empty string is written here - the Lua only
             // checks for nil, and an empty <Text> survives the round trip.
             if let Some(value) = fetch(index)? {
                 dump.chunk(&format!("\t\t\t<{element}>")).map_err(io)?;
@@ -358,7 +358,7 @@ fn dump_language<W: Write>(
     Ok(())
 }
 
-/// A stored value as Lua's `tostring` would print it. `None` is NULL; BLOBs are an error —
+/// A stored value as Lua's `tostring` would print it. `None` is NULL; BLOBs are an error -
 /// nothing the game dumps has one, so meeting one means the merge produced something the
 /// format cannot carry.
 fn render_value(value: ValueRef<'_>) -> Result<Option<String>, String> {

@@ -2,7 +2,7 @@
 //!
 //! Same house style as `deployment.rs`: fixture repository, temporary game folders, the
 //! public Core API, assertions on the resulting file tree. The database engine is faked
-//! ([`FixtureModpackAssembler`]) — what these tests pin down is everything around
+//! ([`FixtureModpackAssembler`]) - what these tests pin down is everything around
 //! it: what is staged, what crosses the seam, what Sync writes and removes, and the two
 //! asymmetric removal rules the user asked for by name.
 
@@ -75,7 +75,7 @@ fn core_over(game: &GameFixture, assembler: FixtureModpackAssembler) -> Core {
 }
 
 /// The whole Modpack path at once: the pack is assembled and deployed, the databases cross
-/// the seam in activation order, and — the user's rule — a Vox Populi install already
+/// the seam in activation order, and - the user's rule - a Vox Populi install already
 /// sitting in MODS is left exactly where it is.
 #[test]
 fn a_modpack_deployment_builds_the_pack_and_leaves_mods_alone() {
@@ -111,7 +111,7 @@ fn a_modpack_deployment_builds_the_pack_and_leaves_mods_alone() {
         "the standard exclusions apply inside the pack too"
     );
     // The UI folder: base copies, the mod's own CityView.lua over the base one, and the
-    // entry-point hook appended to InGame.lua. The mod's staged copy is deleted — two
+    // entry-point hook appended to InGame.lua. The mod's staged copy is deleted - two
     // files with one bare name collide in the game's VFS, and the hookless one could win.
     assert!(
         game.read("DLC/VP_MODPACK/UI/CityView.lua")
@@ -174,7 +174,7 @@ fn a_modpack_deployment_builds_the_pack_and_leaves_mods_alone() {
     );
 }
 
-/// A modinfo action referencing a file that is not there — which upstream really ships —
+/// A modinfo action referencing a file that is not there - which upstream really ships -
 /// is skipped out loud, the way the game skips it, and the Modpack still builds.
 #[test]
 fn a_dangling_database_update_is_skipped_the_way_the_game_skips_it() {
@@ -218,7 +218,7 @@ fn a_mods_deployment_removes_a_modpack() {
     assert!(game.game_root().join("MODS/(2) Vox Populi").is_dir());
 }
 
-/// No pristine cache, no Modpack — and the game untouched, with a sentence telling the
+/// No pristine cache, no Modpack - and the game untouched, with a sentence telling the
 /// player exactly what to do (launch the game unmodded once).
 #[test]
 fn a_modpack_deployment_refuses_a_modded_cache() {
@@ -242,7 +242,7 @@ fn a_modpack_deployment_refuses_a_modded_cache() {
 
 /// The snapshot outlives the cache: Sync clears the game's cache folder, and once the
 /// Modpack is deployed every later launch would rebuild the cache with the Modpack baked
-/// in — so an upgrade must run from the snapshot, and does.
+/// in - so an upgrade must run from the snapshot, and does.
 #[test]
 fn a_second_modpack_deployment_runs_from_the_snapshot() {
     let game = modpack_game();
@@ -255,7 +255,7 @@ fn a_second_modpack_deployment_runs_from_the_snapshot() {
         "Sync clears the game cache"
     );
 
-    // No cache anywhere — only the snapshot can make this succeed.
+    // No cache anywhere - only the snapshot can make this succeed.
     core.execute(&plan, &ProgressReporter::silent())
         .expect("the upgrade installs from the snapshot");
     assert!(game.game_root().join("DLC/VP_MODPACK").is_dir());
@@ -302,8 +302,8 @@ fn the_extra_mod_offer_lists_the_players_own_mods_only() {
     assert_eq!(offered, vec!["Even More Bonuses".to_owned()]);
 }
 
-/// A picked extra mod is baked into the pack — copied inside, its database updates applied
-/// after the managed set's — and its MODS original is left exactly where it was.
+/// A picked extra mod is baked into the pack - copied inside, its database updates applied
+/// after the managed set's - and its MODS original is left exactly where it was.
 #[test]
 fn a_picked_extra_mod_is_baked_in_after_the_managed_set() {
     let game = modpack_game();

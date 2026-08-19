@@ -1,7 +1,7 @@
 //! The real Toolchain Bootstrap, against the artifacts `docs/pinned-artifacts.md` pins.
 //!
 //! `#[ignore]`d, never deleted. It downloads ~1.1 GB and unpacks tens of thousands
-//! of files, so it is nothing like a per-commit test — but a bootstrap that has never once
+//! of files, so it is nothing like a per-commit test - but a bootstrap that has never once
 //! extracted the real ISO has not resolved the spec's extraction-fidelity bet.
 //!
 //! ```bash
@@ -86,7 +86,7 @@ fn the_real_sdk_iso_extracts_into_a_usable_toolchain() {
     assert!(!include_dirs.is_empty(), "the SDK must contribute headers");
     assert!(!lib_dirs.is_empty(), "the SDK must contribute libraries");
 
-    // The counts are a regression guard, not a claim about the docker image — see the
+    // The counts are a regression guard, not a claim about the docker image - see the
     // constant's own documentation.
     if let Some(baseline) = REFERENCE_BASELINE {
         assert_eq!(

@@ -1,7 +1,7 @@
 //! The Replaced File: a game-owned file the installer may overwrite, and the copy that
 //! makes that reversible.
 //!
-//! ADR-0006. Everything here exists to keep one promise — a player who uninstalls gets back
+//! ADR-0006. Everything here exists to keep one promise - a player who uninstalls gets back
 //! the file the game shipped with.
 
 use std::path::{Path, PathBuf};
@@ -43,7 +43,7 @@ impl ReplacedFile {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Restored {
     FromBackup,
-    /// No backup was held — nothing was changed.
+    /// No backup was held - nothing was changed.
     NothingToRestore,
 }
 
@@ -82,7 +82,7 @@ impl BackupStore {
         self.path_of(file).is_file()
     }
 
-    /// Save the game's copy — but only the first time.
+    /// Save the game's copy - but only the first time.
     ///
     /// The guard is the entire point: by the second Deployment the file in the game is the
     /// installer's own replacement, and saving that would destroy the only copy of the
@@ -156,7 +156,7 @@ mod tests {
     }
 
     /// A player who cleared the App Data Store between install and uninstall has no backup.
-    /// That is a thing to report, not a failure — uninstall still removes everything else.
+    /// That is a thing to report, not a failure - uninstall still removes everything else.
     #[test]
     fn restoring_without_a_backup_says_so_instead_of_failing() {
         let Ok(dir) = tempfile::tempdir() else {
@@ -176,7 +176,7 @@ mod tests {
 
     /// Backing up a file the game does not have must be quiet, not fatal. It happens to a
     /// player whose installation is mid-verify, and the Deployment has written nothing at
-    /// that point — refusing to continue would be a failure invented by the installer.
+    /// that point - refusing to continue would be a failure invented by the installer.
     #[test]
     fn backing_up_a_missing_game_file_is_a_no_op() {
         let Ok(dir) = tempfile::tempdir() else {
@@ -215,7 +215,7 @@ mod tests {
     }
 
     /// The Replaced File is written into the Game Installation root, not the Documents side
-    /// — the one place the installer had never written before ADR-0006.
+    /// - the one place the installer had never written before ADR-0006.
     #[test]
     fn the_engine_sits_in_the_game_installation_root() {
         let folders = GameFolders {

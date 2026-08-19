@@ -3,7 +3,7 @@
 # The Linux binary is also verified locally on every change (AGENTS.md); the Windows binary
 # is built here and verified later, per the spec's platform constraint ("Windows and
 # other-distro verification is currently unavailable locally; it arrives later via CI
-# runners"). The fast suite runs on the Linux job — it needs `git` for the fixture
+# runners"). The fast suite runs on the Linux job - it needs `git` for the fixture
 # repositories (a property of the fixtures, not of the installer; AGENTS.md), which the
 # runners have.
 #
@@ -34,15 +34,15 @@ jobs:
       - uses: actions/checkout@v4
       - name: Rust toolchain (pinned by rust-toolchain.toml)
         run: rustup show
-      # Compiled dependencies survive between runs — the difference between ~15 minutes
+      # Compiled dependencies survive between runs - the difference between ~15 minutes
       # cold and a few minutes warm.
       - uses: Swatinem/rust-cache@v2
-      # The UI snapshot tests render through wgpu, and the runners have no GPU — Mesa's
+      # The UI snapshot tests render through wgpu, and the runners have no GPU - Mesa's
       # lavapipe provides a software Vulkan adapter ("No adapter found" otherwise).
       #
       # Hardened because this sits on the critical path for publishing a Release, while being
       # peripheral to it. The runner's local Ubuntu mirror went unreachable once and apt sat
-      # retrying for forty minutes before anyone noticed — with the job's default six-hour
+      # retrying for forty minutes before anyone noticed - with the job's default six-hour
       # limit, it would have sat there for hours. So: bounded retries, a short per-request
       # timeout, a cap on the step, and a refresh that is allowed to fail. The runner image
       # ships package lists already, so a stale index is no reason not to try the install.
@@ -98,7 +98,7 @@ jobs:
   #
   # It used to be a step inside each platform job, which meant either one could create the
   # Release on its own. That is exactly what happened to 0.1.2: Linux went green, published
-  # the Release and attached its binary, while Windows was still failing — leaving a Release
+  # the Release and attached its binary, while Windows was still failing - leaving a Release
   # marked Latest that Windows users could not download anything from, from a commit that had
   # since been superseded several times over. `needs` makes a partial Release unrepresentable
   # rather than merely unlikely, and one publisher removes the race that made the old
@@ -117,7 +117,7 @@ jobs:
       - name: Publish both binaries
         env:
           GH_TOKEN: ${{ github.token }}
-          # This job has no checkout — it only moves two artifacts — so there is no `.git`
+          # This job has no checkout - it only moves two artifacts - so there is no `.git`
           # for `gh` to work the repository out from, and it exits with "not a git
           # repository". Naming it directly is cheaper than checking out the source purely
           # to satisfy that inference.

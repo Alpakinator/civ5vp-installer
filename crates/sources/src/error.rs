@@ -51,7 +51,7 @@ impl SourceError {
             ),
             Self::UpstreamUnreachable { .. } => {
                 "Could not reach the Vox Populi source repository. Check your internet \
-                 connection and try again — nothing has been changed."
+                 connection and try again - nothing has been changed."
                     .to_owned()
             }
             Self::VersionNotFound { version, .. } => format!(
@@ -75,7 +75,7 @@ impl SourceError {
                     path.display()
                 ),
                 LocalRepoProblem::NotACheckout => format!(
-                    "The folder at {} is not a Community-Patch-DLL repository — it has no \
+                    "The folder at {} is not a Community-Patch-DLL repository - it has no \
                      CvGameCoreDLL_Expansion2 folder inside it. Pick the root of your \
                      checkout.",
                     path.display()

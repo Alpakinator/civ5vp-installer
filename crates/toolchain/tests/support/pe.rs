@@ -1,5 +1,5 @@
 //! A minimal PE32 reader for the real-build test: machine, DLL bit, export names, imported
-//! DLL names. Test-only — the installer itself never parses PE files — so this reads just
+//! DLL names. Test-only - the installer itself never parses PE files - so this reads just
 //! enough of the format to compare a built DLL with the reference, and errors loudly rather
 //! than guessing.
 

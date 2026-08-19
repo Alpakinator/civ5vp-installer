@@ -3,7 +3,7 @@ Type=Application
 Name=Civ 5 VP Installer
 GenericName=Civilization V Vox Populi Installer
 Comment=Install the Community Patch / Vox Populi mods for Civilization V
-# Rewritten to the real path by packaging/install-desktop-entry.sh — the binary is a single
+# Rewritten to the real path by packaging/install-desktop-entry.sh - the binary is a single
 # file the user may keep anywhere, so there is no fixed install location to hard-code.
 Exec=civ5vp-installer
 Icon=civ5vp-installer

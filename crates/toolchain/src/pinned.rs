@@ -5,7 +5,7 @@
 //! URL: if a host name appears anywhere but here, something is fetching an artifact nobody
 //! pinned.
 
-/// The Windows SDK 7.0 ISO — the only mandatory download (`docs/pinned-artifacts.md` §1).
+/// The Windows SDK 7.0 ISO - the only mandatory download (`docs/pinned-artifacts.md` §1).
 ///
 /// It carries both halves of the Toolchain's non-compiler part: the SDK headers and import
 /// libs *and* the VC9 CRT (at `Setup/vc_stdx86/`). There is no second ISO.
@@ -16,7 +16,7 @@ pub const SDK_ISO: PinnedDownload = PinnedDownload {
     // Measured from the archive.org copy's `Content-Length` (2026-08-03). The document says
     // "~1.45 GiB", which is what Microsoft's own download page advertised; the snapshot at this
     // URL is 1.45 GiB. Only used to phrase progress before the server answers with a real
-    // length — the SHA-256 is what decides whether the bytes are the right ones.
+    // length - the SHA-256 is what decides whether the bytes are the right ones.
     approximate_bytes: 1_552_508_928,
 };
 
@@ -44,25 +44,25 @@ pub struct PinnedDownload {
 ///
 /// `docs/pinned-artifacts.md` §2 pins the *version* (clang 18, `lld`, targeting
 /// [`LLVM_TARGET_TRIPLE`]) but not a URL, because the reference build apt-installs it and the
-/// installer cannot. These are the llvm.org release tarballs for that exact version — the
+/// installer cannot. These are the llvm.org release tarballs for that exact version - the
 /// closest self-contained equivalent. Their checksums are not published by llvm.org; both
 /// were measured by downloading the asset and hashing it (2026-08-03).
 ///
 /// # The Linux tarball needs one library that no current distribution ships
 ///
-/// `clang+llvm-18.1.8-x86_64-linux-gnu-ubuntu-18.04` links `libtinfo.so.5` — ncurses 5 — and
+/// `clang+llvm-18.1.8-x86_64-linux-gnu-ubuntu-18.04` links `libtinfo.so.5` - ncurses 5 - and
 /// the loader refuses to start it without one. [`libtinfo_for_host`] pins that library, and
 /// the bootstrap places it inside this tarball's own `lib/`, where the binaries' existing
 /// `RUNPATH: $ORIGIN/../lib` finds it without any environment being set.
 ///
-/// Aliasing `libtinfo.so.5` onto the system's `libtinfo.so.6` does *not* work — the binary
-/// wants ncurses 5's versioned symbols — which is why an actual ncurses 5 library is shipped
+/// Aliasing `libtinfo.so.5` onto the system's `libtinfo.so.6` does *not* work - the binary
+/// wants ncurses 5's versioned symbols - which is why an actual ncurses 5 library is shipped
 /// rather than a symlink.
 ///
 /// Keeping this build rather than a distribution's clang is deliberate and measured: it needs
 /// only glibc 2.27, where Ubuntu 24.04's package needs ~2.39 and Arch's ~2.41. The installer
 /// ships to players on whatever Linux they run, so that difference matters more than matching
-/// the reference build's point release — which is not on offer anyway, since llvm.org
+/// the reference build's point release - which is not on offer anyway, since llvm.org
 /// publishes no x86-64 Linux build of 18.1.3 at all. ADR-0005 has the full reasoning.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PinnedLlvm {
@@ -86,7 +86,7 @@ pub struct PinnedLibrary {
     pub link_as: &'static str,
 }
 
-/// Everything a first Toolchain Bootstrap downloads, in bytes — what the up-front
+/// Everything a first Toolchain Bootstrap downloads, in bytes - what the up-front
 /// expectation sentences are computed from, so the figure can never go stale.
 pub fn approximate_download_total() -> u64 {
     sdk_member_bytes()
@@ -161,7 +161,7 @@ pub const fn llvm_for_host() -> Option<PinnedLlvm> {
 /// One file inside the disc image, pinned by where its bytes are and what they hash to.
 ///
 /// The offset is part of the pin because the installer fetches these out of the *middle* of
-/// the image — the four members together are ~102 MiB of its 1.45 GiB, and asking for only
+/// the image - the four members together are ~102 MiB of its 1.45 GiB, and asking for only
 /// those bytes is the difference between a couple of minutes and a couple of hours on the
 /// one source that still has the image (`docs/pinned-artifacts.md` §1).
 ///
@@ -190,7 +190,7 @@ impl PinnedMember {
 ///
 /// Flattened rather than nested so the folder stays flat, and the whole path is kept because
 /// `Setup/WinSDK/cab1.cab` and `Setup/WinSDKBuild/cab1.cab` are different files with the same
-/// base name — one overwriting the other would be an extraction that silently unpacks the
+/// base name - one overwriting the other would be an extraction that silently unpacks the
 /// wrong cabinet.
 pub fn member_cache_name(path: &str) -> String {
     path.trim_start_matches("Setup/").replace(['/', '\\'], "-")
@@ -302,7 +302,7 @@ pub const ISO_MEMBERS: &[IsoMember] = &[
     },
 ];
 
-/// Every pinned member together — what a first bootstrap actually pulls down of the image.
+/// Every pinned member together - what a first bootstrap actually pulls down of the image.
 pub fn sdk_member_bytes() -> u64 {
     ISO_MEMBERS
         .iter()
@@ -325,11 +325,11 @@ pub const VERIFICATION_NAMES: &[&str] = &[
 ];
 
 // `DriverSpecs.h` used to be the sixth name here; it was removed because fix-up 6's own stub
-// made it impossible to fail — see `verify`'s module docs and `docs/pinned-artifacts.md` §4.
+// made it impossible to fail - see `verify`'s module docs and `docs/pinned-artifacts.md` §4.
 
 /// The WDK-only headers fix-up 6 stubs out. Empty files satisfy the `#include` chain for the
 /// user-mode code the DLL is made of.
-/// Only stubbed where the SDK ships no case-variant of them — see `fixups::stub_wdk_headers`.
+/// Only stubbed where the SDK ships no case-variant of them - see `fixups::stub_wdk_headers`.
 /// Both names are in fact shipped by the Windows SDK 7.0, so on that artifact this list
 /// produces nothing; it stays because a differently-packaged SDK may not ship them.
 pub const WDK_STUB_HEADERS: &[&str] = &[

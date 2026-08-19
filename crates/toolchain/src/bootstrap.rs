@@ -3,10 +3,10 @@
 //! The sequence is fixed and every step is restartable from wherever the last one stopped:
 //!
 //! 1. Give back whatever an older version of the installer downloaded and this one does not
-//!    need — see [`ToolchainBootstrap::reclaim_superseded_downloads`]. Before the next step,
+//!    need - see [`ToolchainBootstrap::reclaim_superseded_downloads`]. Before the next step,
 //!    because a cache that is already complete is exactly the one still holding it.
 //! 2. Is the Toolchain Cache complete? Then nothing else happens at all.
-//! 3. Throw away any half-finished tree — a killed bootstrap must not leave a cache that
+//! 3. Throw away any half-finished tree - a killed bootstrap must not leave a cache that
 //!    looks usable.
 //! 4. Download the eleven pinned members of the Windows SDK image and the portable LLVM,
 //!    resuming and hash-checking each.
@@ -40,7 +40,7 @@ const SDK_MEMBERS_DIR: &str = "sdk";
 
 /// Acquires the Toolchain into a [`ToolchainCache`].
 ///
-/// Construct it with the cache root — inside the App Data Store, per `CONTEXT.md` — and call
+/// Construct it with the cache root - inside the App Data Store, per `CONTEXT.md` - and call
 /// [`ToolchainBootstrap::ensure`]. It is cheap to construct and safe to call repeatedly.
 pub struct ToolchainBootstrap {
     cache: ToolchainCache,
@@ -117,7 +117,7 @@ impl ToolchainBootstrap {
         }
 
         // Say how much before starting, and say it from the pinned sizes rather than from a
-        // number typed into a sentence — a stale figure here is how a 2.5 GB download comes
+        // number typed into a sentence - a stale figure here is how a 2.5 GB download comes
         // as a surprise.
         let total = self.sdk_member_bytes()
             + self.llvm.map_or(0, |llvm| llvm.download.approximate_bytes)
@@ -173,7 +173,7 @@ impl ToolchainBootstrap {
 
         // The compiler will not start without this, so it goes in before anything tries to run
         // it. Inside the compiler's own `lib/`, which its `RUNPATH: $ORIGIN/../lib` already
-        // searches — no environment has to be arranged around every invocation (ADR-0005).
+        // searches - no environment has to be arranged around every invocation (ADR-0005).
         if let Some(library) = self.libtinfo {
             let package = fetch(
                 self.source.as_ref(),
@@ -211,7 +211,7 @@ impl ToolchainBootstrap {
         progress.report(
             Stage::Build,
             format!(
-                "Build tools ready — {} files unpacked ({} MB).",
+                "Build tools ready - {} files unpacked ({} MB).",
                 counts.files_written,
                 counts.bytes_written / (1024 * 1024)
             ),
@@ -236,9 +236,9 @@ impl ToolchainBootstrap {
     ///
     /// Up to 0.1.2 the bootstrap downloaded the whole 1.45 GiB disc image and extracted
     /// straight from it, so that is what those installs have sitting in their downloads
-    /// folder — plus, on a machine where the download kept failing, a part-finished copy of
+    /// folder - plus, on a machine where the download kept failing, a part-finished copy of
     /// it. This version reads eleven files totalling ~102 MiB and never wants the rest, so
-    /// the image is turned into those eleven — locally, with nothing downloaded — and then
+    /// the image is turned into those eleven - locally, with nothing downloaded - and then
     /// removed, and the half-finished remains of one go too.
     ///
     /// Deliberately not fatal. This is housekeeping: if the image turns out to be damaged or
@@ -297,7 +297,7 @@ impl ToolchainBootstrap {
 /// Put a support library where the compiler's own `RUNPATH` will find it.
 ///
 /// `$ORIGIN/../lib` is already baked into the llvm.org binaries, so a file dropped in the
-/// compiler's `lib/` is found with no `LD_LIBRARY_PATH` and no wrapper script — which matters,
+/// compiler's `lib/` is found with no `LD_LIBRARY_PATH` and no wrapper script - which matters,
 /// because the alternative is arranging an environment around every compiler invocation the
 /// toolchain runner ever makes (ADR-0005).
 fn install_support_library(
@@ -378,7 +378,7 @@ mod tests {
 
     /// A stand-in ISO containing the four pinned members, each a real MSI over real CABs.
     ///
-    /// The contents are a hand-picked slice of what the genuine image holds — enough to
+    /// The contents are a hand-picked slice of what the genuine image holds - enough to
     /// exercise the MSI mapping, every fix-up and all six verification names, and small
     /// enough to build in a test. Files are spread one per cabinet so `WinSDKBuild`'s
     /// four-cabinet `Media` table is genuinely routed rather than assumed away.
@@ -641,7 +641,7 @@ mod tests {
     /// Wire the fixtures up as the two pinned URLs, with the checksums they actually hash to.
     ///
     /// The pinned constants hold `&'static str` digests, so the fixtures' own digests are
-    /// leaked to stand in for them. Everything else — including which URLs are asked for — is
+    /// leaked to stand in for them. Everything else - including which URLs are asked for - is
     /// what production does.
     /// Measure the fixture image the way `describe_the_pinned_members` measures the real one.
     ///
@@ -710,7 +710,7 @@ mod tests {
         ]);
 
         // The support library is fetched on hosts that need one, so the fixture serves it on
-        // exactly those hosts — a `.deb` built the same way the real one is packaged.
+        // exactly those hosts - a `.deb` built the same way the real one is packaged.
         let libtinfo = libtinfo_for_host().map(|mut library| {
             let package = test_fixtures::deb::package(library.member, b"not really ncurses");
             library.download.sha256 = leak_digest(&package);
@@ -827,7 +827,7 @@ mod tests {
     }
 
     /// An image downloaded by an earlier version of the installer is turned into the eleven
-    /// packages this one needs — locally, with nothing downloaded — and then removed.
+    /// packages this one needs - locally, with nothing downloaded - and then removed.
     ///
     /// This is the upgrade path: 0.1.2 left a 1.45 GiB file in the downloads folder that
     /// nothing reads any more, and a player is not going to work out for themselves which of
@@ -862,7 +862,7 @@ mod tests {
         assert_eq!(internet.requests(), expected);
     }
 
-    /// The same tidy-up on a machine that already has a working toolchain — which is most of
+    /// The same tidy-up on a machine that already has a working toolchain - which is most of
     /// the machines holding a superseded image, since they only kept it by finishing.
     #[test]
     fn a_superseded_image_is_reclaimed_even_when_nothing_needs_building() {
@@ -937,8 +937,8 @@ mod tests {
         let first = bootstrap_over(dir.path(), &internet, sdk, members, llvm, libtinfo)
             .ensure(&ProgressReporter::silent())
             .unwrap();
-        // One request per pinned member of the disc image — the whole image is never asked
-        // for — plus the compiler, which is pinned large and so costs a parallel-path probe
+        // One request per pinned member of the disc image - the whole image is never asked
+        // for - plus the compiler, which is pinned large and so costs a parallel-path probe
         // that discovers the fixture is tiny and drops to the sequential path. The libtinfo
         // package, where the host needs one, is pinned small and fetches in one.
         let members_fetched: usize = members.iter().flat_map(IsoMember::files).count();
@@ -992,7 +992,7 @@ mod tests {
         assert_eq!(retry_internet.requests(), 0);
     }
 
-    /// A bootstrap over a damaged ISO must fail loudly and leave no marker — the next attempt
+    /// A bootstrap over a damaged ISO must fail loudly and leave no marker - the next attempt
     /// has to be able to tell that this one did not finish.
     #[test]
     fn a_damaged_iso_leaves_no_toolchain_behind() {

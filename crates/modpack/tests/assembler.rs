@@ -1,6 +1,6 @@
 //! The `ModpackAssembler` boundary, exercised the way the Core will use it: build fixture
 //! bases with rusqlite, hand `SqliteModpackAssembler` a job, assert on the dumps and the
-//! progress lines. No game data, no network — this is the fast suite.
+//! progress lines. No game data, no network - this is the fast suite.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -152,7 +152,7 @@ fn sql_updates_run_against_the_gameplay_database() {
 
 /// The Community Patch's FixTypeConstraints.sql rebuilds tables via CREATE `_FIX` /
 /// DROP / ALTER RENAME, and the rebuilt tables carry `REFERENCES Language_en_US` clauses
-/// that dangle by design — text lives in the other database and the game never enforces
+/// that dangle by design - text lives in the other database and the game never enforces
 /// foreign keys. Modern SQLite re-validates the whole schema on a rename and would abort;
 /// the merge must run with the game's legacy rename semantics instead.
 #[test]
@@ -283,7 +283,7 @@ fn row_values_come_from_attributes_and_elements_alike() {
     .unwrap();
 
     assert!(merged.gameplay.contains("<Type>TRAIT_A</Type>"));
-    // true on a boolean-declared column is stored — and therefore dumped — as 1.
+    // true on a boolean-declared column is stored - and therefore dumped - as 1.
     assert!(merged.gameplay.contains("<IsFree>1</IsFree>"));
     assert!(merged.gameplay.contains("<Level>3</Level>"));
 }
@@ -471,7 +471,7 @@ fn an_unknown_file_kind_is_skipped_and_reported() {
     assert!(
         merged
             .progress
-            .contains(&"Skipping notes.txt — not a database update.".to_string()),
+            .contains(&"Skipping notes.txt - not a database update.".to_string()),
         "progress lines: {:?}",
         merged.progress
     );

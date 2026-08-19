@@ -30,7 +30,7 @@ use civ5vp_sources::{InstallationSources, LuaJitCache, UPSTREAM_URL, UpstreamCac
 /// The ceiling for a first materialization.
 ///
 /// Measured on 2026-08-03: 147.7 MiB. A shallow fetch transfers a *snapshot*, so this figure
-/// tracks how big the mod is, not how long its history is — it creeps up as files are added.
+/// tracks how big the mod is, not how long its history is - it creeps up as files are added.
 /// 200 MiB is roughly a third above today's figure: enough that ordinary growth does not fail
 /// the test, tight enough that a change of strategy back towards full history would.
 const FIRST_FETCH_CEILING: u64 = 200 * 1024 * 1024;
@@ -43,7 +43,7 @@ const FIRST_FETCH_CEILING: u64 = 200 * 1024 * 1024;
 /// opposite, with the furthest switch measured (`Release-3.0`) costing 9.0 MiB, because an
 /// older Release is a smaller snapshot. What a switch actually costs is how much of the target
 /// snapshot the cache does not already hold, so the worst case is a switch to a *newer,
-/// larger* Version — which is what 50 MiB leaves room for.
+/// larger* Version - which is what 50 MiB leaves room for.
 const VERSION_SWITCH_CEILING: u64 = 50 * 1024 * 1024;
 
 /// A Release far enough back that switching to it is a real switch, not a no-op.
@@ -58,7 +58,7 @@ fn scratch(name: &str) -> PathBuf {
     path
 }
 
-/// Bytes in the cache's object store — an upper bound on what was transferred into it.
+/// Bytes in the cache's object store - an upper bound on what was transferred into it.
 fn object_store_bytes(root: &Path) -> u64 {
     fn walk(dir: &Path) -> u64 {
         let Ok(entries) = fs::read_dir(dir) else {
@@ -88,7 +88,7 @@ fn the_version_picker_lists_the_real_releases_and_master() {
     let catalog = cache.list_versions(&ProgressReporter::silent()).unwrap();
 
     println!(
-        "releases: {} — newest {:?}",
+        "releases: {} - newest {:?}",
         catalog.releases().len(),
         catalog.releases().first()
     );
@@ -231,8 +231,8 @@ fn a_real_release_installs_end_to_end() {
     let outcome = core.execute(&plan, &ProgressReporter::silent()).unwrap();
 
     println!("deployed: {:?}", outcome.deployed);
-    // Upstream puts the mod's version in the file name — `(1) Community Patch (v 151).modinfo`
-    // at the time of writing — so the extension is what can be asserted on.
+    // Upstream puts the mod's version in the file name - `(1) Community Patch (v 151).modinfo`
+    // at the time of writing - so the extension is what can be asserted on.
     let community_patch = game_root.join("MODS/(1) Community Patch");
     assert!(
         fs::read_dir(&community_patch).unwrap().any(|entry| {
@@ -340,7 +340,7 @@ fn the_unofficial_versions_list_and_install_for_real() {
     let base = tag.trim_start_matches("Release-");
     for build in unofficial.iter().take(3) {
         println!(
-            "  {} — {} ({})",
+            "  {} - {} ({})",
             build.label,
             build.summary,
             &build.commit[..10]
@@ -350,7 +350,7 @@ fn the_unofficial_versions_list_and_install_for_real() {
         assert!(!build.summary.is_empty());
     }
     let Some(newest_build) = unofficial.last() else {
-        println!("upstream has no commits since {tag} right now — nothing to install");
+        println!("upstream has no commits since {tag} right now - nothing to install");
         return;
     };
 

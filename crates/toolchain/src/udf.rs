@@ -8,7 +8,7 @@
 //! > This disc contains a "UDF" file system and requires an operating system that supports
 //! > the ISO-13346 "UDF" file system specification.
 //!
-//! Everything the bootstrap needs — `Setup/WinSDK`, `Setup/WinSDKBuild`, `Setup/vc_stdx86` —
+//! Everything the bootstrap needs - `Setup/WinSDK`, `Setup/WinSDKBuild`, `Setup/vc_stdx86` -
 //! lives on the UDF side. An ISO9660-only installer cannot extract this image at all.
 //!
 //! Hand-rolled for the same reason [`crate::iso9660`] is, and the walk is short: an anchor at
@@ -94,7 +94,7 @@ pub struct Entry {
     /// Absolute `(byte offset, length)` pairs, in order.
     extents: Vec<(u64, u64)>,
     /// Set when the data is stored inside the File Entry itself, which UDF allows for
-    /// anything small enough — including, on this image, the root directory.
+    /// anything small enough - including, on this image, the root directory.
     inline: Option<Vec<u8>>,
 }
 
@@ -262,7 +262,7 @@ impl<R: Read + Seek> Udf<R> {
 
     /// Walk a `/`-separated path from the root, matching case-insensitively.
     ///
-    /// Only the matched child's File Entry is read, not every sibling's — `Setup/` has a few
+    /// Only the matched child's File Entry is read, not every sibling's - `Setup/` has a few
     /// dozen entries and each one costs a seek.
     fn resolve(&mut self, path: &str) -> Result<Entry, ToolchainError> {
         let mut current = self.root.clone();
@@ -309,7 +309,7 @@ impl<R: Read + Seek> Udf<R> {
         let descriptors_length = le_u32(&buffer, header - 4)? as usize;
 
         // `checked_add`, because on a 32-bit target both of these are `u32`-derived and their
-        // sum can wrap — which would slip past the bound below and panic on the slice instead.
+        // sum can wrap - which would slip past the bound below and panic on the slice instead.
         let (Some(start), Some(end)) = (
             header.checked_add(extended_attributes),
             header

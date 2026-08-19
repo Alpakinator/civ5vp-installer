@@ -18,7 +18,7 @@ const DEVELOPMENT_BRANCH: &str = "master";
 /// fraction of a first fetch instead of a whole second snapshot.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RefTarget {
-    /// What to ask the remote for — a full ref name, a short name, or a commit id.
+    /// What to ask the remote for - a full ref name, a short name, or a commit id.
     pub(crate) remote: String,
     /// The local ref the fetched commit is written to.
     pub(crate) local: String,

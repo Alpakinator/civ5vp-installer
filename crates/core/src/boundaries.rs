@@ -1,4 +1,4 @@
-//! The three — and only three — boundaries injected into the Core.
+//! The three - and only three - boundaries injected into the Core.
 //!
 //! Everything else the installer does is concrete behind [`crate::Core`]. Adding a trait
 //! here is an architectural change, not a refactor.
@@ -51,7 +51,7 @@ impl std::error::Error for BoundaryError {}
 pub struct MaterializedSource {
     /// Root of the materialized tree. The Core only ever reads from it.
     pub root: PathBuf,
-    /// A stable identity of the DLL build inputs in this tree — equal identities mean the
+    /// A stable identity of the DLL build inputs in this tree - equal identities mean the
     /// build would read identical bytes.
     ///
     /// For a checked-out Version this derives from the git tree; for a Local Repo, from the
@@ -68,14 +68,14 @@ pub trait SourceProvider: Send + Sync {
     /// Make `source` available on disk and describe what was materialized.
     ///
     /// The Core only ever reads from the returned tree. For a Local Repo that means the
-    /// developer's working tree is handed back untouched — no git operation runs against it.
+    /// developer's working tree is handed back untouched - no git operation runs against it.
     fn materialize(
         &self,
         source: &InstallationSource,
         progress: &ProgressReporter,
     ) -> Result<MaterializedSource, BoundaryError>;
 
-    /// The Versions the Upstream Cache can offer right now — what the picker lists.
+    /// The Versions the Upstream Cache can offer right now - what the picker lists.
     ///
     /// One remote round trip in production; a fixture in the fast suite. Nothing is fetched
     /// beyond ref names, so this is safe while the user is still deciding.
@@ -84,7 +84,7 @@ pub trait SourceProvider: Send + Sync {
         progress: &ProgressReporter,
     ) -> Result<crate::VersionCatalog, BoundaryError>;
 
-    /// Every commit after `newest_release` (a `Release-*` tag name), oldest first — what
+    /// Every commit after `newest_release` (a `Release-*` tag name), oldest first - what
     /// the picker lists as unofficial versions. One small HTTP round trip for
     /// the Upstream Cache; a Local Repo has no notion of this and returns an error saying
     /// so.
@@ -108,14 +108,14 @@ pub struct BuildRequest {
     pub source_root: PathBuf,
     /// Whether to compile with the 43-civ setting.
     pub forty_three_civs: FortyThreeCivs,
-    /// Release or Debug — always Release until Dev mode offers the choice.
+    /// Release or Debug - always Release until Dev mode offers the choice.
     pub build_configuration: BuildConfiguration,
-    /// Compiled into the DLL as its version string — see
+    /// Compiled into the DLL as its version string - see
     /// [`InstallationSource::version_label`].
     pub version_label: String,
     /// Exactly where the Built DLL must be written.
     ///
-    /// Always inside the Core's own build directory, never in a game folder — the game is
+    /// Always inside the Core's own build directory, never in a game folder - the game is
     /// not touched until the build has fully succeeded.
     pub output_path: PathBuf,
 }
@@ -126,7 +126,7 @@ pub struct BuildRequest {
 /// only their compiler: different sources, different output, different reasons to fail.
 #[derive(Debug, Clone)]
 pub struct LuaJitBuildRequest {
-    /// Root of the materialized LuaJIT source — the directory holding `src/` and `dynasm/`.
+    /// Root of the materialized LuaJIT source - the directory holding `src/` and `dynasm/`.
     pub source_root: PathBuf,
     /// The Game Installation root.
     ///
@@ -137,7 +137,7 @@ pub struct LuaJitBuildRequest {
     pub game_root: PathBuf,
     /// Exactly where the built engine must be written.
     ///
-    /// Always inside the Core's own build directory, never a game folder — the game is not
+    /// Always inside the Core's own build directory, never a game folder - the game is not
     /// touched until every part of the Deployment that can fail has succeeded.
     pub output_path: PathBuf,
 }
@@ -157,7 +157,7 @@ pub trait ToolchainRunner: Send + Sync {
     ///
     /// Called only when the configuration opts into the LuaJIT engine, so a player on the
     /// stock engine never compiles it. Like [`Self::build_dll`], this must never write into a
-    /// game folder — Sync decides when the game is touched.
+    /// game folder - Sync decides when the game is touched.
     fn build_luajit(
         &self,
         request: &LuaJitBuildRequest,
@@ -169,7 +169,7 @@ pub trait ToolchainRunner: Send + Sync {
     fn toolchain_identity(&self) -> String;
 
     /// A sentence to show *before* the first Deployment, while getting the toolchain still
-    /// costs a download — `None` once it is set up (the multi-GB download must not be a
+    /// costs a download - `None` once it is set up (the multi-GB download must not be a
     /// surprise, and the warning must stop being said the moment it stops being true). The
     /// default is `None`: a runner with nothing to warn about says nothing.
     fn first_run_expectation(&self) -> Option<String> {
@@ -185,7 +185,7 @@ pub trait ToolchainRunner: Send + Sync {
 /// everything in twice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CacheState {
-    /// The vanilla base+DLC merge — usable as the Modpack base.
+    /// The vanilla base+DLC merge - usable as the Modpack base.
     Pristine,
     /// A modded session wrote this file; the user must launch the game unmodded once.
     Modded,
@@ -202,7 +202,7 @@ pub struct ModpackDatabaseJob {
     pub gameplay_base: PathBuf,
     /// The pristine localization database snapshot (never written; the assembler copies it).
     pub text_base: PathBuf,
-    /// The mods' database update files, in activation order — `.sql` executed as SQL,
+    /// The mods' database update files, in activation order - `.sql` executed as SQL,
     /// `.xml` applied with the game's GameData semantics. `Language_*` tables route to the
     /// localization database, everything else to the gameplay database, exactly as the game
     /// routes them.
@@ -217,11 +217,11 @@ pub struct ModpackDatabaseJob {
 
 /// Boundary three: the Modpack's database merge.
 ///
-/// A separate boundary for the same reason the toolchain is one: the work needs machinery —
-/// a SQLite engine — that must stay out of the dependency-free Core, and tests need to
+/// A separate boundary for the same reason the toolchain is one: the work needs machinery -
+/// a SQLite engine - that must stay out of the dependency-free Core, and tests need to
 /// stand in a fake for it.
 pub trait ModpackAssembler: Send + Sync {
-    /// Whether `gameplay_db` is a usable Modpack base — see [`CacheState`].
+    /// Whether `gameplay_db` is a usable Modpack base - see [`CacheState`].
     fn cache_state(&self, gameplay_db: &std::path::Path) -> Result<CacheState, BoundaryError>;
 
     /// Apply the updates to copies of the base databases and write both dumps.

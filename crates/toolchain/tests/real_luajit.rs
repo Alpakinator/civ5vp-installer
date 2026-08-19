@@ -2,7 +2,7 @@
 //!
 //! `#[ignore]`d, never deleted: the fast suite proves the invocation plan against no compiler
 //! at all, and only this proves that the plan, the bootstrapped clang-cl, the extracted SDK
-//! and — on Linux — wine together produce a `lua51_Win32.dll` the game can actually load.
+//! and - on Linux - wine together produce a `lua51_Win32.dll` the game can actually load.
 //!
 //! ```bash
 //! CIV5VP_TOOLCHAIN_CACHE=~/.local/share/civ5vp-installer/toolchain-cache \
@@ -11,7 +11,7 @@
 //!   cargo test --release -p civ5vp-toolchain --test real_luajit -- --ignored --nocapture
 //! ```
 //!
-//! `CIV5VP_LUAJIT_SOURCE` must be a checkout of the pinned commit — a real `civ5vp-sources`
+//! `CIV5VP_LUAJIT_SOURCE` must be a checkout of the pinned commit - a real `civ5vp-sources`
 //! run leaves one at `<App Data Store>/luajit-cache/LuaJIT`. `CIV5_GAME_DIR` is needed because
 //! the build refuses to hand back an engine it has not checked against the game's own imports,
 //! which is the property this test exists to demonstrate.
@@ -89,7 +89,7 @@ fn luajit_builds_into_an_engine_the_game_can_load() {
     assert_eq!(machine, 0x14c, "the engine must be 32-bit x86");
 
     // The build refuses to produce an engine that fails this, so reaching here already proves
-    // it — asserting anyway keeps the proof in the test rather than only in the code.
+    // it - asserting anyway keeps the proof in the test rather than only in the code.
     let names = String::from_utf8_lossy(&engine);
     assert!(
         names.contains("LuaJIT 2.1"),

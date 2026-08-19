@@ -1,6 +1,6 @@
 //! The palette, the typeface, and the widget styling.
 //!
-//! Every value here is generated from `docs/ui-reference/visual-language.md` — the prose is
+//! Every value here is generated from `docs/ui-reference/visual-language.md` - the prose is
 //! the source, this file is the transcription. Change the prose first, then this.
 //!
 //! Presentation only: nothing in this module knows what any screen means.
@@ -15,7 +15,7 @@ use egui::{
 
 /// The window background.
 pub const PAGE_NAVY: Color32 = Color32::from_rgb(0x0E, 0x1A, 0x28);
-/// Fill of framed panels — one step up from the page.
+/// Fill of framed panels - one step up from the page.
 pub const PANEL_NAVY: Color32 = Color32::from_rgb(0x15, 0x26, 0x38);
 /// Interactive surfaces at rest: buttons, hovered rows.
 pub const RAISED_NAVY: Color32 = Color32::from_rgb(0x1C, 0x33, 0x50);
@@ -24,7 +24,7 @@ pub const WELL_NAVY: Color32 = Color32::from_rgb(0x0A, 0x14, 0x20);
 
 // ── Parchment inks ───────────────────────────────────────────────────────────
 
-/// Body text — the default ink on navy.
+/// Body text - the default ink on navy.
 pub const PARCHMENT: Color32 = Color32::from_rgb(0xE6, 0xD8, 0xB0);
 /// Headings and button labels.
 pub const PARCHMENT_BRIGHT: Color32 = Color32::from_rgb(0xF4, 0xEA, 0xCC);
@@ -42,9 +42,9 @@ pub const GOLD_DARK: Color32 = Color32::from_rgb(0x7E, 0x62, 0x26);
 
 // ── Outcome accents ──────────────────────────────────────────────────────────
 
-/// Success — text and notice borders only, never large fills.
+/// Success - text and notice borders only, never large fills.
 pub const LAUREL: Color32 = Color32::from_rgb(0x9D, 0xBB, 0x61);
-/// Failure and refusal — the same restraint.
+/// Failure and refusal - the same restraint.
 pub const EMBER: Color32 = Color32::from_rgb(0xC9, 0x6A, 0x45);
 
 /// The type scale, as named in the visual language. `Display` is egui's `Heading`;
@@ -52,7 +52,7 @@ pub const EMBER: Color32 = Color32::from_rgb(0xC9, 0x6A, 0x45);
 pub const CAPTION_SIZE: f32 = 17.0;
 
 /// Install the skin on a context: the embedded Jost (ADR-0003) and the widget styling.
-/// Idempotent, but rebuilding the font atlas is not free — call once per context.
+/// Idempotent, but rebuilding the font atlas is not free - call once per context.
 pub fn apply(ctx: &egui::Context) {
     ctx.set_fonts(fonts());
     // One skin, not one per system theme: the installer is night-blue and parchment
@@ -83,10 +83,10 @@ pub fn window_icon() -> Option<egui::IconData> {
 }
 
 /// Jost for every piece of UI text (ADR-0003: an OFL-licensed geometric sans in the same
-/// Futura lineage as the game's Tw Cen MT — embeddable and redistributable without a
+/// Futura lineage as the game's Tw Cen MT - embeddable and redistributable without a
 /// licensing cloud; `assets/fonts/OFL.txt` accompanies it as the license requires).
 /// It is put first for both families rather than replacing them, so anything the face
-/// lacks — box-drawing, non-Latin — still falls back to egui's defaults instead of tofu.
+/// lacks - box-drawing, non-Latin - still falls back to egui's defaults instead of tofu.
 fn fonts() -> FontDefinitions {
     let mut fonts = FontDefinitions::default();
     fonts.font_data.insert(
@@ -140,7 +140,7 @@ fn visuals() -> egui::Visuals {
     visuals.selection.bg_fill = GOLD_DARK;
     visuals.selection.stroke = Stroke::new(1.0, PARCHMENT_BRIGHT);
 
-    // Native widgets take a 2 px corner radius — at widget size a small radius and a small
+    // Native widgets take a 2 px corner radius - at widget size a small radius and a small
     // chamfer read the same, and the frame stays crisp (visual language, "Corner treatments").
     let corner = CornerRadius::same(2);
 

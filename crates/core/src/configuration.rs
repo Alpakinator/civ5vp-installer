@@ -5,7 +5,7 @@ use std::path::PathBuf;
 /// The base choice of what to install.
 ///
 /// EUI lives *inside* [`Flavor::VoxPopuli`] rather than beside it, so "EUI with Community
-/// Patch only" — the one illegal combination — cannot be written down at all.
+/// Patch only" - the one illegal combination - cannot be written down at all.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Flavor {
     /// `(1) Community Patch` alone.
@@ -34,7 +34,7 @@ pub enum InstallMode {
     /// The classic install: mod folders in MODS, activated in the game's Mods menu.
     Mods,
     /// One generated `VP_MODPACK` folder in the game's DLC, with the mods and a full merged
-    /// database baked in. Loads automatically at startup — no Mods menu — and works in
+    /// database baked in. Loads automatically at startup - no Mods menu - and works in
     /// multiplayer. The MODS folder is left alone either way; the conflict runs the other
     /// direction, so a Mods-mode Deployment removes the Modpack (see
     /// [`crate::Plan`]'s removal rules).
@@ -63,8 +63,8 @@ pub enum BuildConfiguration {
 }
 
 impl BuildConfiguration {
-    /// The one lowercase token used everywhere this is written down — the settings file and
-    /// the Build Fingerprint — so the two can never drift apart.
+    /// The one lowercase token used everywhere this is written down - the settings file and
+    /// the Build Fingerprint - so the two can never drift apart.
     pub(crate) fn token(self) -> &'static str {
         match self {
             Self::Release => "release",
@@ -84,7 +84,7 @@ pub enum Version {
     ArbitraryRef(String),
     /// One commit after the newest Release, from the unofficial-versions list:
     /// `label` reads like `5.4.3.07`, `commit` is the full hash the label stood for when
-    /// the list was fetched — the label alone would drift as upstream moves.
+    /// the list was fetched - the label alone would drift as upstream moves.
     UnofficialBuild { label: String, commit: String },
 }
 
@@ -119,7 +119,7 @@ impl InstallationSource {
     /// The Installation Source of a player who has not named one yet.
     ///
     /// A Local Repo with no path. The Core refuses it with a sentence saying so, which is the
-    /// right answer — "you have not said where the sources come from" is a thing to be told,
+    /// right answer - "you have not said where the sources come from" is a thing to be told,
     /// not a state to be represented separately.
     pub fn unchosen() -> Self {
         Self::LocalRepo {
@@ -132,7 +132,7 @@ impl Flavor {
     /// What to offer a player who has never run the installer.
     ///
     /// Vox Populi with EUI. Vox Populi is the mod people mean when they say "Vox Populi", and
-    /// EUI is part of the standard experience — Community Patch alone is the smaller, more
+    /// EUI is part of the standard experience - Community Patch alone is the smaller, more
     /// deliberate choice. Deciding this is the Core's job, not the shell's.
     pub fn suggested() -> Self {
         Self::VoxPopuli { eui: Eui::Enabled }
@@ -141,7 +141,7 @@ impl Flavor {
 
 /// Which Lua engine the game runs.
 ///
-/// `LuaJit` replaces `lua51_Win32.dll` in the Game Installation — the Replaced File of
+/// `LuaJit` replaces `lua51_Win32.dll` in the Game Installation - the Replaced File of
 /// ADR-0006, and the one file outside the Claimed set a Deployment writes. The default
 /// changes nothing about the game, which is the point: overwriting a file belonging to the
 /// game is always something the player asked for, never something they inherited from a
@@ -160,14 +160,14 @@ pub struct InstallConfiguration {
     pub flavor: Flavor,
     pub forty_three_civs: FortyThreeCivs,
     /// Release for players; Debug is a Dev-mode choice and is only legal with a Local
-    /// Repo — [`crate::Core::plan`] refuses it anywhere else.
+    /// Repo - [`crate::Core::plan`] refuses it anywhere else.
     pub build_configuration: BuildConfiguration,
     /// Mods in the MODS folder, or one baked Modpack in the game's DLC.
     pub install_mode: InstallMode,
     /// Folder names of the player's own MODS-folder mods to bake into the Modpack, applied
     /// after the managed set in this order. Offered by
     /// [`crate::available_extra_mods`]; meaningful only in Modpack mode and ignored
-    /// otherwise — in a Mods-mode install those mods are already in MODS and the game's
+    /// otherwise - in a Mods-mode install those mods are already in MODS and the game's
     /// own Mods menu governs them.
     pub extra_mods: Vec<String>,
     /// Whether to replace the game's Lua engine with LuaJIT. Opt-in; see ADR-0006.

@@ -25,11 +25,11 @@ pub mod wiring;
 
 pub use app::{InstallerApp, Screen};
 
-/// Where the log file lives once [`init_log_file`] has run — inside the App Data Store.
+/// Where the log file lives once [`init_log_file`] has run - inside the App Data Store.
 static LOG_FILE: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
 
 /// Point the log at its real file. Called once at startup with the App Data
-/// Store resolved; until then — and always, additionally — detail goes to stderr.
+/// Store resolved; until then - and always, additionally - detail goes to stderr.
 pub fn init_log_file(path: std::path::PathBuf) {
     let _ = LOG_FILE.set(path);
 }
@@ -39,12 +39,12 @@ pub fn log_file() -> Option<&'static std::path::Path> {
     LOG_FILE.get().map(std::path::PathBuf::as_path)
 }
 
-/// Show `path` to the user with the platform's opener — the "Open log" button.
+/// Show `path` to the user with the platform's opener - the "Open log" button.
 ///
 /// This is rule 5's second permitted exception (see CODING_STANDARDS.md): a best-effort
 /// convenience that invokes the desktop's own opener, never anything the user must install
 /// for the installer to work. If it fails, the path is on screen to copy and the log has the
-/// reason — no install is ever affected.
+/// reason - no install is ever affected.
 pub fn open_path(path: &std::path::Path) {
     #[cfg(target_os = "windows")]
     let opener = "explorer";
@@ -62,7 +62,7 @@ pub fn open_path(path: &std::path::Path) {
 
 /// Where the detail behind a user-facing error goes: appended to the log file in the App
 /// Data Store (and echoed to stderr), keeping it out of the UI. A log line that cannot be
-/// written is not worth interrupting anything over — stderr still has it.
+/// written is not worth interrupting anything over - stderr still has it.
 pub fn log_detail(detail: &str) {
     if let Some(path) = LOG_FILE.get() {
         let timestamp = std::time::SystemTime::now()

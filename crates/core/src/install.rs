@@ -70,7 +70,7 @@ pub struct Core {
 }
 
 impl Core {
-    /// `work_dir` is scratch space the Core owns — the build directory lives inside it.
+    /// `work_dir` is scratch space the Core owns - the build directory lives inside it.
     /// It belongs in the App Data Store; tests pass a temporary directory. It is never a
     /// game folder: the DLL must be built somewhere the game cannot see before Sync runs.
     pub fn new(
@@ -98,7 +98,7 @@ impl Core {
     }
 
     /// What to tell the player near the Install button while the first build still costs
-    /// the toolchain download — `None` once it is set up.
+    /// the toolchain download - `None` once it is set up.
     pub fn first_run_expectation(&self) -> Option<String> {
         self.toolchain_runner.first_run_expectation()
     }
@@ -124,11 +124,11 @@ impl Core {
         Plan::build(configuration, folders)
     }
 
-    /// Fetch, build, then Sync — in that order, and the game is not touched until the first
+    /// Fetch, build, then Sync - in that order, and the game is not touched until the first
     /// two have fully succeeded.
     ///
     /// The build is skipped when the Build Fingerprint recorded at the last Deployment still
-    /// matches this configuration *and* the deployed DLL still hashes to what was recorded —
+    /// matches this configuration *and* the deployed DLL still hashes to what was recorded -
     /// both, so neither a changed input nor a tampered DLL can survive.
     pub fn execute(
         &self,
@@ -148,7 +148,7 @@ impl Core {
             None => self.build(plan, &source.root, progress)?,
         };
         // In Modpack mode the whole pack is assembled in the App Data Store before Sync
-        // runs — the game is untouched until everything that can fail has succeeded.
+        // runs - the game is untouched until everything that can fail has succeeded.
         let staged_modpack = if plan.modpack() {
             let resolved = self.resolve_sources(plan, &source.root)?;
             Some(crate::modpack::assemble(
@@ -163,8 +163,8 @@ impl Core {
             None
         };
         // Built before Sync for the same reason the DLL and the Modpack are: the game is not
-        // touched until everything that can fail has succeeded. A LuaJIT build that fails —
-        // no wine, a broken download, an engine missing a symbol the game needs — must leave
+        // touched until everything that can fail has succeeded. A LuaJIT build that fails -
+        // no wine, a broken download, an engine missing a symbol the game needs - must leave
         // the player's engine exactly where it was.
         let built_luajit = if plan.luajit() {
             let luajit_source = self
@@ -206,7 +206,7 @@ impl Core {
         BackupStore::new(self.work_dir.join("backups"))
     }
 
-    /// The deployed DLL, brought back into the build directory — if and only if the recorded
+    /// The deployed DLL, brought back into the build directory - if and only if the recorded
     /// fingerprint matches `fingerprint` and the DLL still hashes to what the record
     /// promises. `None` means: build.
     fn reusable_deployed_dll(
@@ -215,9 +215,9 @@ impl Core {
         fingerprint: &BuildFingerprint,
         progress: &ProgressReporter,
     ) -> Result<Option<PathBuf>, InstallError> {
-        // Both homes a deployed DLL can have — the MODS install and inside a Modpack. The
+        // Both homes a deployed DLL can have - the MODS install and inside a Modpack. The
         // DLL is identical between the two modes (the mode changes packaging, not compile
-        // inputs), so either record can prove a rebuild unnecessary — which is what makes
+        // inputs), so either record can prove a rebuild unnecessary - which is what makes
         // switching mode cheap.
         for folder in [
             deployed_dll_home(plan, crate::InstallMode::Mods),
@@ -235,7 +235,7 @@ impl Core {
             }
 
             // Copied out of the game folder before Sync starts deleting, so the skip path
-            // feeds Sync exactly the way a build would — nothing in the game is touched
+            // feeds Sync exactly the way a build would - nothing in the game is touched
             // yet.
             let build_dir = self.work_dir.join("build");
             tree::create_dir_all(&build_dir)?;
@@ -243,7 +243,7 @@ impl Core {
             tree::copy_file(&deployed, &output_path)?;
             progress.report(
                 Stage::Build,
-                "The DLL is already up to date — build skipped.",
+                "The DLL is already up to date - build skipped.",
             );
             return Ok(Some(output_path));
         }
@@ -297,13 +297,13 @@ impl Core {
             .materialize(&plan.configuration.source, progress)
             .map_err(InstallError::Fetch)?;
 
-        // Check everything the plan needs is actually there before the build burns minutes —
+        // Check everything the plan needs is actually there before the build burns minutes -
         // and, more importantly, before Sync starts deleting.
         let resolved = self.resolve_sources(plan, &source.root)?;
 
         // Dev mode only: hold the checkout against each mod's own .modinfo manifest. A
         // listed-but-gone file fails here; unlisted extras warn and continue (the split is
-        // explained at `validate_dev_manifest`). Upstream Versions are not checked — they
+        // explained at `validate_dev_manifest`). Upstream Versions are not checked - they
         // ship what upstream released, and the player cannot act on a difference.
         if matches!(
             plan.configuration.source,
@@ -415,7 +415,7 @@ impl Core {
                     progress.report(
                         Stage::Sync,
                         format!(
-                            "Removed {} — not part of this install.",
+                            "Removed {} - not part of this install.",
                             folder.folder_name()
                         ),
                     );
@@ -432,7 +432,7 @@ impl Core {
                 tree::remove_file_if_present(&path)?;
                 progress.report(
                     Stage::Sync,
-                    format!("Removed {} — not part of this install.", file.file_name()),
+                    format!("Removed {} - not part of this install.", file.file_name()),
                 );
             }
         }
@@ -443,12 +443,12 @@ impl Core {
                 continue;
             };
             // In Modpack mode the MODS-target folders were staged inside the pack instead
-            // of deploying here — and, deliberately, whatever is in MODS stays.
+            // of deploying here - and, deliberately, whatever is in MODS stays.
             if !plan.deploys_directly(deployment) {
                 continue;
             }
             let destination = deployment.claimed.path_in(&plan.folders);
-            // Replace rather than merge: this is what makes Sync exact — no file from a
+            // Replace rather than merge: this is what makes Sync exact - no file from a
             // previous configuration can survive inside a Claimed Folder. Every *other* name
             // this folder has gone by is removed too, so installing a newer Version over an
             // older one cannot leave the game with both.
@@ -503,7 +503,7 @@ impl Core {
         // The Build Fingerprint sidecar, beside the DLL it describes (both inside a Claimed
         // Folder). Hashed from the deployed copy, so what is recorded is what a later
         // launch will re-hash. A failure on this path only ever costs a rebuild, never a
-        // false skip, so it does not fail an otherwise complete Deployment — but it is said
+        // false skip, so it does not fail an otherwise complete Deployment - but it is said
         // out loud: "it rebuilds every time" must be diagnosable from what the user can
         // show us.
         let sidecar = dll_home.join(FINGERPRINT_FILE_NAME);
@@ -515,7 +515,7 @@ impl Core {
             progress.report(
                 Stage::Sync,
                 format!(
-                    "Could not record the build fingerprint at {} — the next install will \
+                    "Could not record the build fingerprint at {} - the next install will \
                      rebuild instead of skipping.",
                     sidecar.display()
                 ),
@@ -541,7 +541,7 @@ impl Core {
     ///
     /// Symmetric on purpose, and that symmetry is the whole point: turning the choice on
     /// replaces the engine, so turning it off has to put the original back. Without the second
-    /// half the checkbox is one-way — a player who tries LuaJIT and dislikes it has no way to
+    /// half the checkbox is one-way - a player who tries LuaJIT and dislikes it has no way to
     /// undo it short of uninstalling the entire Deployment, which is not what unticking a box
     /// means anywhere else in this installer.
     fn settle_engine(
@@ -583,7 +583,7 @@ impl Core {
 
     /// Remove every Claimed Folder, restoring an unmodded game.
     ///
-    /// Uninstall does not need an Installation Source, a Version, or a build — it is Sync's
+    /// Uninstall does not need an Installation Source, a Version, or a build - it is Sync's
     /// removal half on its own, applied to the whole Claimed set rather than to the part of it
     /// that a configuration leaves out.
     pub fn uninstall(
@@ -642,7 +642,7 @@ impl Core {
 }
 
 /// Where the deployed DLL (and its fingerprint sidecar) lives for a given install mode:
-/// the root of `(1) Community Patch` — in MODS, or inside the Modpack.
+/// the root of `(1) Community Patch` - in MODS, or inside the Modpack.
 fn deployed_dll_home(plan: &Plan, mode: crate::InstallMode) -> PathBuf {
     match mode {
         crate::InstallMode::Mods => ClaimedFolder::CommunityPatch.path_in(&plan.folders),
@@ -653,7 +653,7 @@ fn deployed_dll_home(plan: &Plan, mode: crate::InstallMode) -> PathBuf {
     }
 }
 
-/// Empty the game's `cache` folder — the one path outside the Claimed Folders the installer
+/// Empty the game's `cache` folder - the one path outside the Claimed Folders the installer
 /// may touch, and the fix for the stale-cache corruption the community works around by
 /// hand. `ModUserData` is its sibling and is deliberately left alone.
 fn clear_game_cache(

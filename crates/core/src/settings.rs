@@ -23,7 +23,7 @@ use crate::detect::{self, Detection, FolderRejected, SearchLocations};
 const SETTINGS_FILE_NAME: &str = "settings.txt";
 
 const HEADER: &str = "\
-# Civ 5 VP Installer — remembered settings.
+# Civ 5 VP Installer - remembered settings.
 # Written by the installer whenever something worth remembering changes.
 # Lines it does not understand are ignored, so editing this by hand is safe enough.
 ";
@@ -35,7 +35,7 @@ pub enum SettingsError {
     NoAppDataLocation { variable: &'static str },
     /// A file operation against the App Data Store failed.
     Io {
-        /// What was being attempted, e.g. "read" — used to build the log line.
+        /// What was being attempted, e.g. "read" - used to build the log line.
         action: &'static str,
         path: PathBuf,
         cause: io::Error,
@@ -139,14 +139,14 @@ impl AppDataStore {
         Ok(Settings::parse(&text))
     }
 
-    /// Everything the store currently holds, in bytes — the Upstream Cache, the Toolchain
+    /// Everything the store currently holds, in bytes - the Upstream Cache, the Toolchain
     /// Cache, settings, logs. Unreadable entries count as zero rather than
     /// failing: the answer is for a label, not an audit.
     pub fn size_on_disk(&self) -> u64 {
         directory_size(&self.root)
     }
 
-    /// Empty the App Data Store — and only the store; the game is never touched from here.
+    /// Empty the App Data Store - and only the store; the game is never touched from here.
     /// The directory itself stays. The next install re-bootstraps from nothing.
     pub fn clear(&self) -> Result<(), SettingsError> {
         let entries = match fs::read_dir(&self.root) {
@@ -185,7 +185,7 @@ impl AppDataStore {
             cause,
         })?;
         let path = self.settings_file();
-        // Keys this build does not know are carried across rather than dropped — see
+        // Keys this build does not know are carried across rather than dropped - see
         // `unknown_lines`. A file that cannot be read is not a failure here: it means there
         // is nothing to carry, and the write that follows is what creates it.
         let carried = fs::read_to_string(&path)
@@ -209,7 +209,7 @@ pub struct Settings {
     /// The last Install Configuration.
     pub configuration: Option<InstallConfiguration>,
     /// The Dev-mode checkout the player last named, kept even while the GitHub source is
-    /// the active choice — the configuration stores only the active source, and switching
+    /// the active choice - the configuration stores only the active source, and switching
     /// back to Dev mode must not cost the player their path.
     pub dev_checkout: Option<PathBuf>,
 }
@@ -314,9 +314,9 @@ impl Startup {
     /// The sentence to show when the game folders could not be settled.
     ///
     /// Two explanations can apply at once, and the more specific one wins. `note` is about this
-    /// machine — that the game found is the native Aspyr port, or that nothing was found at all
-    /// — while `rejected` is about one field being wrong. "This is the Linux port and Vox Populi
-    /// cannot use it" tells a player far more than "choose your Documents folder".
+    /// machine - that the game found is the native Aspyr port, or that nothing was found at
+    /// all - while `rejected` is about one field being wrong. "This is the Linux port and Vox
+    /// Populi cannot use it" tells a player far more than "choose your Documents folder".
     pub fn explanation(&self, rejected: &FolderRejected) -> String {
         self.note.clone().unwrap_or_else(|| rejected.user_message())
     }
@@ -424,7 +424,7 @@ fn read_version(value: &str) -> Option<Version> {
         Some(("ref", reference)) if !reference.is_empty() => {
             Some(Version::ArbitraryRef(reference.to_owned()))
         }
-        // `unofficial:<commit>:<label>` — the commit first because a hash never contains a
+        // `unofficial:<commit>:<label>` - the commit first because a hash never contains a
         // colon, so the label may (even though today's labels never do).
         Some(("unofficial", rest)) => match rest.split_once(':') {
             Some((commit, label)) if !commit.is_empty() && !label.is_empty() => {
@@ -445,7 +445,7 @@ fn read_version(value: &str) -> Option<Version> {
 /// The Installation Source is the exception, and deliberately. A player who has not yet said
 /// where the sources come from has still said which Flavor they want, and dropping the whole
 /// configuration for the sake of the one part they have not filled in would mean their Flavor
-/// silently never persisted. An unset source reads back as a Local Repo with no path — which
+/// silently never persisted. An unset source reads back as a Local Repo with no path - which
 /// is exactly what it is, and which the Core already refuses with a sentence saying so.
 fn read_configuration(values: &Values) -> Option<InstallConfiguration> {
     let source = match values.get("source") {
@@ -476,22 +476,22 @@ fn read_configuration(values: &Values) -> Option<InstallConfiguration> {
     } else {
         FortyThreeCivs::Disabled
     };
-    // Anything but an explicit "debug" — including a file from before the line existed —
+    // Anything but an explicit "debug" - including a file from before the line existed -
     // reads as Release, the configuration every player gets.
     let build_configuration = if values.get("build-configuration") == Some("debug") {
         BuildConfiguration::Debug
     } else {
         BuildConfiguration::Release
     };
-    // Anything but an explicit "modpack" — including a file from before the line existed —
+    // Anything but an explicit "modpack" - including a file from before the line existed -
     // reads as the classic Mods install.
     let install_mode = if values.get("install-mode") == Some("modpack") {
         InstallMode::Modpack
     } else {
         InstallMode::Mods
     };
-    // Anything but an explicit "on" — and in particular a file written before the line
-    // existed — reads as the stock engine. Replacing a file belonging to the game must never
+    // Anything but an explicit "on" - and in particular a file written before the line
+    // existed - reads as the stock engine. Replacing a file belonging to the game must never
     // be something a player is opted into by an upgrade.
     let luajit = if values.get("luajit") == Some("on") {
         LuaJitEngine::LuaJit
@@ -520,7 +520,7 @@ fn read_configuration(values: &Values) -> Option<InstallConfiguration> {
 }
 
 /// Recursive size of one directory; anything unreadable counts as zero. Symlinks are sized
-/// as themselves, not followed — a link into the store must not double-count, and a link out
+/// as themselves, not followed - a link into the store must not double-count, and a link out
 /// of it must not count someone else's data.
 fn directory_size(directory: &Path) -> u64 {
     let Ok(entries) = fs::read_dir(directory) else {
@@ -553,7 +553,7 @@ fn write_line(text: &mut String, key: &str, value: &str) {
 }
 
 /// A path is written only if it is text. A path that is not valid UTF-8 is simply not
-/// remembered — the file stays readable, and the worst that happens is one folder to pick
+/// remembered - the file stays readable, and the worst that happens is one folder to pick
 /// again. Nor is one containing a line break, which would be read back as two settings.
 fn write_path(text: &mut String, key: &str, path: Option<&PathBuf>) {
     let Some(value) = path.and_then(|path| path.to_str()) else {
@@ -568,7 +568,7 @@ fn write_path(text: &mut String, key: &str, path: Option<&PathBuf>) {
 /// Every key this build writes.
 ///
 /// The list is what lets [`unknown_lines`] tell a key this build simply did not write on this
-/// run — a `version` line with no configuration — from a key it has never heard of. The first
+/// run - a `version` line with no configuration - from a key it has never heard of. The first
 /// must not be resurrected; the second must not be lost.
 const KNOWN_KEYS: &[&str] = &[
     "game-installation",
@@ -616,7 +616,7 @@ fn unknown_lines(existing: &str) -> String {
 }
 
 /// The `key = value` lines of a settings file, in the order they were read. Anything else in
-/// the file — comments, blank lines, keys from another version — is dropped here.
+/// the file - comments, blank lines, keys from another version - is dropped here.
 struct Values {
     pairs: Vec<(String, String)>,
 }

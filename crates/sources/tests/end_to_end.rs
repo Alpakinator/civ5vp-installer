@@ -1,6 +1,6 @@
 //! The Upstream Cache driving a real Deployment through the Core seam.
 //!
-//! The source provider here is the real one — it fetches and checks out a Version — while the
+//! The source provider here is the real one - it fetches and checks out a Version - while the
 //! toolchain runner is still faked. This is the half of "a real Release installs end-to-end"
 //! that can run per-commit; the other half, against the real upstream repository, is the
 //! `#[ignore]`d test in `real_upstream.rs`.

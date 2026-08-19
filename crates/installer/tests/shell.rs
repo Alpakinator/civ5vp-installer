@@ -2,9 +2,9 @@
 //!
 //! Two things are checked here, and they are the two halves of "the UI works":
 //!
-//! * behaviour — the AccessKit tree is queried by label and clicked, exactly as a screen
+//! * behaviour - the AccessKit tree is queried by label and clicked, exactly as a screen
 //!   reader would, and the install that follows is asserted on disk;
-//! * looks — every screen is rendered to a committed PNG baseline, so a later change to the
+//! * looks - every screen is rendered to a committed PNG baseline, so a later change to the
 //!   theme shows up as a visual diff rather than as nothing at all.
 //!
 //! Everything is read back out of the accessibility tree. The shell exposes no accessor for
@@ -20,7 +20,7 @@ use civ5vp_installer::{InstallerApp, Screen, placeholder};
 use egui_kittest::kittest::Queryable as _;
 use egui_kittest::{Harness, SnapshotResults};
 
-/// The size the baselines are rendered at — the window's design minimum.
+/// The size the baselines are rendered at - the window's design minimum.
 const WINDOW: [f32; 2] = [900.0, 990.0];
 
 /// The same miniature Community-Patch-DLL layout the Core-seam tests use. Shared rather
@@ -140,7 +140,7 @@ fn wait_for_label(harness: &mut Harness<'_, InstallerApp>, text: &str) {
     );
 }
 
-/// Every label currently in the accessibility tree — the timeout panics print this, so a
+/// Every label currently in the accessibility tree - the timeout panics print this, so a
 /// flaky CI failure carries its own screenshot-in-words.
 fn visible_labels(harness: &mut Harness<'_, InstallerApp>) -> Vec<String> {
     use egui_kittest::kittest::NodeT as _;
@@ -154,7 +154,7 @@ fn visible_labels(harness: &mut Harness<'_, InstallerApp>) -> Vec<String> {
 ///
 /// Waiting for a progress line is not the same thing, and the difference is a real race: the
 /// Core reports each Claimed Folder as it lands, so a line naming one arrives while the folders
-/// after it — and the Claimed Files after those — are still being written. Anything asserting
+/// after it - and the Claimed Files after those - are still being written. Anything asserting
 /// on disk has to wait for the end, not for a landmark on the way.
 ///
 /// The status line reads "Ready." before an install and "Installing…" during one, and neither
@@ -180,7 +180,7 @@ fn wait_for_the_install_to_finish(harness: &mut Harness<'_, InstallerApp>) {
 }
 
 /// What a text field currently holds, read out of the accessibility tree the way a screen
-/// reader would — the shell exposes no accessor of its own.
+/// reader would - the shell exposes no accessor of its own.
 #[track_caller]
 fn field_value(harness: &mut Harness<'_, InstallerApp>, label: &str) -> String {
     harness.get_by_label(label).value().unwrap_or_default()
@@ -194,11 +194,11 @@ fn is_ticked(harness: &mut Harness<'_, InstallerApp>, label: &str) -> bool {
 }
 
 #[track_caller]
-/// Switch the Installation Source to Dev mode and name the checkout — the picker's radio
+/// Switch the Installation Source to Dev mode and name the checkout - the picker's radio
 /// must be clicked first, because the folder field only exists in Dev mode.
 fn enter_dev_mode(harness: &mut Harness<'_, InstallerApp>, checkout: &str) {
     harness
-        .get_by_label("My own Community-Patch-DLL checkout — Dev mode")
+        .get_by_label("My own Community-Patch-DLL checkout - Dev mode")
         .click();
     harness.step();
     set_text(harness, "Community-Patch-DLL folder", checkout);
@@ -280,7 +280,7 @@ fn clicking_install_deploys_the_community_patch() {
         "Community Patch only should not have deployed Vox Populi",
     );
 
-    // Progress from the Core reached the shell, including the last line of Sync — the one
+    // Progress from the Core reached the shell, including the last line of Sync - the one
     // that arrives in the same breath as the result.
     assert!(
         harness
@@ -302,7 +302,7 @@ fn clicking_install_deploys_the_community_patch() {
 ///
 /// The matrix is the Core's, and `matrix.rs` asserts it exhaustively. What this proves is the
 /// wiring: that the three radio buttons are the three legal Flavors and that choosing one is
-/// what the install then does — including the EUI Lua strip, which is the change a player is
+/// what the install then does - including the EUI Lua strip, which is the change a player is
 /// most likely to notice if it silently did not happen.
 #[test]
 fn picking_vox_populi_with_eui_installs_the_whole_thing() {
@@ -340,7 +340,7 @@ fn picking_vox_populi_with_eui_installs_the_whole_thing() {
     );
 }
 
-/// The Modpack mode radio drives a Modpack Deployment — the pack lands in the
+/// The Modpack mode radio drives a Modpack Deployment - the pack lands in the
 /// game's DLC, MODS is left alone, and the choice survives a relaunch.
 #[test]
 fn picking_the_modpack_mode_builds_a_modpack_and_is_remembered() {
@@ -386,12 +386,12 @@ fn picking_the_modpack_mode_builds_a_modpack_and_is_remembered() {
     enter_dev_mode(&mut harness, &miniature_repo().display().to_string());
     harness.get_by_label("Community Patch + Vox Populi").click();
     harness
-        .get_by_label("Install as a modpack — loads automatically, works in multiplayer")
+        .get_by_label("Install as a modpack - loads automatically, works in multiplayer")
         .click();
     harness.step();
     harness.get_by_label("My Modmod").click();
-    // Modpack mode draws the longest page there is — its explanation, plus a row for every
-    // mod the player could bake in — so at the design-minimum window size Install sits below
+    // Modpack mode draws the longest page there is - its explanation, plus a row for every
+    // mod the player could bake in - so at the design-minimum window size Install sits below
     // the fold. The page scrolls by design, so this presses the button the way a screen
     // reader does, through the accessibility tree, rather than by aiming at a pixel.
     harness.get_by_label("Install").click_accesskit();
@@ -428,14 +428,14 @@ fn picking_the_modpack_mode_builds_a_modpack_and_is_remembered() {
     );
     assert!(game.mods_folder().join("My Modmod/tweak.lua").is_file());
 
-    // The mode and the pick are remembered like every other part of the configuration —
+    // The mode and the pick are remembered like every other part of the configuration -
     // but the pick needs the mod to still be there, so this relaunch
     // detects the same folders.
     let mut next = harness_over(game.launch(&game.locations()));
     next.step();
     assert!(is_ticked(
         &mut next,
-        "Install as a modpack — loads automatically, works in multiplayer"
+        "Install as a modpack - loads automatically, works in multiplayer"
     ));
     assert!(is_ticked(&mut next, "My Modmod"));
 }
@@ -510,7 +510,7 @@ fn what_one_launch_settles_the_next_launch_starts_from() {
 ///
 /// This is the shell half of the same rule the Core tests cover: on a first run nobody has
 /// pointed the installer at any sources yet, and the Flavor they did choose has to survive
-/// that. It used to be dropped — the configuration was remembered whole or not at all, and an
+/// that. It used to be dropped - the configuration was remembered whole or not at all, and an
 /// unnamed Installation Source made the whole of it unreadable.
 #[test]
 fn a_flavor_chosen_before_anything_else_is_remembered() {
@@ -518,10 +518,10 @@ fn a_flavor_chosen_before_anything_else_is_remembered() {
     let mut harness = harness_over(game.launch(&game.locations()));
     harness.step();
 
-    // No source folder typed — only the Flavor and the toggle are touched.
+    // No source folder typed - only the Flavor and the toggle are touched.
     harness.get_by_label("Community Patch only").click();
     harness
-        .get_by_label("43 Civs — room for 43 civilizations on a map")
+        .get_by_label("43 Civs - room for 43 civilizations on a map")
         .click();
     harness.step();
 
@@ -532,7 +532,7 @@ fn a_flavor_chosen_before_anything_else_is_remembered() {
         "the Flavor should have been remembered",
     );
     assert!(
-        is_ticked(&mut next, "43 Civs — room for 43 civilizations on a map"),
+        is_ticked(&mut next, "43 Civs - room for 43 civilizations on a map"),
         "and so should the toggle",
     );
 }
@@ -540,7 +540,7 @@ fn a_flavor_chosen_before_anything_else_is_remembered() {
 /// The engine choice reaches the Core, and the default leaves the game's engine alone.
 ///
 /// The configuration is read back out of the App Data Store rather than out of the app,
-/// because that is the same `InstallConfiguration` the shell hands to a Deployment — the
+/// because that is the same `InstallConfiguration` the shell hands to a Deployment - the
 /// remembered copy is built by the very call an Install makes.
 #[test]
 fn the_luajit_checkbox_reaches_the_configuration() {
@@ -634,7 +634,7 @@ fn a_wrong_folder_is_rejected_naming_the_marker_that_is_missing() {
     let mut harness = harness_over(game.launch(&game.nowhere()));
     harness.step();
 
-    // The Documents folder, typed into the game folder field — the mix-up the two similar
+    // The Documents folder, typed into the game folder field - the mix-up the two similar
     // names invite.
     set_text(
         &mut harness,
@@ -769,15 +769,15 @@ fn the_debug_choice_appears_only_in_dev_mode() {
 fn the_version_picker_defaults_to_the_newest_release_and_the_pick_is_remembered() {
     let game = TempGame::new();
     let mut harness = harness_over(game.launch(&game.locations()));
-    // The list arrives from a lookup thread — a fixture catalog here, never a socket. The
+    // The list arrives from a lookup thread - a fixture catalog here, never a socket. The
     // combo exposes its selection as its accessibility *value*, the way a screen reader
     // reads a closed dropdown.
-    wait_for_combo_value(&mut harness, "Latest release — Release-5.2");
+    wait_for_combo_value(&mut harness, "Latest release - Release-5.2");
 
     // Pick an older Release through the combo, as a player would.
     harness.get_by_label("Version").click();
     harness.step();
-    // The open list names the newest release once — inside "Latest release — …" — and
+    // The open list names the newest release once - inside "Latest release - …" - and
     // never again as a bare entry; older releases keep their own rows.
     assert_eq!(
         harness.query_all_by_label_contains("Release-5.2").count(),
@@ -794,16 +794,16 @@ fn the_version_picker_defaults_to_the_newest_release_and_the_pick_is_remembered(
 }
 
 /// The picker offers official Releases only, until the unofficial toggle brings
-/// in the changes since the newest one — truncated to fit, newest first — and a picked
+/// in the changes since the newest one - truncated to fit, newest first - and a picked
 /// build is remembered like any other Version.
 #[test]
 fn the_unofficial_toggle_lists_the_changes_since_the_newest_release() {
     use egui_kittest::kittest::NodeT as _;
     let game = TempGame::new();
     let mut harness = harness_over(game.launch(&game.locations()));
-    wait_for_combo_value(&mut harness, "Latest release — Release-5.2");
+    wait_for_combo_value(&mut harness, "Latest release - Release-5.2");
 
-    // Off by default — and "latest development version" is no longer an offer either.
+    // Off by default - and "latest development version" is no longer an offer either.
     harness.get_by_label("Version").click();
     harness.step();
     assert!(
@@ -824,7 +824,7 @@ fn the_unofficial_toggle_lists_the_changes_since_the_newest_release() {
     harness.step();
 
     harness
-        .get_by_label("Unofficial versions — every change since the newest release")
+        .get_by_label("Unofficial versions - every change since the newest release")
         .click();
     harness.step();
     harness.get_by_label("Version").click();
@@ -860,12 +860,12 @@ fn the_unofficial_toggle_lists_the_changes_since_the_newest_release() {
     harness.step();
     wait_for_combo_value(&mut harness, "5.2.01");
 
-    // Remembered across a relaunch — and the toggle comes back on with it.
+    // Remembered across a relaunch - and the toggle comes back on with it.
     let mut next = harness_over(game.launch(&game.nowhere()));
     wait_for_combo_value(&mut next, "5.2.01");
     assert!(is_ticked(
         &mut next,
-        "Unofficial versions — every change since the newest release"
+        "Unofficial versions - every change since the newest release"
     ));
 }
 
@@ -889,13 +889,13 @@ fn wait_for_combo_value(harness: &mut Harness<'_, InstallerApp>, text: &str) {
     );
 }
 
-/// The storage panel's clear button empties the App Data Store —
+/// The storage panel's clear button empties the App Data Store -
 /// and only the store; the game folders are not part of it.
 #[test]
 fn clear_stored_data_empties_the_app_data_store() {
     let game = TempGame::new();
     // The Storage panel sits at the very bottom; a player scrolls to it, but a test can
-    // only click what is on screen — so this harness is simply tall enough.
+    // only click what is on screen - so this harness is simply tall enough.
     let mut harness = Harness::builder()
         .with_size(egui::Vec2::new(WINDOW[0], 1200.0))
         .build_ui_state(
@@ -925,7 +925,7 @@ fn clear_stored_data_empties_the_app_data_store() {
     );
 }
 
-/// The Uninstall button returns an unmodded game — Claimed Folders gone,
+/// The Uninstall button returns an unmodded game - Claimed Folders gone,
 /// everything else (the game itself, ModUserData) untouched.
 #[test]
 fn clicking_uninstall_restores_an_unmodded_game() {
@@ -954,7 +954,7 @@ fn clicking_uninstall_restores_an_unmodded_game() {
     );
 }
 
-/// Every screen has a baseline. Reviewed before committing — an updated baseline nobody
+/// Every screen has a baseline. Reviewed before committing - an updated baseline nobody
 /// looked at proves nothing.
 #[test]
 fn every_screen_matches_its_baseline() {
@@ -967,7 +967,7 @@ fn every_screen_matches_its_baseline() {
     results.unwrap();
 }
 
-/// A checkout named once is pre-filled forever — even after the player switches back to the
+/// A checkout named once is pre-filled forever - even after the player switches back to the
 /// GitHub source and relaunches, Dev mode opens with the remembered path in the field.
 #[test]
 fn the_dev_checkout_survives_a_switch_back_to_github_and_a_relaunch() {
@@ -976,9 +976,9 @@ fn the_dev_checkout_survives_a_switch_back_to_github_and_a_relaunch() {
     harness.step();
     enter_dev_mode(&mut harness, &miniature_repo().display().to_string());
 
-    // Back to GitHub — the configuration now stores the GitHub source, not the checkout.
+    // Back to GitHub - the configuration now stores the GitHub source, not the checkout.
     harness
-        .get_by_label("Download from GitHub — pick a version")
+        .get_by_label("Download from GitHub - pick a version")
         .click();
     harness.step();
     harness.step();
@@ -986,7 +986,7 @@ fn the_dev_checkout_survives_a_switch_back_to_github_and_a_relaunch() {
     // A fresh launch: Dev mode must open with the path still there.
     let mut next = harness_over(game.launch(&game.nowhere()));
     next.step();
-    next.get_by_label("My own Community-Patch-DLL checkout — Dev mode")
+    next.get_by_label("My own Community-Patch-DLL checkout - Dev mode")
         .click();
     next.step();
     assert_eq!(

@@ -12,11 +12,11 @@ use rusqlite::{Connection, OpenFlags};
 
 /// The tell the two states are told apart by: `CustomModOptions` is created by the Community
 /// Patch's own SQL, so its presence means a modded session wrote the cache. A pristine cache
-/// lacks it but still holds the full vanilla merge — `Civilizations`, populated.
+/// lacks it but still holds the full vanilla merge - `Civilizations`, populated.
 pub(crate) fn cache_state(gameplay_db: &Path) -> Result<CacheState, BoundaryError> {
     let unreadable = |detail: String| {
         BoundaryError::new(
-            "The game's database cache is missing or unreadable — start Civilization V once \
+            "The game's database cache is missing or unreadable - start Civilization V once \
              to the main menu, quit it, and try again.",
             detail,
         )
@@ -25,7 +25,7 @@ pub(crate) fn cache_state(gameplay_db: &Path) -> Result<CacheState, BoundaryErro
     let conn = Connection::open_with_flags(gameplay_db, OpenFlags::SQLITE_OPEN_READ_ONLY)
         .map_err(|error| unreadable(format!("open {}: {error}", gameplay_db.display())))?;
 
-    // The first actual read of the file — a text file posing as a database fails here.
+    // The first actual read of the file - a text file posing as a database fails here.
     let table_exists = |name: &str| -> Result<bool, rusqlite::Error> {
         let count: i64 = conn.query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
@@ -45,7 +45,7 @@ pub(crate) fn cache_state(gameplay_db: &Path) -> Result<CacheState, BoundaryErro
         .map_err(|error| unreadable(format!("read {}: {error}", gameplay_db.display())))?;
     if !has_civilizations {
         return Err(unreadable(format!(
-            "{} has no Civilizations table — not a merged game database",
+            "{} has no Civilizations table - not a merged game database",
             gameplay_db.display()
         )));
     }
@@ -55,7 +55,7 @@ pub(crate) fn cache_state(gameplay_db: &Path) -> Result<CacheState, BoundaryErro
         .map_err(|error| unreadable(format!("read {}: {error}", gameplay_db.display())))?;
     if civilizations == 0 {
         return Err(unreadable(format!(
-            "{} has an empty Civilizations table — not a merged game database",
+            "{} has an empty Civilizations table - not a merged game database",
             gameplay_db.display()
         )));
     }

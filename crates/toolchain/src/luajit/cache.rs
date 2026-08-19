@@ -2,12 +2,12 @@
 //!
 //! Nothing about the Lua engine depends on Vox Populi: it is the pinned LuaJIT source, the
 //! patches in [`crate::luajit::patches`], and the bootstrapped compiler. A player who installs
-//! a new Version gets a byte-identical engine out of a minute of compiling — so the engine is
+//! a new Version gets a byte-identical engine out of a minute of compiling - so the engine is
 //! kept under a name made of exactly those inputs, and the minute is spent once.
 //!
 //! The name is a hash of the source the build reads, so it cannot go stale by accident: edit a
 //! patch, bump the pinned commit, or change the compiler, and the name changes with it. The
-//! opposite mistake — a cache that is *not* used when it could be — costs a rebuild and
+//! opposite mistake - a cache that is *not* used when it could be - costs a rebuild and
 //! nothing else, which is the right way round for something the game loads.
 
 use std::path::{Path, PathBuf};
@@ -17,14 +17,14 @@ use sha2::{Digest, Sha256};
 use crate::error::{ToolchainError, io_error};
 use crate::luajit::build::{ENGINE_FILE_NAME, LUAJIT_RELVER};
 
-/// Bumped by hand when something outside the hashed inputs changes what a build produces —
+/// Bumped by hand when something outside the hashed inputs changes what a build produces -
 /// the invocation plan, say, or a compiler flag.
 const CACHE_VERSION: u32 = 1;
 
 /// Files under `src/` that the build writes rather than reads.
 ///
 /// They are derived from the hashed inputs, so hashing them as well would only mean that the
-/// first build's own output changed the name the second build looks under — a cache that
+/// first build's own output changed the name the second build looks under - a cache that
 /// never hits.
 const GENERATED: [&str; 8] = [
     "luajit.h",
@@ -42,7 +42,7 @@ const SOURCE_EXTENSIONS: [&str; 4] = ["c", "h", "dasc", "lua"];
 
 /// What this build would produce, named by everything it is made of.
 ///
-/// `source_root` is the LuaJIT checkout — both `src/` and `dynasm/` are inputs, and the
+/// `source_root` is the LuaJIT checkout - both `src/` and `dynasm/` are inputs, and the
 /// patches are already in the files by the time this runs, so a change to one of them shows
 /// up here without needing to be listed.
 pub fn fingerprint(source_root: &Path, toolchain_identity: &str) -> Result<String, ToolchainError> {
@@ -129,7 +129,7 @@ pub fn keep(engines_dir: &Path, fingerprint: &str, built: &Path) -> Option<PathB
     std::fs::copy(built, &partial).ok()?;
     std::fs::rename(&partial, &engine).ok()?;
 
-    // Everything else here was built from inputs that no longer exist on this machine — a
+    // Everything else here was built from inputs that no longer exist on this machine - a
     // superseded compiler, or a LuaJIT commit that has been bumped.
     if let Ok(entries) = std::fs::read_dir(engines_dir) {
         for entry in entries.flatten() {
@@ -177,7 +177,7 @@ mod tests {
         assert_eq!(first.len(), 64);
     }
 
-    /// Every input that can change the engine has to change the name — the patches most of
+    /// Every input that can change the engine has to change the name - the patches most of
     /// all, since they are edits to a file that is otherwise pinned.
     #[test]
     fn changing_any_input_names_a_different_engine() {

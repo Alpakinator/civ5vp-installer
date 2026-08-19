@@ -9,7 +9,7 @@
 //!
 //! 1. `minilua` is built, because DynASM is a Lua program and nothing else can run it.
 //! 2. DynASM turns `vm_x86.dasc` into `host/buildvm_arch.h`.
-//! 3. `buildvm` is built — it *includes* the header step 2 wrote.
+//! 3. `buildvm` is built - it *includes* the header step 2 wrote.
 //! 4. `buildvm` emits the virtual machine as a PE object plus six generated headers.
 //! 5. Only now can the library sources compile, because they include those headers.
 
@@ -51,7 +51,7 @@ const ALL_LIB: [&str; 12] = [
 
 /// DynASM's settings for a 32-bit Windows target.
 ///
-/// No `P64` — that is the 64-bit flag, and the game is 32-bit.
+/// No `P64` - that is the 64-bit flag, and the game is 32-bit.
 const DASM_FLAGS: [&str; 11] = [
     "-LN",
     "-D",
@@ -121,14 +121,14 @@ impl LuaJitBuild {
 
     /// The whole build, in order, with `src` as every invocation's working directory.
     ///
-    /// `library_sources` is every `lj_*.c` and `lib_*.c` in `src` — passed in rather than read
+    /// `library_sources` is every `lj_*.c` and `lib_*.c` in `src` - passed in rather than read
     /// here so the ordering and flags can be asserted without a LuaJIT checkout on disk.
     pub fn commands(&self, src: &Path, library_sources: &[String]) -> Vec<ToolCommand> {
         let mut plan = Vec::new();
         let common = self.compile_flags();
         let libs = self.lib_path_flags();
 
-        // 1. minilua — a cut-down Lua interpreter, needed only to run DynASM.
+        // 1. minilua - a cut-down Lua interpreter, needed only to run DynASM.
         let mut compile_minilua = common.clone();
         compile_minilua.push("host/minilua.c".to_owned());
         compile_minilua.push("/Fominilua.obj".to_owned());
@@ -382,7 +382,7 @@ mod tests {
         assert_eq!(ENGINE_FILE_NAME, "lua51_Win32.dll");
     }
 
-    /// Every compile targets 32-bit x86, not just the link — a mismatch here shows up as an
+    /// Every compile targets 32-bit x86, not just the link - a mismatch here shows up as an
     /// unreadable pile of link errors.
     #[test]
     fn every_compile_targets_32_bit_x86() {
@@ -419,7 +419,7 @@ mod tests {
         );
     }
 
-    /// Whatever runs the host tools, the working directory is `src` — LuaJIT's build reads and
+    /// Whatever runs the host tools, the working directory is `src` - LuaJIT's build reads and
     /// writes relative paths throughout, so anywhere else silently produces nothing.
     #[test]
     fn every_invocation_runs_in_the_source_directory() {

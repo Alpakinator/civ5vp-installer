@@ -1,4 +1,4 @@
-//! Reading a mod's `.modinfo` — the manifest the game itself goes by.
+//! Reading a mod's `.modinfo` - the manifest the game itself goes by.
 //!
 //! Shared by the Modpack assembly, which needs the database updates and UI
 //! entry points, and by the Dev-mode manifest validation, which compares a Local Repo's
@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::InstallError;
 
-/// The mod's `.modinfo`, at the mod root — the only place the game looks for one.
+/// The mod's `.modinfo`, at the mod root - the only place the game looks for one.
 pub(crate) fn find(mod_root: &Path) -> Result<Option<PathBuf>, InstallError> {
     let entries = std::fs::read_dir(mod_root).map_err(|cause| InstallError::Deployment {
         action: "read",
@@ -69,7 +69,7 @@ pub(crate) fn update_database_entries(modinfo: &str) -> Vec<String> {
     element_payloads(modinfo, "UpdateDatabase")
 }
 
-/// Every `<File …>…</File>` payload — the manifest of what the game will load. The game
+/// Every `<File …>…</File>` payload - the manifest of what the game will load. The game
 /// ignores anything in the mod folder that is not listed here, which is exactly what the
 /// Dev-mode validation warns about.
 pub(crate) fn listed_files(modinfo: &str) -> Vec<String> {
@@ -152,11 +152,11 @@ pub(crate) fn unescape_xml(text: &str) -> String {
 /// Two mismatches, treated differently because they hurt differently:
 /// - a **listed file that is gone** breaks the mod in the game, so it fails the Deployment
 ///   before anything is touched;
-/// - an **unlisted extra file** is deployed but silently ignored by the game — the classic
-///   "why does my change do nothing" of mod development — so it is said out loud in the
+/// - an **unlisted extra file** is deployed but silently ignored by the game - the classic
+///   "why does my change do nothing" of mod development - so it is said out loud in the
 ///   activity log and the Deployment continues.
 ///
-/// A modinfo with no `<Files>` list (or no modinfo at all — the DLC folders) checks nothing.
+/// A modinfo with no `<Files>` list (or no modinfo at all - the DLC folders) checks nothing.
 pub(crate) fn validate_dev_manifest(
     folder_name: &str,
     source_folder: &Path,
@@ -252,12 +252,12 @@ fn collect_unlisted(
 }
 
 /// One spelling for comparing manifest entries with what is on disk: forward slashes,
-/// ASCII-lowercased — modinfo paths are written for Windows.
+/// ASCII-lowercased - modinfo paths are written for Windows.
 fn normalized(path: &str) -> String {
     path.replace('\\', "/").to_ascii_lowercase()
 }
 
-/// `relative` resolved under `root`, matching each segment without case — modinfo paths are
+/// `relative` resolved under `root`, matching each segment without case - modinfo paths are
 /// written for Windows, where case never mattered.
 pub(crate) fn resolve_case_insensitive(root: &Path, relative: &str) -> Option<PathBuf> {
     let mut current = root.to_path_buf();

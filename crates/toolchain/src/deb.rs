@@ -1,8 +1,8 @@
 //! Reading one file out of a Debian package.
 //!
 //! Used for exactly one artifact: the `libtinfo.so.5` the portable LLVM needs in order to
-//! start (ADR-0005). A `.deb` is an `ar` archive holding three members — `debian-binary`, a
-//! control tarball and a data tarball — and everything we want is one path inside the data
+//! start (ADR-0005). A `.deb` is an `ar` archive holding three members - `debian-binary`, a
+//! control tarball and a data tarball - and everything we want is one path inside the data
 //! tarball.
 //!
 //! `ar` is parsed here rather than pulled in as a dependency: the format is a magic string
@@ -10,7 +10,7 @@
 //! adding a crate would be. The same call this project already made for the CLI,
 //! the Steam `libraryfolders.vdf` parser and the settings format.
 //!
-//! The package is small — a third of a megabyte — so it is read whole rather than streamed.
+//! The package is small - a third of a megabyte - so it is read whole rather than streamed.
 
 use std::io::Read;
 use std::path::Path;
@@ -42,7 +42,7 @@ pub fn extract_from_data_tar(package: &Path, wanted: &str) -> Result<Vec<u8>, To
     find_in_tar(&tar, wanted, package)
 }
 
-/// The data tarball, and the name it went by — the name says how it is compressed.
+/// The data tarball, and the name it went by - the name says how it is compressed.
 fn find_data_member<'a>(
     bytes: &'a [u8],
     package: &Path,
@@ -101,8 +101,8 @@ fn find_data_member<'a>(
         })?;
 
         if name.starts_with("data.tar") {
-            // Borrowing the name out of `bytes` is not possible — it was trimmed into an owned
-            // String — so hand back the slice of the header instead, which lives as long.
+            // Borrowing the name out of `bytes` is not possible - it was trimmed into an owned
+            // String - so hand back the slice of the header instead, which lives as long.
             let spelled = header
                 .get(NAME_FIELD)
                 .and_then(|field| std::str::from_utf8(field).ok())
@@ -214,7 +214,7 @@ mod tests {
         assert_eq!(found, contents);
     }
 
-    /// The members before the one we want are skipped, padding included — an off-by-one in the
+    /// The members before the one we want are skipped, padding included - an off-by-one in the
     /// even-offset rule would land the reader in the middle of a header.
     #[test]
     fn members_before_the_data_tarball_are_skipped() {
@@ -250,7 +250,7 @@ mod tests {
         assert!(error.detail().contains("ar magic"), "{}", error.detail());
     }
 
-    /// A truncated download must produce a sentence, not a panic — this module indexes into
+    /// A truncated download must produce a sentence, not a panic - this module indexes into
     /// byte ranges taken from the file itself.
     #[test]
     fn a_truncated_package_is_refused_rather_than_panicking() {

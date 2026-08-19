@@ -1,7 +1,7 @@
 //! The pinned members of the Windows SDK image, as files in the Toolchain Cache.
 //!
 //! The build reads eleven files out of a 1.45 GiB disc image (`docs/pinned-artifacts.md` §1).
-//! Keeping those eleven — about 102 MiB — is enough to unpack the SDK again at any time, so
+//! Keeping those eleven - about 102 MiB - is enough to unpack the SDK again at any time, so
 //! they are what the cache holds and the image is not.
 //!
 //! There are two ways to come by them, and this module owns both:
@@ -10,7 +10,7 @@
 //! - **Harvest** them out of a whole image an earlier version of the installer downloaded.
 //!   That version kept the image because it extracted straight from it; this one does not need
 //!   it, and 1.35 GiB of a player's disk is not ours to sit on. Harvesting reads the members
-//!   out locally — no network at all — and only then is the image removed.
+//!   out locally - no network at all - and only then is the image removed.
 
 use std::fs::{self, File};
 use std::io::{BufWriter, Read, Seek, Write};
@@ -27,7 +27,7 @@ use crate::pinned::{IsoMember, PinnedDownload, PinnedMember, member_cache_name};
 /// The members as files in one directory, each already checked against its own SHA-256 on the
 /// way in.
 ///
-/// Named by [`PinnedMember::cache_name`], which flattens the path inside the image — the two
+/// Named by [`PinnedMember::cache_name`], which flattens the path inside the image - the two
 /// different `cab1.cab`s must not land on top of each other.
 pub struct StagedMembers {
     directory: PathBuf,
@@ -52,7 +52,7 @@ impl StagedMembers {
         fs::read(&file).map_err(|error| io_error("read a downloaded SDK package", &file, &error))
     }
 
-    /// What this folder holds around `path` — the log line for a missing member, where "what
+    /// What this folder holds around `path` - the log line for a missing member, where "what
     /// was actually there?" is the only question worth answering.
     pub fn describe_near(&self, path: &str) -> String {
         let present: Vec<String> = fs::read_dir(&self.directory)
@@ -101,7 +101,7 @@ pub fn fetch_missing(
     progress.report(
         Stage::Build,
         format!(
-            "Downloading the Windows SDK — {} MB.",
+            "Downloading the Windows SDK - {} MB.",
             total / (1024 * 1024)
         ),
     );

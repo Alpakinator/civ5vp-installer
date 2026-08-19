@@ -3,8 +3,8 @@
 //! The shipped binary wires [`crate::wiring`] instead. These exist so the `egui_kittest`
 //! suite can drive a whole install offline:
 //!
-//! * [`DirectorySourceProvider`] handles the Local Repo case for real — a folder is a folder
-//!   — and refuses the Upstream Cache, which would need the network.
+//! * [`DirectorySourceProvider`] handles the Local Repo case for real - a folder is a folder
+//!   - and refuses the Upstream Cache, which would need the network.
 //! * [`PlaceholderToolchainRunner`] writes a marker file instead of compiling, keeping the
 //!   1.1 GB Toolchain Bootstrap and the multi-minute compile out of the fast suite.
 //! * [`PlaceholderModpackAssembler`] writes marker dumps instead of merging databases,
@@ -20,7 +20,7 @@ use civ5vp_core::{
 
 /// What [`PlaceholderToolchainRunner`] writes where the Built DLL belongs.
 pub const PLACEHOLDER_DLL_CONTENTS: &str =
-    "Civ 5 VP Installer placeholder. This is NOT a compiled DLL — ticket 06 replaces it.\n";
+    "Civ 5 VP Installer placeholder. This is NOT a compiled DLL - ticket 06 replaces it.\n";
 
 /// What [`PlaceholderModpackAssembler`] writes where the database dumps belong.
 pub const PLACEHOLDER_DUMP_CONTENTS: &str =
@@ -38,7 +38,7 @@ pub fn core(work_dir: PathBuf) -> Core {
     )
 }
 
-/// Serves a Local Repo exactly as it sits on disk — no git operation runs against it.
+/// Serves a Local Repo exactly as it sits on disk - no git operation runs against it.
 pub struct DirectorySourceProvider;
 
 impl SourceProvider for DirectorySourceProvider {
@@ -68,7 +68,7 @@ impl SourceProvider for DirectorySourceProvider {
                     Stage::Fetch,
                     format!("Using the checkout at {}.", path.display()),
                 );
-                // Content-derived, like the real Local Repo provider — so the shell tests
+                // Content-derived, like the real Local Repo provider - so the shell tests
                 // exercise the same skip-and-rebuild behaviour the shipped installer has.
                 let source_identity =
                     civ5vp_core::dll_source_identity(path).map_err(|unreadable| {
@@ -131,7 +131,7 @@ fn placeholder_luajit_source() -> Result<PathBuf, BoundaryError> {
 }
 
 /// The unofficial list every offline surface shares: two changes after the
-/// newest Release, the second with a summary far too long for any dropdown — the shape the
+/// newest Release, the second with a summary far too long for any dropdown - the shape the
 /// shell has to cope with.
 pub fn fixture_unofficial_versions(newest_release: &str) -> Vec<civ5vp_core::UnofficialVersion> {
     let base = newest_release.trim_start_matches("Release-").to_owned();
@@ -151,7 +151,7 @@ pub fn fixture_unofficial_versions(newest_release: &str) -> Vec<civ5vp_core::Uno
     ]
 }
 
-/// The catalog every offline surface shares — the fake provider, the screen previews — so
+/// The catalog every offline surface shares - the fake provider, the screen previews - so
 /// the shell tests and baselines can draw the picker without a socket.
 pub fn fixture_version_catalog() -> civ5vp_core::VersionCatalog {
     civ5vp_core::VersionCatalog::from_remote_refs([
@@ -164,7 +164,7 @@ pub fn fixture_version_catalog() -> civ5vp_core::VersionCatalog {
 /// Writes a marker where the Built DLL belongs, so the rest of the pipeline can be exercised
 /// without a 580 MB toolchain download and a multi-minute compile.
 pub struct PlaceholderToolchainRunner {
-    /// Stands in for the Toolchain Cache: once a build has run, the first-run note stops —
+    /// Stands in for the Toolchain Cache: once a build has run, the first-run note stops -
     /// the same life cycle the real runner has, so the shell tests can watch it disappear.
     build_dir: PathBuf,
 }
@@ -177,7 +177,7 @@ impl ToolchainRunner for PlaceholderToolchainRunner {
     ) -> Result<(), BoundaryError> {
         progress.report(
             Stage::Build,
-            "Writing a placeholder DLL — no compiler runs in this build.",
+            "Writing a placeholder DLL - no compiler runs in this build.",
         );
         fs::write(&request.output_path, PLACEHOLDER_DLL_CONTENTS).map_err(|err| {
             BoundaryError::new(
@@ -220,15 +220,15 @@ impl ToolchainRunner for PlaceholderToolchainRunner {
             return None;
         }
         Some(
-            "First install downloads about 1.1 GB of build tools — one time — and \
-             typically takes 10–25 minutes. Later installs take seconds to minutes."
+            "First install downloads about 1.1 GB of build tools - one time - and \
+             typically takes 10-25 minutes. Later installs take seconds to minutes."
                 .to_owned(),
         )
     }
 }
 
 /// Believes any readable cache file is pristine unless it says "modded", and writes marker
-/// dumps — the same shape the Core-seam fixture uses, so a shell test can stage a Modpack
+/// dumps - the same shape the Core-seam fixture uses, so a shell test can stage a Modpack
 /// without a database engine in the loop.
 pub struct PlaceholderModpackAssembler;
 

@@ -4,12 +4,12 @@
 //! mods themselves, two XML dumps of the *merged* databases: every mod's `.sql` and `.xml`
 //! update applied, in activation order, on top of the game's own merged vanilla bases
 //! (`cache/Civ5DebugDatabase.db` and `cache/Localization-Merged.db`). This crate does exactly
-//! that part — copy the bases into scratch, apply the updates, dump both databases — and
+//! that part - copy the bases into scratch, apply the updates, dump both databases - and
 //! nothing else; the Core stages every plain file of the Modpack itself.
 //!
 //! The dump format is not ours to design. The in-game "Modpack Maker for VP" Lua
 //! (`ModpackMaker.lua`, azum4roll) already produces dumps the game demonstrably loads, so
-//! [`dump`] replicates its output byte for byte — including its quirks, like the blank lines
+//! [`dump`] replicates its output byte for byte - including its quirks, like the blank lines
 //! its line-buffered writer leaves behind. See that module for the details.
 //!
 //! It is a separate crate from the Core for one reason: the Core has no dependencies and must
@@ -41,7 +41,7 @@ use rusqlite::Connection;
 
 /// The real modpack assembler: rusqlite against copies of the game's own databases.
 ///
-/// Stateless — every call carries its paths in. Construct one and hand it to the Core.
+/// Stateless - every call carries its paths in. Construct one and hand it to the Core.
 pub struct SqliteModpackAssembler;
 
 impl SqliteModpackAssembler {
@@ -85,7 +85,7 @@ impl ModpackAssembler for SqliteModpackAssembler {
         // database attached, and Vox Populi leans on it: whole .sql files write
         // `Language_*` tables directly (CoreDiplomacyResponseTextChanges.sql and friends).
         // An unqualified table name that is not in `main` resolves to the attached
-        // database, so those writes land in the localization copy — while an unqualified
+        // database, so those writes land in the localization copy - while an unqualified
         // CREATE TABLE still lands in `main`, exactly as it does in the game.
         attach_text(&gameplay, &text_copy)?;
 
@@ -100,7 +100,7 @@ impl ModpackAssembler for SqliteModpackAssembler {
 }
 
 /// Attach the localization scratch copy to the gameplay connection, under the name the
-/// merge uses nowhere else — mods address the tables unqualified, never the schema.
+/// merge uses nowhere else - mods address the tables unqualified, never the schema.
 fn attach_text(gameplay: &Connection, text_copy: &Path) -> Result<(), BoundaryError> {
     gameplay
         .execute(
@@ -110,7 +110,7 @@ fn attach_text(gameplay: &Connection, text_copy: &Path) -> Result<(), BoundaryEr
         .map(|_| ())
         .map_err(|error| {
             BoundaryError::new(
-                "Opening the Modpack's working databases failed — check free disk space \
+                "Opening the Modpack's working databases failed - check free disk space \
                  and try again.",
                 format!("attach {}: {error}", text_copy.display()),
             )
@@ -119,7 +119,7 @@ fn attach_text(gameplay: &Connection, text_copy: &Path) -> Result<(), BoundaryEr
 
 fn scratch_error(action: String, error: &std::io::Error) -> BoundaryError {
     BoundaryError::new(
-        "Preparing the Modpack's working databases failed — check free disk space and try again.",
+        "Preparing the Modpack's working databases failed - check free disk space and try again.",
         format!("{action}: {error}"),
     )
 }
@@ -127,7 +127,7 @@ fn scratch_error(action: String, error: &std::io::Error) -> BoundaryError {
 /// Place a fresh copy of a base database at `dest`, burying any previous failed run.
 ///
 /// The main file is simply overwritten, but a stale rollback journal or WAL next to it would
-/// make SQLite "recover" the fresh copy into garbage — those are deleted first.
+/// make SQLite "recover" the fresh copy into garbage - those are deleted first.
 fn prepare_scratch_copy(base: &Path, dest: &Path) -> Result<(), BoundaryError> {
     for suffix in ["-journal", "-wal", "-shm"] {
         let mut sidecar = dest.as_os_str().to_owned();
@@ -156,7 +156,7 @@ fn prepare_scratch_copy(base: &Path, dest: &Path) -> Result<(), BoundaryError> {
 fn open_scratch(path: &Path) -> Result<Connection, BoundaryError> {
     let failure = |detail: String| {
         BoundaryError::new(
-            "Opening the Modpack's working databases failed — check free disk space and try again.",
+            "Opening the Modpack's working databases failed - check free disk space and try again.",
             detail,
         )
     };
@@ -166,7 +166,7 @@ fn open_scratch(path: &Path) -> Result<Connection, BoundaryError> {
         .and_then(|()| conn.pragma_update(None, "synchronous", "OFF"))
         // Match the game's 2010-era SQLite, which the Community Patch's SQL is written
         // against. Its tables carry *dangling* `REFERENCES Language_en_US` clauses by
-        // design — text lives in the other database — and the game neither enforces
+        // design - text lives in the other database - and the game neither enforces
         // foreign keys nor re-validates the schema on ALTER TABLE RENAME. The bundled
         // modern SQLite does both by default (rusqlite builds with foreign keys ON),
         // and either one aborts VP's FixTypeConstraints.sql rebuild pattern

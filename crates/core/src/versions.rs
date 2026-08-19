@@ -2,7 +2,7 @@
 //!
 //! `CONTEXT.md`: a Version is a **Release** (a `Release-*` tag), the **Latest Development
 //! Version** (upstream `master` HEAD), or an **Arbitrary Ref** (typed in, never listed).
-//! The catalog is a boundary type — the source provider fills it (from a real `ls-refs` in
+//! The catalog is a boundary type - the source provider fills it (from a real `ls-refs` in
 //! production, from fixtures in tests), the shell draws it, and the Core passes it through
 //! without keeping it: nothing here is cached or guessed.
 
@@ -24,7 +24,7 @@ impl VersionCatalog {
     /// Build a catalog from the raw ref names a remote advertised.
     ///
     /// `refs` is `(full ref name, object id)`. Anything that is not a `Release-*` tag or the
-    /// development branch is ignored — an Arbitrary Ref is typed in, never listed.
+    /// development branch is ignored - an Arbitrary Ref is typed in, never listed.
     pub fn from_remote_refs<'a>(refs: impl IntoIterator<Item = (&'a str, String)>) -> Self {
         let mut releases = Vec::new();
         let mut latest_development_version = String::new();
@@ -64,7 +64,7 @@ impl VersionCatalog {
 
     /// The commit `master` currently points at.
     ///
-    /// Empty if the remote has no `master`, which upstream always does — a fixture repository
+    /// Empty if the remote has no `master`, which upstream always does - a fixture repository
     /// used by a test may not.
     pub fn latest_development_version(&self) -> &str {
         &self.latest_development_version
@@ -89,9 +89,9 @@ fn release_order(tag: &str) -> (Vec<u64>, String) {
 /// One commit after the newest Release, as the unofficial-versions list offers it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnofficialVersion {
-    /// `5.4.3.07` — the newest Release's numbers plus this commit's position after it.
+    /// `5.4.3.07` - the newest Release's numbers plus this commit's position after it.
     pub label: String,
-    /// The commit message's first line, however long — the shell decides how to fit it.
+    /// The commit message's first line, however long - the shell decides how to fit it.
     pub summary: String,
     /// The full commit hash, which is what actually gets installed.
     pub commit: String,

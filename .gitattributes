@@ -3,7 +3,7 @@
 #
 #   * The fixture trees stand in for real mod files, and the installer copies those byte for
 #     byte. A converted fixture makes the Windows tests exercise different bytes from the
-#     Linux ones — silently, until an assertion compares file contents and reads back a
+#     Linux ones - silently, until an assertion compares file contents and reads back a
 #     `\r\n` that was never committed.
 #   * The fonts, icons and snapshot baselines are binary. Any conversion corrupts them.
 #
@@ -11,7 +11,7 @@
 * text=auto eol=lf
 
 # Fixtures are stand-ins for files copied verbatim, so nothing may be rewritten in either
-# direction — not on checkout, and not on commit either.
+# direction - not on checkout, and not on commit either.
 crates/core/tests/fixtures/** -text
 
 # Binary by extension, listed rather than left to Git's guess: a misdetected font or a

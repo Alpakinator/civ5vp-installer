@@ -9,7 +9,7 @@
 //! compiling. So the fast suite never clones, downloads, or compiles anything.
 
 // Each integration test file compiles its own copy of this module, and none of them uses all
-// of it — the failure providers belong to `deployment.rs`, the matrix constants to `matrix.rs`.
+// of it - the failure providers belong to `deployment.rs`, the matrix constants to `matrix.rs`.
 #![allow(dead_code)]
 
 use std::fs;
@@ -43,7 +43,7 @@ impl SourceProvider for FixtureSourceProvider {
         progress: &ProgressReporter,
     ) -> Result<MaterializedSource, BoundaryError> {
         progress.report(Stage::Fetch, "Using the fixture repository.");
-        // Content-derived, the way the Local Repo provider does it — so a test that edits a
+        // Content-derived, the way the Local Repo provider does it - so a test that edits a
         // fixture source file really changes the identity the Core sees.
         let source_identity = civ5vp_core::dll_source_identity(&self.root).map_err(|path| {
             BoundaryError::new(
@@ -75,7 +75,7 @@ impl SourceProvider for FixtureSourceProvider {
         _progress: &ProgressReporter,
     ) -> Result<Vec<civ5vp_core::UnofficialVersion>, BoundaryError> {
         // Two changes after the newest Release, the second with a summary far too long for
-        // any dropdown — the shape the shell has to cope with.
+        // any dropdown - the shape the shell has to cope with.
         let base = newest_release.trim_start_matches("Release-").to_owned();
         Ok(vec![
             civ5vp_core::UnofficialVersion {
@@ -269,7 +269,7 @@ impl ToolchainRunner for MarkerToolchainRunner {
 /// What [`MarkerToolchainRunner`] writes instead of a real Lua engine.
 pub const LUAJIT_MARKER: &str = "marker artifact standing in for the LuaJIT engine";
 
-/// Builds the DLL happily and fails only on the engine — the shape that proves Sync never
+/// Builds the DLL happily and fails only on the engine - the shape that proves Sync never
 /// starts when the *second* thing that can fail does.
 pub struct FailingLuaJitToolchainRunner;
 
@@ -298,7 +298,7 @@ impl ToolchainRunner for FailingLuaJitToolchainRunner {
     }
 }
 
-/// A [`MarkerToolchainRunner`] that also counts how often it is asked to build — how the
+/// A [`MarkerToolchainRunner`] that also counts how often it is asked to build - how the
 /// fingerprint tests observe, from outside the Core, whether the build was skipped.
 ///
 /// The counter is shared: the Core takes the runner by `Box`, so the test keeps a clone of
@@ -415,7 +415,7 @@ impl GameFixture {
         self.temp.path().join("game")
     }
 
-    /// Scratch space the Core owns — stands in for the App Data Store.
+    /// Scratch space the Core owns - stands in for the App Data Store.
     pub fn work_dir(&self) -> PathBuf {
         self.temp.path().join("app-data")
     }
@@ -426,7 +426,7 @@ impl GameFixture {
             dlc: self.game_root().join("DLC"),
             text: self.game_root().join("Text"),
             // The fixture collapses the two sides of a real install into one root, so the
-            // Game Installation is that same directory — which is what puts the Replaced File
+            // Game Installation is that same directory - which is what puts the Replaced File
             // inside `files()`, where a test can see it.
             game_root: self.game_root(),
         }

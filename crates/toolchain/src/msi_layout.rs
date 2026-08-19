@@ -2,14 +2,14 @@
 //! disk.
 //!
 //! `docs/pinned-artifacts.md` §1: "Each MSI carries the mapping from CAB-internal names to
-//! real file paths — that mapping must be honoured, not guessed." That mapping is four
+//! real file paths - that mapping must be honoured, not guessed." That mapping is four
 //! tables:
 //!
-//! - `File` — `File` (the key, which is also the name inside the CAB), `Component_`,
+//! - `File` - `File` (the key, which is also the name inside the CAB), `Component_`,
 //!   `FileName`, `Sequence`.
-//! - `Component` — `Component`, `Directory_`.
-//! - `Directory` — `Directory`, `Directory_Parent`, `DefaultDir`.
-//! - `Media` — `LastSequence`, `Cabinet`: which CAB holds which range of sequences.
+//! - `Component` - `Component`, `Directory_`.
+//! - `Directory` - `Directory`, `Directory_Parent`, `DefaultDir`.
+//! - `Media` - `LastSequence`, `Cabinet`: which CAB holds which range of sequences.
 //!
 //! Following those four is the whole of the contract. Nothing here looks at a file's
 //! extension or guesses from a name.
@@ -186,11 +186,11 @@ fn read_directories<F: Read + Seek>(
 
 /// Walk each directory up to its root, building a relative path.
 ///
-/// Four MSI conventions matter here. `DefaultDir` may be `short|long` — the long name wins.
+/// Four MSI conventions matter here. `DefaultDir` may be `short|long` - the long name wins.
 /// A `DefaultDir` of `.` means "no folder of its own", which is how installers hang several
 /// keys off one physical directory. `DefaultDir` may carry a `target:source` pair; only the
 /// target half describes the installed layout. And the row with no parent is the install
-/// root — conventionally `TARGETDIR`, `DefaultDir` `SourceDir` — whose name is never part of
+/// root - conventionally `TARGETDIR`, `DefaultDir` `SourceDir` - whose name is never part of
 /// an installed path at all.
 fn resolve_directory_paths(directories: &[(String, String, String)]) -> BTreeMap<String, String> {
     let by_key: BTreeMap<&str, (&str, &str)> = directories
@@ -243,7 +243,7 @@ fn target_half(value: &str) -> &str {
 }
 
 /// `msi::Row` only offers a panicking `Index`, which is unacceptable on a path a
-/// downloaded file can reach. These three read cells by *name*, bounds-checked — which also
+/// downloaded file can reach. These three read cells by *name*, bounds-checked - which also
 /// means a package whose columns are ordered unusually still reads correctly.
 fn value(row: &msi::Row, column: &str) -> Option<msi::Value> {
     let index = row.columns().iter().position(|c| c.name() == column)?;
@@ -287,7 +287,7 @@ mod tests {
                     parent: "",
                     default_dir: "SourceDir",
                 },
-                // `.` — a key that adds no path segment of its own, which is how the real SDK
+                // `.` - a key that adds no path segment of its own, which is how the real SDK
                 // packages hang their roots off TARGETDIR.
                 DirectoryRow {
                     key: "SDKROOT",

@@ -10,8 +10,8 @@
 //! ```
 //!
 //! and the VC9 CRT lands somewhere else again. Honouring the MSI's mapping means not
-//! flattening that (`docs/pinned-artifacts.md` §1), so everything downstream — the fix-ups,
-//! the verification, and eventually the compiler's include path — asks *where* rather than
+//! flattening that (`docs/pinned-artifacts.md` §1), so everything downstream - the fix-ups,
+//! the verification, and eventually the compiler's include path - asks *where* rather than
 //! assuming. One walk answers it.
 
 use std::path::{Path, PathBuf};

@@ -12,7 +12,7 @@
 //!
 //! ```text
 //! <App Data Store>/upstream-cache/
-//!     .git/                        the managed repository — objects for every Version ever fetched
+//!     .git/                        the managed repository - objects for every Version ever fetched
 //!     .git/civ5vp-materialized     the commit the tree beside it was written from
 //!     (1) Community Patch/…        the working tree of the selected Version
 //! ```
@@ -51,7 +51,7 @@ const CACHE_MARKER_CONTENTS: &str = "This folder is the Civ 5 VP Installer's Ups
 /// never shows up in the tree the Core walks.
 const MATERIALIZED_MARKER: &str = "civ5vp-materialized";
 
-/// One commit per Version and nothing behind it — the whole point of the strategy.
+/// One commit per Version and nothing behind it - the whole point of the strategy.
 const SHALLOW_DEPTH: NonZeroU32 = NonZeroU32::MIN;
 
 /// Nothing cancels a fetch yet.
@@ -77,7 +77,7 @@ impl UpstreamCache {
         }
     }
 
-    /// Point the unofficial-versions listing at a different compare endpoint — a mirror,
+    /// Point the unofficial-versions listing at a different compare endpoint - a mirror,
     /// or a test's fixture server. The default is derived from the repository URL:
     /// `https://github.com/OWNER/REPO(.git)` → `https://api.github.com/repos/OWNER/REPO/compare`.
     pub fn with_compare_api(mut self, endpoint: impl Into<String>) -> Self {
@@ -108,7 +108,7 @@ impl UpstreamCache {
 
     /// Every commit after `newest_release`, oldest first, labelled `X.Y.Z.NN`.
     ///
-    /// One GitHub compare call — the Upstream Cache is a shallow clone with no history to
+    /// One GitHub compare call - the Upstream Cache is a shallow clone with no history to
     /// walk locally. The endpoint reports at most 250 commits per page; if upstream is
     /// further ahead than that, the newest are missing until the next Release, and the
     /// progress line says so.
@@ -147,7 +147,7 @@ impl UpstreamCache {
             progress.report(
                 Stage::Fetch,
                 format!(
-                    "Upstream is {total} changes ahead — listing the oldest {}.",
+                    "Upstream is {total} changes ahead - listing the oldest {}.",
                     versions.len()
                 ),
             );
@@ -230,7 +230,7 @@ impl UpstreamCache {
 
         progress.report(
             Stage::Fetch,
-            format!("Downloading {} — only what is new.", target.label),
+            format!("Downloading {} - only what is new.", target.label),
         );
         self.fetch(&repo, &target)?;
 
@@ -406,8 +406,8 @@ impl UpstreamCache {
     /// Remove everything in the cache directory except the repository itself.
     ///
     /// This deletes a whole directory tree, so it first checks the directory is one this code
-    /// made: `new` accepts any path, and a caller that passed a wrong one — the user's home
-    /// directory, say — would otherwise have it emptied.
+    /// made: `new` accepts any path, and a caller that passed a wrong one - the user's home
+    /// directory, say - would otherwise have it emptied.
     fn empty_working_tree(&self) -> Result<(), String> {
         if !self.root.join(CACHE_MARKER).is_file() {
             return Err(format!(

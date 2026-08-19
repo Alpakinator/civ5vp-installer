@@ -50,8 +50,8 @@ const KEPT_TOOLS: &[&str] = &[
 ///
 /// Three things do: a tool from [`KEPT_TOOLS`], the compiler's builtin headers under
 /// `lib/clang/`, and the shared libraries directly in `lib/` that those tools load at runtime.
-/// Everything else — LLVM's own static libraries, its headers, cmake files, docs, and the
-/// three quarters of `bin/` that is lldb, mlir, flang and the analysis tools — is dropped as
+/// Everything else - LLVM's own static libraries, its headers, cmake files, docs, and the
+/// three quarters of `bin/` that is lldb, mlir, flang and the analysis tools - is dropped as
 /// it goes past.
 fn is_kept(relative: &str) -> bool {
     if relative.starts_with("lib/clang/") {
@@ -115,7 +115,7 @@ pub fn extract_llvm(
         if seen.is_multiple_of(2_000) {
             progress.report(
                 Stage::Build,
-                format!("Unpacking the compiler — {kept} files kept."),
+                format!("Unpacking the compiler - {kept} files kept."),
             );
         }
 
@@ -220,7 +220,7 @@ mod tests {
     ///
     /// `#[ignore]`d and driven by an environment variable. It exists because the fixture in
     /// this file is a few kilobytes compressed by `lzma-rs` itself, and the pinned artifact is
-    /// a gigabyte compressed by whatever `xz` llvm.org runs — a stream with many blocks, and
+    /// a gigabyte compressed by whatever `xz` llvm.org runs - a stream with many blocks, and
     /// the one place a pure-Rust xz decoder is most likely to disagree with the encoder that
     /// produced it.
     ///
@@ -402,7 +402,7 @@ mod tests {
     }
 
     /// `lzma-rs` only decodes, so the fixture is compressed with its LZMA2/xz *encoder*
-    /// counterpart — `lzma_rs::xz_compress`, which the crate also ships.
+    /// counterpart - `lzma_rs::xz_compress`, which the crate also ships.
     fn sample_tar_xz(root: &str) -> Vec<u8> {
         let mut builder = tar::Builder::new(Vec::new());
         for (name, content) in [

@@ -5,7 +5,7 @@
 //! plausible-looking tree of headers behind, and a build started against it would fail in a
 //! way nobody could read. So completeness is a single marker file written last, holding the
 //! Toolchain identity; until it exists the cache counts as absent and its contents are
-//! discarded on the next attempt — an interrupted bootstrap self-repairs on retry.
+//! discarded on the next attempt - an interrupted bootstrap self-repairs on retry.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -16,7 +16,7 @@ use crate::pinned::{LLVM_TARGET_TRIPLE, LLVM_VERSION};
 /// Name of the marker. Leading dot so it sorts away from the toolchain's own directories.
 const MARKER: &str = ".toolchain-complete";
 
-/// The version of this crate's own layout. Bumping it invalidates every existing cache — the
+/// The version of this crate's own layout. Bumping it invalidates every existing cache - the
 /// alternative is a user whose half-right toolchain from an older installer silently produces
 /// a different DLL.
 const LAYOUT_VERSION: u32 = 1;
@@ -61,13 +61,13 @@ impl Toolchain {
         &self.sdk_root
     }
 
-    /// Every `Include` directory in the extracted SDK, sorted — what the build puts on the
+    /// Every `Include` directory in the extracted SDK, sorted - what the build puts on the
     /// compiler's include path.
     pub fn include_dirs(&self) -> Result<Vec<PathBuf>, ToolchainError> {
         Ok(crate::sdk_layout::find(&self.sdk_root)?.include)
     }
 
-    /// Every `Lib` directory in the extracted SDK, sorted — what the build puts on the
+    /// Every `Lib` directory in the extracted SDK, sorted - what the build puts on the
     /// linker's library path.
     pub fn lib_dirs(&self) -> Result<Vec<PathBuf>, ToolchainError> {
         Ok(crate::sdk_layout::find(&self.sdk_root)?.lib)
@@ -143,7 +143,7 @@ impl ToolchainCache {
     /// The Toolchain already in this cache, if there is a complete one.
     ///
     /// Returns `None` for a cache that is absent, half-populated, or was written by an
-    /// installer whose Toolchain identity differs from this one's — all three mean the same
+    /// installer whose Toolchain identity differs from this one's - all three mean the same
     /// thing to the caller: bootstrap it.
     pub fn installed(&self) -> Option<Toolchain> {
         let recorded = fs::read_to_string(self.root.join(MARKER)).ok()?;

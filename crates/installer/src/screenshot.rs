@@ -53,7 +53,7 @@ pub fn run(options: &ScreenshotOptions) -> Result<(), String> {
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("Civ 5 VP Installer — rendering screenshots")
+            .with_title("Civ 5 VP Installer - rendering screenshots")
             .with_inner_size(first.size)
             // No window is shown: this runs unattended, including from a script.
             .with_visible(false),
@@ -77,9 +77,10 @@ pub fn run(options: &ScreenshotOptions) -> Result<(), String> {
     }
 }
 
-/// A job is set up one step at a time, because each step only takes effect on a later frame
-/// — and because the order matters: `InnerSize` is given in points, so it is interpreted
-/// against whatever the DPI scale happens to be when it arrives. Scale first, then size.
+/// A job is set up one step at a time, because each step only takes effect on a later
+/// frame - and because the order matters: `InnerSize` is given in points, so it is
+/// interpreted against whatever the DPI scale happens to be when it arrives. Scale first,
+/// then size.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Phase {
     SettingScale,

@@ -30,8 +30,8 @@ pub struct ExtractionCounts {
 
 /// Extract the pinned members into `sdk_root`.
 ///
-/// Each member is a file of its own by the time it gets here — downloaded, or taken out of a
-/// disc image — so the cabinets are read where they lie. Nothing is copied into scratch space
+/// Each member is a file of its own by the time it gets here - downloaded, or taken out of a
+/// disc image - so the cabinets are read where they lie. Nothing is copied into scratch space
 /// first, which for the two large cabinets is 73 MB of writing that no longer happens.
 pub fn extract_members(
     source: &StagedMembers,
@@ -173,7 +173,7 @@ fn extract_from_cabinet(
 
     progress.report(
         Stage::Build,
-        format!("Unpacking the {} — {} files.", member.label, wanted.len()),
+        format!("Unpacking the {} - {} files.", member.label, wanted.len()),
     );
     let extracted = cabinet.extract(&wanted)?;
     Ok(ExtractionCounts {
@@ -230,7 +230,7 @@ mod tests {
     /// This is the tool behind the per-member checksums in `docs/pinned-artifacts.md` §1. The
     /// installer fetches those members out of the middle of the image rather than the whole
     /// 1.45 GiB of it, which is only sound if each member is one run of bytes at a known
-    /// offset — so this prints the extents too, and says plainly when a member is in more
+    /// offset - so this prints the extents too, and says plainly when a member is in more
     /// than one piece.
     ///
     /// Run it against an image whose SHA-256 you have already checked against the pin: these
@@ -304,7 +304,7 @@ mod tests {
     ///
     /// `#[ignore]`d and driven by an environment variable, because it needs an image nobody
     /// has by default. It exists for the one question that is otherwise unanswerable from a
-    /// bug report — "what is actually *in* the file the user downloaded?" — and because
+    /// bug report - "what is actually *in* the file the user downloaded?" - and because
     /// cabinet folder sizes decide whether extraction is fast or quadratic.
     ///
     /// ```bash
@@ -420,7 +420,7 @@ mod tests {
                     println!("    {} files, {} bytes, {}", folder.0, folder.1, folder.2);
                 }
 
-                // A handful spread through the folder — including the last, which is the one
+                // A handful spread through the folder - including the last, which is the one
                 // a block-boundary mistake shifts.
                 let names: Vec<String> = reference
                     .folder_entries()

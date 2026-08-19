@@ -6,7 +6,7 @@ use crate::error::InstallError;
 
 /// The top-level `LUA` folder of `(1)` and `(2)`.
 ///
-/// EUI ships its own Lua in `(3a)`, so when EUI is on these have to go — otherwise the game
+/// EUI ships its own Lua in `(3a)`, so when EUI is on these have to go - otherwise the game
 /// loads both and the interface breaks. The official installer expresses this by excluding
 /// `\LUA` from the bulk copy and adding it back only for the non-EUI configurations; the
 /// leading backslash anchors it to the top level, so a nested `LUA` folder deeper in the tree
@@ -14,7 +14,7 @@ use crate::error::InstallError;
 const LUA: &[&str] = &["LUA"];
 
 /// What `(3b) 43 Civs Community Patch` ships when 43 Civs is on: its modinfo and one Lua file
-/// out of a folder that also holds a DLL. The DLL is deliberately left behind — the 43-civ
+/// out of a folder that also holds a DLL. The DLL is deliberately left behind - the 43-civ
 /// build is deployed into `(1)`, which is where the modinfo's `OnGetDLLPath` hook looks.
 const FORTY_THREE_CIVS_FILES: &[&str] = &["*.modinfo", "AdvancedSetup.lua"];
 
@@ -190,14 +190,14 @@ impl Plan {
 ///
 /// This function is the whole of "what does this configuration install", and it is the only
 /// place that knows. Its reference is the official InnoSetup script, `VPSetupData.iss` in
-/// `LoneGazebo/Community-Patch-DLL` — the spec names that script as the behavioural authority
+/// `LoneGazebo/Community-Patch-DLL` - the spec names that script as the behavioural authority
 /// for file placement. That script models six mutually exclusive components; the same six fall
 /// out of the two axes below, which is the cross-check that this table is complete:
 ///
 /// | Flavor          | EUI | 43 Civs | InnoSetup component |
 /// | --------------- | --- | ------- | ------------------- |
-/// | Community Patch | —   | off     | `Core`              |
-/// | Community Patch | —   | on      | `Civ43CPOnly`       |
+/// | Community Patch | -   | off     | `Core`              |
+/// | Community Patch | -   | on      | `Civ43CPOnly`       |
 /// | Vox Populi      | off | off     | `FullNoEUI`         |
 /// | Vox Populi      | on  | off     | `FullEUI`           |
 /// | Vox Populi      | off | on      | `Civ43NoEUI`        |
@@ -216,7 +216,7 @@ fn deployments_for(configuration: &InstallConfiguration) -> Vec<FolderDeployment
         Eui::Disabled => SourceSelection::Everything,
     };
 
-    // Every Flavor includes the Community Patch — Vox Populi implies it.
+    // Every Flavor includes the Community Patch - Vox Populi implies it.
     let mut deployments = vec![at_own_name(
         ClaimedFolder::CommunityPatch,
         base_selection.clone(),
@@ -271,7 +271,7 @@ fn files_for(configuration: &InstallConfiguration) -> Vec<ClaimedFile> {
 ///
 /// That is every one of them: the DLC folders `VPUI` and `UI_bc1` sit at the repository root
 /// beside the mod folders, not under a `DLC` directory. "The same name" means any of the names
-/// that folder has gone by — which one a Version uses is settled when the source is in hand.
+/// that folder has gone by - which one a Version uses is settled when the source is in hand.
 fn at_own_name(claimed: ClaimedFolder, selection: SourceSelection) -> FolderDeployment {
     FolderDeployment { claimed, selection }
 }

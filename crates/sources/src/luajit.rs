@@ -1,6 +1,6 @@
 //! The pinned LuaJIT checkout: one commit, fetched once, reused forever.
 //!
-//! Pinned by commit rather than by tag or tarball — see `docs/pinned-artifacts.md`. Tags move,
+//! Pinned by commit rather than by tag or tarball - see `docs/pinned-artifacts.md`. Tags move,
 //! and GitHub's generated archives are not byte-stable, so the commit SHA is the only
 //! self-verifying identity on offer.
 //!
@@ -119,13 +119,13 @@ impl LuaJitCache {
     ///
     /// The shape is the Upstream Cache's, for the same reasons (ADR-0004): a depth-1 fetch of
     /// exactly one ref, no tags, and a checkout into a directory that was emptied first. The
-    /// one difference is what is asked for — a commit id rather than a ref chosen at runtime,
+    /// one difference is what is asked for - a commit id rather than a ref chosen at runtime,
     /// which is the same thing the Upstream Cache does for an Arbitrary Ref or an unofficial
     /// build, and which GitHub serves because the commit is reachable.
     fn fetch_pinned_commit(&self, progress: &ProgressReporter) -> Result<(), BoundaryError> {
         let source = self.source_root();
         // A directory left over from an attempt that failed part way. There is no object store
-        // worth salvaging in a one-commit cache, so it goes — but only once it has proved it is
+        // worth salvaging in a one-commit cache, so it goes - but only once it has proved it is
         // ours to remove.
         if source.exists() {
             self.remove_previous_attempt()?;
@@ -176,7 +176,7 @@ impl LuaJitCache {
         Ok(repository)
     }
 
-    /// Remove the leftovers of an earlier attempt — refusing if the directory is not one this
+    /// Remove the leftovers of an earlier attempt - refusing if the directory is not one this
     /// code created, since `new` accepts any path at all.
     fn remove_previous_attempt(&self) -> Result<(), BoundaryError> {
         let source = self.source_root();
@@ -246,7 +246,7 @@ impl LuaJitCache {
     fn unreachable(&self, error: &dyn std::error::Error) -> BoundaryError {
         BoundaryError::new(
             "Could not download the LuaJIT source. Check your internet connection and try \
-             again — nothing has been changed. You can also turn the LuaJIT option off.",
+             again - nothing has been changed. You can also turn the LuaJIT option off.",
             format!(
                 "fetch of {LUAJIT_COMMIT} from {LUAJIT_URL} failed: {}",
                 chain(error)
@@ -287,7 +287,7 @@ mod tests {
         assert!(LUAJIT_URL.ends_with("LuaJIT.git"));
     }
 
-    /// A cache that already holds the pinned commit is reused rather than refetched — the same
+    /// A cache that already holds the pinned commit is reused rather than refetched - the same
     /// rule the Upstream Cache follows, and what keeps a second Deployment offline.
     #[test]
     fn an_existing_checkout_is_reused() {
@@ -328,8 +328,8 @@ mod tests {
         assert!(!cache.already_has_the_pinned_commit());
     }
 
-    /// The stamp alone is not enough. A player who deleted the tree but left the stamp — or a
-    /// run interrupted between the two — must fetch again rather than hand the build a
+    /// The stamp alone is not enough. A player who deleted the tree but left the stamp - or a
+    /// run interrupted between the two - must fetch again rather than hand the build a
     /// directory that is not there.
     #[test]
     fn a_stamp_without_a_tree_is_not_the_pin() {
@@ -347,7 +347,7 @@ mod tests {
         assert!(!cache.already_has_the_pinned_commit());
     }
 
-    /// A directory the installer did not create is never deleted, however wrong it looks —
+    /// A directory the installer did not create is never deleted, however wrong it looks -
     /// `new` accepts any path, and a caller that passed the wrong one must not lose it.
     #[test]
     fn a_foreign_directory_is_refused_rather_than_emptied() {
@@ -371,7 +371,7 @@ mod tests {
     }
 
     /// The real thing, over the real network: the pinned commit arrives and the build's two
-    /// directories are on disk. Ignored by default — every other test here is offline.
+    /// directories are on disk. Ignored by default - every other test here is offline.
     #[test]
     #[ignore = "clones the real LuaJIT repository"]
     fn the_pinned_commit_is_fetched_and_then_reused() {

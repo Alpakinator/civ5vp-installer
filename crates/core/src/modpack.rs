@@ -2,8 +2,8 @@
 //!
 //! Everything here is plain file work: the Civ5Pkg manifest, the mods copied inside the
 //! pack, the UI entry files and their addin hooks, and the emptied overrides of the game's
-//! own GameData XML. The one part that needs a database engine — merging the mods' updates
-//! into the game's databases and dumping the result — crosses the
+//! own GameData XML. The one part that needs a database engine - merging the mods' updates
+//! into the game's databases and dumping the result - crosses the
 //! [`ModpackAssembler`] boundary.
 //!
 //! The reference for every choice in this file is the Community Patch DLL's own modpack
@@ -49,15 +49,15 @@ const CIV5PKG_CONTENTS: &str = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\
 \x20 </UISkin>\n\
 </Civ5Package>\n";
 
-/// The two Override dumps. The names are historical — the game will believe any GameData
-/// file name, and the Modpack Maker picked these — but they are what every VP modpack uses,
+/// The two Override dumps. The names are historical - the game will believe any GameData
+/// file name, and the Modpack Maker picked these - but they are what every VP modpack uses,
 /// so they stay.
 const GAMEPLAY_DUMP_FILE_NAME: &str = "CIV5Units.xml";
 const TEXT_DUMP_FILE_NAME: &str = "CIV5Units_Mongol.xml";
 
 /// The UI entry files the game loads from a DLC, and the addin type whose entry points are
 /// hooked into each. A mod file with one of these names, at any depth, is copied into `UI/`
-/// over the base copy — both facts straight from `CvGame::CopyModFiles`.
+/// over the base copy - both facts straight from `CvGame::CopyModFiles`.
 const UI_ENTRY_FILES: [(&str, &str); 5] = [
     ("InGame.lua", "InGameUIAddin"),
     ("CityView.lua", "CityViewUIAddin"),
@@ -82,8 +82,8 @@ const BASE_UI_FILES: [(&str, &str); 3] = [
 const MODPACK_MAKER_ID: &str = "eb8f6ed3-109d-4f2f-a81d-516c8d2f91c1";
 
 /// The player's own mods in the MODS folder that a Modpack could bake in:
-/// every folder holding a `.modinfo`, minus the Claimed Folders — those are the managed
-/// set, governed by the configuration — and the in-game Modpack Maker. Sorted; that is
+/// every folder holding a `.modinfo`, minus the Claimed Folders - those are the managed
+/// set, governed by the configuration - and the in-game Modpack Maker. Sorted; that is
 /// also the order they are applied in, after the managed set, which is what a modmod
 /// patching Vox Populi expects.
 pub fn available_extra_mods(mods_folder: &Path) -> Vec<String> {
@@ -123,7 +123,7 @@ fn is_claimed_name(name: &str) -> bool {
 /// The game cache files a Modpack build starts from, and the snapshot they are kept under
 /// in the App Data Store. Snapshotted because the caches do not survive: Sync clears the
 /// game's cache folder, and once a Modpack is deployed every later launch rebuilds the
-/// caches with the Modpack already applied — only a copy taken while they were pristine
+/// caches with the Modpack already applied - only a copy taken while they were pristine
 /// lets a second Modpack build (an upgrade) run without asking the player to undo anything.
 const GAMEPLAY_BASE_FILE_NAME: &str = "Civ5DebugDatabase.db";
 const TEXT_BASE_FILE_NAME: &str = "Localization-Merged.db";
@@ -132,7 +132,7 @@ const TEXT_BASE_FILE_NAME: &str = "Localization-Merged.db";
 /// to deploy as the `VP_MODPACK` Claimed Folder.
 ///
 /// `resolved` is [`crate::Core`]'s resolve of the plan's deployments against the
-/// materialized source — the same list Sync uses, so what lands inside the Modpack is
+/// materialized source - the same list Sync uses, so what lands inside the Modpack is
 /// exactly what a Mods-mode Deployment would have put in MODS.
 pub(crate) fn assemble(
     plan: &Plan,
@@ -168,14 +168,14 @@ pub(crate) fn assemble(
 
     // The player's own picks from MODS, staged after the managed set so their
     // database changes land on top of Vox Populi's, the way a modmod expects. MODS is only
-    // read — the copies live inside the pack.
+    // read - the copies live inside the pack.
     for name in &plan.configuration.extra_mods {
         if is_claimed_name(name) {
             // A hand-edited configuration could name a managed folder; staging it twice
             // would fight the managed copy, so it is dropped with a word.
             progress.report(
                 Stage::Build,
-                format!("Skipped \"{name}\" — it is part of the install already."),
+                format!("Skipped \"{name}\" - it is part of the install already."),
             );
             continue;
         }
@@ -183,7 +183,7 @@ pub(crate) fn assemble(
         if !from.is_dir() {
             return Err(InstallError::UnsupportedConfiguration {
                 message: format!(
-                    "The mod \"{name}\" is no longer in your MODS folder — untick it, or \
+                    "The mod \"{name}\" is no longer in your MODS folder - untick it, or \
                      put it back and try again. Your game is unchanged."
                 ),
                 detail: format!("extra mod missing at {}", from.display()),
@@ -253,7 +253,7 @@ fn ensure_base_snapshot(
     }
 
     let Some(cache) = folders.cache() else {
-        // `GameFolders::check` ran before planning, so this cannot happen — but it must be
+        // `GameFolders::check` ran before planning, so this cannot happen - but it must be
         // an error, not a panic, if it somehow does.
         return Err(InstallError::ModpackBaseUnavailable {
             detail: "documents root unresolved after check".to_owned(),
@@ -282,7 +282,7 @@ fn ensure_base_snapshot(
             tree::copy_file(&cached_text, &text)?;
             progress.report(
                 Stage::Build,
-                "Saved a copy of the game's own data — future Modpack builds reuse it.",
+                "Saved a copy of the game's own data - future Modpack builds reuse it.",
             );
             Ok((gameplay, text))
         }
@@ -314,7 +314,7 @@ fn stage_ui(
         tree::copy_file(&from, &ui.join(name))?;
     }
 
-    // A mod file named like a UI entry file replaces it, from any depth — the order is the
+    // A mod file named like a UI entry file replaces it, from any depth - the order is the
     // mods' activation order, matching `CopyModFiles` running per mod. The staged copy is
     // then deleted: the game's VFS keys files by bare name, so a surviving duplicate would
     // race the hooked `UI/` copy for the name, and a pack whose `Mods/` copy wins loses
@@ -334,7 +334,7 @@ fn stage_ui(
 
     // The hooks: one `g_uiAddins` line per entry point, appended to the UI file its type
     // hooks into. Skipped when the target file does not exist (the Modpack Maker does the
-    // same — an addin type nothing provides a base file for is dropped with a log line).
+    // same - an addin type nothing provides a base file for is dropped with a log line).
     for staged in staged_mods {
         let Some(modinfo) = modinfo::find(staged)? else {
             continue;
@@ -352,7 +352,7 @@ fn stage_ui(
             if !target.is_file() {
                 progress.report(
                     Stage::Build,
-                    format!("Skipped the {stem} hook — no UI file to hook it into."),
+                    format!("Skipped the {stem} hook - no UI file to hook it into."),
                 );
                 continue;
             }
@@ -373,7 +373,7 @@ fn stage_ui(
 fn stage_overrides(stage: &Path, folders: &GameFolders) -> Result<(), InstallError> {
     let overrides = stage.join("Override");
     tree::create_dir_all(&overrides)?;
-    // The DLC folder's parent is the game's `Assets` — the same tree
+    // The DLC folder's parent is the game's `Assets` - the same tree
     // `CvGame::OverrideGamePlayFiles` scans from the game's working directory.
     let Some(assets) = folders.dlc.parent() else {
         return Ok(());
@@ -387,7 +387,7 @@ fn empty_gamedata_files_under(dir: &Path, overrides: &Path) -> Result<(), Instal
             continue;
         };
         if entry.is_dir() {
-            // The Modpack itself — a previous Deployment's — must not empty its own dumps.
+            // The Modpack itself - a previous Deployment's - must not empty its own dumps.
             if name.eq_ignore_ascii_case("VP_MODPACK") {
                 continue;
             }
@@ -424,7 +424,7 @@ fn holds_gamedata(path: &Path) -> bool {
 ///
 /// An entry naming a file that is not there is skipped with a progress line, not an error:
 /// the game does the same (a database.log line, then on with the next action), and upstream
-/// really ships such entries — `(1) Community Patch (v 151)` references
+/// really ships such entries - `(1) Community Patch (v 151)` references
 /// `CoreGameOptionTextChanges.xml`, renamed to `.sql` with the modinfo action left behind.
 /// Refusing would make every affected Version un-Modpackable for everyone.
 fn collect_database_updates(
@@ -446,7 +446,7 @@ fn collect_database_updates(
                 Stage::Build,
                 format!(
                     "Skipped a database update of {mod_name}: its modinfo references \
-                     \"{relative}\", which is not among its files — the game skips it the \
+                     \"{relative}\", which is not among its files - the game skips it the \
                      same way."
                 ),
             );
@@ -475,7 +475,7 @@ fn find_files_named(
     Ok(())
 }
 
-/// `relative` (with `/` separators) joined onto `root` — segment-wise, so it works on every
+/// `relative` (with `/` separators) joined onto `root` - segment-wise, so it works on every
 /// platform, and case-insensitively, because the game's own files are cased however the
 /// installation shipped them.
 fn join_relative(root: &Path, relative: &str) -> PathBuf {
@@ -486,7 +486,7 @@ fn join_relative(root: &Path, relative: &str) -> PathBuf {
     })
 }
 
-/// The file name without its extension — `Path::file_stem`, tolerant of Windows separators
+/// The file name without its extension - `Path::file_stem`, tolerant of Windows separators
 /// in modinfo values.
 fn file_stem_of(file: &str) -> String {
     let name = file.rsplit(['/', '\\']).next().unwrap_or(file);

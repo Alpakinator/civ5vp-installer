@@ -1,7 +1,7 @@
 //! Reading exports and imports out of 32-bit Windows binaries.
 //!
 //! LuaJIT is ABI-compatible with Lua 5.1 by design, so a build of it renamed to
-//! `lua51_Win32.dll` satisfies the game — *if* it really exports every one of the 80 symbols
+//! `lua51_Win32.dll` satisfies the game - *if* it really exports every one of the 80 symbols
 //! the game's binaries import. "By design" is not a check, and a DLL short one symbol fails
 //! at load time with nothing to point the player at. So the question is asked directly of the
 //! bytes: what does this candidate export, what do those consumers need, and what is left
@@ -45,7 +45,7 @@ impl<'a> Pe<'a> {
     /// Walk the headers far enough to translate addresses and find the two directories.
     ///
     /// Returns [`None`] for anything that is not a PE image, including one whose headers point
-    /// outside the file — a truncated download looks exactly like that.
+    /// outside the file - a truncated download looks exactly like that.
     fn parse(bytes: &'a [u8]) -> Option<Self> {
         let e_lfanew = read_u32(bytes, 0x3c)? as usize;
         // The COFF header is 20 bytes after the 4-byte signature, and the optional header
@@ -94,7 +94,7 @@ impl<'a> Pe<'a> {
     /// Translate a relative virtual address into an offset into the file on disk.
     ///
     /// A section is usually padded on disk to a larger size than it declares in memory, but
-    /// occasionally the reverse — uninitialised data lives past the raw bytes — so the wider
+    /// occasionally the reverse - uninitialised data lives past the raw bytes - so the wider
     /// of the two is what a lookup is allowed to land in.
     fn offset(&self, rva: u32) -> Option<usize> {
         self.sections.iter().find_map(|section| {
@@ -183,7 +183,7 @@ pub fn exported_names(dll: &[u8]) -> Option<Vec<String>> {
 /// consumers do not all spell it identically, and any Lua DLL the game binds to is a DLL the
 /// replacement engine has to stand in for.
 ///
-/// Imports by ordinal are skipped — they have no name to compare against an export table, and
+/// Imports by ordinal are skipped - they have no name to compare against an export table, and
 /// the game has none of them.
 pub fn imported_lua_names(binary: &[u8]) -> Option<Vec<String>> {
     let pe = Pe::parse(binary)?;
@@ -412,7 +412,7 @@ mod tests {
         std::env::var_os("CIV5_GAME_DIR").map(std::path::PathBuf::from)
     }
 
-    /// The stock engine trivially satisfies the game — which is what proves the checker
+    /// The stock engine trivially satisfies the game - which is what proves the checker
     /// itself is right before it is trusted to judge our own build.
     #[test]
     #[ignore = "needs a real Civilization V installation"]
@@ -435,7 +435,7 @@ mod tests {
         assert!(missing.is_empty(), "stock must satisfy stock: {missing:?}");
     }
 
-    /// A DLL that exports nothing must be reported as missing everything — the checker has
+    /// A DLL that exports nothing must be reported as missing everything - the checker has
     /// to actually fail, or it would pass a broken build too.
     #[test]
     fn a_dll_exporting_nothing_is_reported_as_missing_everything() {

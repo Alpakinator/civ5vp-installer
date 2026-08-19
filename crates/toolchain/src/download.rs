@@ -3,11 +3,11 @@
 //!
 //! The shape is deliberate. A big download over a slow connection will be interrupted, so
 //! bytes land in `<name>.part` and the finished, *verified* file appears at `<name>` in one
-//! atomic rename. Anything that goes wrong leaves either a resumable `.part` or nothing —
+//! atomic rename. Anything that goes wrong leaves either a resumable `.part` or nothing -
 //! never a short file that looks finished.
 //!
-//! Large artifacts download over **several connections at once**. The Wayback Machine — the
-//! one source of the pinned SDK image — throttles per connection to roughly 1 MB/s, and
+//! Large artifacts download over **several connections at once**. The Wayback Machine - the
+//! one source of the pinned SDK image - throttles per connection to roughly 1 MB/s, and
 //! measured from a real machine four parallel ranged requests deliver about 4.5x the
 //! single-connection rate. The file is divided into a fixed grid of chunks, each fetched
 //! with its own ranged request; a sidecar (`<name>.parts`) records which chunks are done, so
@@ -17,8 +17,8 @@
 //! **Not every download is a whole file.** The Windows SDK image is 1.45 GiB of which the
 //! build reads about 102 MiB, so its members are fetched as *windows*: the same URL, a
 //! `Range` over one member's own bytes, checked against that member's own SHA-256
-//! (`docs/pinned-artifacts.md` §1). Everything below — the chunk grid, the ledger, the
-//! resume, the retries — works in coordinates relative to what was asked for, so a window
+//! (`docs/pinned-artifacts.md` §1). Everything below - the chunk grid, the ledger, the
+//! resume, the retries - works in coordinates relative to what was asked for, so a window
 //! behaves exactly like a small artifact that happens to live inside a large one.
 //!
 //! **A failed request is the normal case, not the exceptional one.** The Wayback Machine
@@ -26,7 +26,7 @@
 //! §1 records it, so one dropped connection must never end a 1.45 GiB download: every ranged
 //! request is retried with a widening pause, the whole download is picked up again a few
 //! times after that, and every request carries a deadline so a wedged socket fails instead of
-//! holding its worker — and with it a quarter of the throughput — forever.
+//! holding its worker - and with it a quarter of the throughput - forever.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -52,7 +52,7 @@ const PROGRESS_STEP: u64 = 8 * 1024 * 1024;
 ///
 /// A dropped connection costs whatever the chunk had not finished, so this is a trade
 /// between the waste of a failure (8 MB, seconds) and the ~10 s the Wayback Machine takes to
-/// answer at all — at 8 MB a chunk that overhead is a few percent of the transfer.
+/// answer at all - at 8 MB a chunk that overhead is a few percent of the transfer.
 const PARALLEL_CHUNK: u64 = 8 * 1024 * 1024;
 
 /// How many connections fetch chunks at once. Four is where the Wayback Machine's
@@ -69,13 +69,13 @@ const CHUNK_ATTEMPTS: u32 = 5;
 /// from the ledger, so a pass costs only what had not arrived yet.
 const DOWNLOAD_PASSES: u32 = 3;
 
-/// The pause after the first failure. Each further one doubles, up to [`BACKOFF_CAP`] —
+/// The pause after the first failure. Each further one doubles, up to [`BACKOFF_CAP`] -
 /// enough to ride out a server that is briefly refusing, short enough not to look hung.
 const BACKOFF: Duration = Duration::from_secs(2);
 const BACKOFF_CAP: Duration = Duration::from_secs(30);
 
 /// How long a connection may take to open, and how long the server may think before it
-/// answers with headers. Measured time to first byte on the pinned image is 9–14 s
+/// answers with headers. Measured time to first byte on the pinned image is 9-14 s
 /// (`docs/pinned-artifacts.md` §1), so these are generous rather than tight.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(90);
@@ -93,7 +93,7 @@ const MIN_BODY_TIMEOUT: Duration = Duration::from_secs(60);
 /// against a socket that never closes, not a rate: the slowest measured source still fits.
 const SEQUENTIAL_BODY_TIMEOUT: Duration = Duration::from_secs(6 * 60 * 60);
 
-/// A stream of bytes starting partway into a resource — the one thing the downloader needs
+/// A stream of bytes starting partway into a resource - the one thing the downloader needs
 /// from the network.
 ///
 /// A trait, because the interesting behaviour here (resume, verify, atomic move, self-repair
@@ -174,7 +174,7 @@ impl HttpByteSource {
 
         let status = response.status().as_u16();
         // 206 means the Range header was honoured. Anything else 2xx is the whole resource,
-        // which is still usable — it just means starting over (or, on the parallel path,
+        // which is still usable - it just means starting over (or, on the parallel path,
         // falling back to sequential).
         let honoured = status == 206;
         let content_length = response
@@ -278,9 +278,9 @@ pub fn fetch(
 /// the rest of the image.
 ///
 /// The four pinned members are ~102 MiB of a 1.45 GiB disc image, and the only place that
-/// image still exists is a replay service that serves it at a fraction of a megabyte a second
-/// — so fetching the other 93% of it is most of a first bootstrap's wall-clock time, spent on
-/// bytes that are read by nothing. Each member is one run of bytes at a pinned offset
+/// image still exists is a replay service that serves it at a fraction of a megabyte a
+/// second - so fetching the other 93% of it is most of a first bootstrap's wall-clock time,
+/// spent on bytes that are read by nothing. Each member is one run of bytes at a pinned offset
 /// (`docs/pinned-artifacts.md` §1), so it is one windowed download like any other, checked
 /// against its own SHA-256.
 pub fn fetch_member(
@@ -313,7 +313,7 @@ pub fn fetch_member(
 /// hash to.
 ///
 /// The window is what makes a member of the disc image expressible: same URL, but only the
-/// bytes that member occupies. A whole artifact is the degenerate case — offset 0, and a
+/// bytes that member occupies. A whole artifact is the degenerate case - offset 0, and a
 /// length only the server can say.
 #[derive(Debug, Clone, Copy)]
 struct Wanted<'a> {
@@ -357,7 +357,7 @@ impl<'a> Wanted<'a> {
 /// tried again.
 ///
 /// One struct rather than seven arguments, because the fast suite turns all of them down at
-/// once — kilobyte chunks, and no waiting between tries, since a test that sleeps for the
+/// once - kilobyte chunks, and no waiting between tries, since a test that sleeps for the
 /// real backoff is a test nobody runs.
 #[derive(Debug, Clone, Copy)]
 struct Tuning {
@@ -388,7 +388,7 @@ impl Tuning {
     /// The same, with a lower bar for going parallel.
     ///
     /// The threshold exists so a small artifact is not split into requests that cost more
-    /// than they save — but that reasoning is about the *probe*, and a member's length is
+    /// than they save - but that reasoning is about the *probe*, and a member's length is
     /// pinned, so there is nothing to discover. The two large cabinets (30 MB and 43 MB) are
     /// most of what a first bootstrap fetches and are well under [`PARALLEL_THRESHOLD`].
     fn for_member() -> Self {
@@ -421,7 +421,7 @@ fn fetch_with(
         if hash_file(&final_path)? == wanted.sha256 {
             progress.report(
                 Stage::Build,
-                format!("Already have {} — skipping the download.", wanted.label),
+                format!("Already have {} - skipping the download.", wanted.label),
             );
             let _ = fs::remove_file(&sidecar_path);
             return Ok(final_path);
@@ -439,7 +439,7 @@ fn fetch_with(
         progress,
         |next| {
             format!(
-                "The download of {} stopped early — carrying on from where it stopped (attempt {next} of {}).",
+                "The download of {} stopped early - carrying on from where it stopped (attempt {next} of {}).",
                 wanted.label, tuning.passes
             )
         },
@@ -520,7 +520,7 @@ fn with_retries<T>(
 /// Take a lock back after a worker panicked.
 ///
 /// The bytes that worker wrote are on disk either way, so treating the poison as a reason to
-/// drop the ledger would lose them — which is the opposite of what the ledger is for.
+/// drop the ledger would lose them - which is the opposite of what the ledger is for.
 fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
         .lock()
@@ -608,7 +608,7 @@ impl ChunkLedger {
 
 /// Download `wanted` over several ranged connections.
 ///
-/// Returns `Ok(false)` — with nothing torn down — when the server turns out not to support
+/// Returns `Ok(false)` - with nothing torn down - when the server turns out not to support
 /// ranges or not to say the total size; the caller then uses the sequential path. `Ok(true)`
 /// means the `.part` file holds every byte.
 fn parallel_download(
@@ -671,7 +671,7 @@ fn parallel_download(
             wanted.label,
             human_bytes(total),
             if already > 0 {
-                format!(" — resuming with {} already here", human_bytes(already))
+                format!(" - resuming with {} already here", human_bytes(already))
             } else {
                 String::new()
             }
@@ -706,7 +706,7 @@ fn parallel_download(
     }
 
     // Workers pull chunk indices from a shared cursor. A chunk that fails is asked for again
-    // — the Wayback Machine drops ranged requests routinely, and one dropped request is not
+    // - the Wayback Machine drops ranged requests routinely, and one dropped request is not
     // a reason to abandon a gigabyte. Only a chunk that fails every try, or a server that
     // turns out not to serve ranges at all, stops the others.
     let cursor = AtomicUsize::new(0);
@@ -736,7 +736,7 @@ fn parallel_download(
                         progress,
                         |next| {
                             format!(
-                                "Part {} of {chunk_count} of {} did not arrive — asking again \
+                                "Part {} of {chunk_count} of {} did not arrive - asking again \
                                  (attempt {next} of {}).",
                                 index + 1,
                                 wanted.label,
@@ -782,7 +782,7 @@ fn parallel_download(
                                 progress.report(
                                     Stage::Build,
                                     format!(
-                                        "Downloading {} — {} of {} ({}%) at {}.",
+                                        "Downloading {} - {} of {} ({}%) at {}.",
                                         wanted.label,
                                         human_bytes(so_far),
                                         human_bytes(total),
@@ -802,7 +802,7 @@ fn parallel_download(
         }
     });
 
-    // Record everything that landed, whatever else happened — that is the resume state.
+    // Record everything that landed, whatever else happened - that is the resume state.
     for &index in locked(&finished).iter() {
         ledger.done[index] = true;
     }
@@ -851,7 +851,7 @@ fn parallel_download(
         // "not fetched in parallel" and letting the sequential path quietly restart a
         // gigabyte, which is how a failed download comes to look like a finished one.
         return Err(ToolchainError::new(
-            "The download stopped before it finished. Try again — the installer will carry \
+            "The download stopped before it finished. Try again - the installer will carry \
              on from where it stopped.",
             format!("{missing} chunks of {} are still missing", wanted.file_name),
         ));
@@ -859,7 +859,7 @@ fn parallel_download(
     Ok(true)
 }
 
-/// Stream one transfer into `[start, end)` of the partial file. Short bodies are an error —
+/// Stream one transfer into `[start, end)` of the partial file. Short bodies are an error -
 /// a chunk is only credited when every byte of it arrived.
 fn write_chunk(
     partial_path: &Path,
@@ -884,7 +884,7 @@ fn write_chunk(
             .map_err(|error| network_read_error(url, &error))?;
         if read == 0 {
             return Err(ToolchainError::new(
-                "The download was interrupted. Try again — the installer will carry on from \
+                "The download was interrupted. Try again - the installer will carry on from \
                  where it stopped.",
                 format!("range {start}-{end} of {url} ended {remaining} bytes short"),
             ));
@@ -899,7 +899,7 @@ fn write_chunk(
 }
 
 // ---------------------------------------------------------------------------------------
-// The sequential path — for small artifacts and servers without ranges
+// The sequential path - for small artifacts and servers without ranges
 // ---------------------------------------------------------------------------------------
 
 fn download_to_partial(
@@ -999,7 +999,7 @@ fn download_to_partial(
             progress.report(
                 Stage::Build,
                 format!(
-                    "Downloading {} — {} of {} ({}%) at {}.",
+                    "Downloading {} - {} of {} ({}%) at {}.",
                     wanted.label,
                     human_bytes(written),
                     human_bytes(expected_total),
@@ -1019,7 +1019,7 @@ fn download_to_partial(
         && written < total
     {
         return Err(ToolchainError::new(
-            "The download was interrupted. Try again — the installer will carry on from \
+            "The download was interrupted. Try again - the installer will carry on from \
              where it stopped.",
             format!(
                 "{} ended {} bytes short of {total}",
@@ -1066,7 +1066,7 @@ fn percent(part: u64, whole: u64) -> u64 {
 }
 
 /// How fast bytes are arriving, phrased for a player. Under a megabyte a second it is
-/// kilobytes, because "0.2 MB/s" reads like a rounding error rather than a speed — and on
+/// kilobytes, because "0.2 MB/s" reads like a rounding error rather than a speed - and on
 /// the pinned SDK image 0.2 MB/s is the honest figure.
 fn human_rate(bytes: u64, over: Duration) -> String {
     let seconds = over.as_secs_f64();
@@ -1097,14 +1097,14 @@ fn human_bytes(bytes: u64) -> String {
 fn network_error(url: &str, error: &ureq::Error) -> ToolchainError {
     ToolchainError::new(
         "The installer could not reach the download server. Check your internet connection \
-         and try again — anything already downloaded is kept.",
+         and try again - anything already downloaded is kept.",
         format!("request to {url} failed: {error}"),
     )
 }
 
 fn network_read_error(url: &str, error: &std::io::Error) -> ToolchainError {
     ToolchainError::new(
-        "The download was interrupted. Try again — the installer will carry on from where it \
+        "The download was interrupted. Try again - the installer will carry on from where it \
          stopped.",
         format!("reading the response body from {url} failed: {error}"),
     )
@@ -1117,7 +1117,7 @@ mod tests {
     use std::io::Cursor;
     use std::sync::Mutex;
 
-    /// A ByteSource over an in-memory blob, which can be told to stop short — the fast
+    /// A ByteSource over an in-memory blob, which can be told to stop short - the fast
     /// suite's stand-in for a dropped connection. `Mutex` inside because the parallel path
     /// shares the source across worker threads.
     struct FakeSource {
@@ -1202,8 +1202,8 @@ mod tests {
         (0..300_000u32).map(|index| (index % 253) as u8).collect()
     }
 
-    /// A small parallel grid — 64 KiB chunks, everything over 100 KiB parallel on three
-    /// connections — and, unless a test says otherwise, one try at everything: most of these
+    /// A small parallel grid - 64 KiB chunks, everything over 100 KiB parallel on three
+    /// connections - and, unless a test says otherwise, one try at everything: most of these
     /// tests are about what happens on a failure, which retries would paper over.
     fn small_grid() -> Tuning {
         Tuning {
@@ -1297,7 +1297,7 @@ mod tests {
         let path =
             fetch_small_grid(&complete, &pinned, dir.path(), &ProgressReporter::silent()).unwrap();
         assert_eq!(fs::read(&path).unwrap(), content);
-        // The ledger knew the total, so no probe — only the four chunks that were missing.
+        // The ledger knew the total, so no probe - only the four chunks that were missing.
         assert_eq!(
             complete.open_count(),
             4,
@@ -1415,7 +1415,7 @@ mod tests {
         );
     }
 
-    /// Interrupt it, run it again, get the right file — without re-downloading what already
+    /// Interrupt it, run it again, get the right file - without re-downloading what already
     /// arrived.
     #[test]
     fn an_interrupted_download_resumes_where_it_stopped() {
@@ -1479,7 +1479,7 @@ mod tests {
         assert!(!dir.path().join("artifact.bin.parts").exists());
     }
 
-    /// A server that never manages a whole range is a real failure — but the bytes that did
+    /// A server that never manages a whole range is a real failure - but the bytes that did
     /// arrive stay on disk, and the sentence tells the user what to do about it.
     #[test]
     fn a_chunk_that_never_arrives_ends_the_download_with_a_sentence() {
@@ -1642,7 +1642,7 @@ mod tests {
         );
     }
 
-    /// A member of the disc image is the same URL and a window into it — and nothing outside
+    /// A member of the disc image is the same URL and a window into it - and nothing outside
     /// that window is ever asked for, which is the entire point.
     #[test]
     fn a_member_is_fetched_out_of_the_middle_of_the_artifact() {

@@ -1,14 +1,14 @@
 //! Fixture repositories for the fast suite.
 //!
-//! The per-commit suite stays off the network, but the interesting behaviour here — which
-//! refs a Version resolves to, what a fetch brings back, what a checkout leaves on disk —
+//! The per-commit suite stays off the network, but the interesting behaviour here - which
+//! refs a Version resolves to, what a fetch brings back, what a checkout leaves on disk -
 //! only exists if there is a real repository at the other end. So these tests build one:
 //! real commits, real annotated and lightweight tags, real branches, written with the same
 //! `gix` the installer uses, and fetched over a `file://` URL.
 //!
 //! One caveat worth stating plainly: `gix`'s `file://` transport spawns `git-upload-pack`, so
-//! **these tests need git on the machine running them**. The installer never uses `file://` —
-//! it only ever talks `https` to GitHub, which `gix` speaks in-process — so this is a
+//! **these tests need git on the machine running them**. The installer never uses `file://` -
+//! it only ever talks `https` to GitHub, which `gix` speaks in-process - so this is a
 //! property of the fixtures, not of the shipped code.
 
 #![allow(dead_code)]
@@ -123,7 +123,7 @@ impl UpstreamFixture {
         )
     }
 
-    /// Where the Upstream Cache should live — beside the fixture, not inside it.
+    /// Where the Upstream Cache should live - beside the fixture, not inside it.
     pub fn cache_root(&self) -> PathBuf {
         self.temp.path().join("app-data/upstream-cache")
     }

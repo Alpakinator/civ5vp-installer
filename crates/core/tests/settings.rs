@@ -134,7 +134,7 @@ fn the_remembered_state_survives_the_round_trip() {
             extra_mods: Vec::new(),
             luajit: LuaJitEngine::Stock,
         },
-        // Modpack mode with extra picks — names with spaces and parentheses, like real
+        // Modpack mode with extra picks - names with spaces and parentheses, like real
         // mod folders have.
         InstallConfiguration {
             source: InstallationSource::UpstreamCache {
@@ -246,7 +246,7 @@ fn remembered_folders_pre_fill_the_next_launch() {
     );
 }
 
-/// Nothing remembered yet — the first launch on a machine finds the game itself.
+/// Nothing remembered yet - the first launch on a machine finds the game itself.
 #[test]
 fn a_first_launch_falls_back_to_detection() {
     let temp = temp();
@@ -437,7 +437,7 @@ fn the_dev_checkout_outlives_a_switch_back_to_github() {
         .save(&Settings {
             game_installation: None,
             documents_folder: None,
-            // The active source is GitHub — the checkout is not part of the configuration.
+            // The active source is GitHub - the checkout is not part of the configuration.
             configuration: Some(InstallConfiguration {
                 source: InstallationSource::UpstreamCache {
                     version: Version::Release("Release-5.4.3".to_owned()),
@@ -465,7 +465,7 @@ fn the_dev_checkout_outlives_a_switch_back_to_github() {
 ///
 /// The real case: a player keeps two installer versions on one machine and runs the older
 /// one. It rewrites the settings whole from the fields it knows, and every choice only the
-/// newer build understands would otherwise vanish — silently, and invisibly until they go
+/// newer build understands would otherwise vanish - silently, and invisibly until they go
 /// looking for the setting again.
 #[test]
 fn a_setting_this_build_does_not_understand_survives_being_rewritten() {

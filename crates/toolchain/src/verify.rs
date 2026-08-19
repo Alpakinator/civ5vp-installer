@@ -1,7 +1,7 @@
 //! Proving the extraction produced a usable SDK, before anything tries to compile against it.
 //!
 //! `docs/pinned-artifacts.md` §4: a bootstrap is only complete when `windows.h`, `stdio.h`,
-//! `iostream`, `kernel32.lib` and `msvcrt.lib` all resolve under the toolchain root — two SDK
+//! `iostream`, `kernel32.lib` and `msvcrt.lib` all resolve under the toolchain root - two SDK
 //! headers, the CRT's C and C++ headers, and one import library from each half. Between them
 //! they touch every one of the four ISO members and the fix-ups, which is why that list and
 //! not a longer one.
@@ -30,17 +30,17 @@ pub struct Baseline {
 /// **Measured by this implementation, not verified against the docker image.**
 /// `docs/pinned-artifacts.md` §4 asks for the counts from a real docker build; nobody here has
 /// run that container. These are what `real_bootstrap.rs` measured extracting the pinned image
-/// on 2026-08-03 — 2033 headers and 928 import libraries, with all six of
+/// on 2026-08-03 - 2033 headers and 928 import libraries, with all six of
 /// [`VERIFICATION_NAMES`] resolving.
 ///
 /// So this is a **regression guard on our own extraction**, which is worth having: it catches
 /// a reader or fix-up change that silently drops files. It is *not* the cross-check against a
 /// known-good build that the document is asking for. When someone runs the reference
-/// container, replace these and say so here — if they differ, ours is the one that is wrong.
+/// container, replace these and say so here - if they differ, ours is the one that is wrong.
 ///
 /// The header count was 2033 until fix-up 6 stopped stubbing headers the SDK already ships.
 /// The difference is exactly the six stubs it used to write, and dropping them is what made
-/// `windows.h` includable at all — so the lower number is the correct one.
+/// `windows.h` includable at all - so the lower number is the correct one.
 pub const REFERENCE_BASELINE: Option<Baseline> = Some(Baseline {
     headers: 2027,
     libs: 928,
@@ -82,7 +82,7 @@ impl ExtractionReport {
 
 /// Walk the extracted tree and answer §4's question.
 pub fn verify_extraction(sdk_root: &Path) -> Result<ExtractionReport, ToolchainError> {
-    // One walk. Symlinks are counted as neither headers nor libs — the fix-ups add several
+    // One walk. Symlinks are counted as neither headers nor libs - the fix-ups add several
     // spellings per file, and counting those would make the totals depend on how many
     // spellings the SDK happened to use rather than on what it shipped.
     let mut headers = 0usize;
@@ -105,12 +105,12 @@ pub fn verify_extraction(sdk_root: &Path) -> Result<ExtractionReport, ToolchainE
                 continue;
             };
 
-            // A verification name counts whichever way it resolves — a case symlink added by
+            // A verification name counts whichever way it resolves - a case symlink added by
             // fix-up 1 is exactly as good as a real file, because the compiler will open it.
             //
             // Matched without regard to case, and keyed by the spelling §4 uses so the caller
-            // can look the answer up. The SDK's own spellings are inconsistent — `Kernel32.Lib`
-            // beside `msvcrt.lib` — and on Windows no fix-up runs to add a lowercase alias,
+            // can look the answer up. The SDK's own spellings are inconsistent - `Kernel32.Lib`
+            // beside `msvcrt.lib` - and on Windows no fix-up runs to add a lowercase alias,
             // because NTFS never needed one. An exact match therefore reported a file the
             // compiler opens perfectly well as missing, and sent the player to clear a data
             // folder that was never the problem, forever.
@@ -162,7 +162,7 @@ pub fn require_complete(report: &ExtractionReport, sdk_root: &Path) -> Result<()
     }
     Err(ToolchainError::new(
         "The Windows SDK did not unpack completely. Clear the installer's data folder and try \
-         again — the files will be downloaded and unpacked from scratch.",
+         again - the files will be downloaded and unpacked from scratch.",
         format!(
             "verification of {} failed; {}",
             sdk_root.display(),
@@ -175,7 +175,7 @@ pub fn require_complete(report: &ExtractionReport, sdk_root: &Path) -> Result<()
 ///
 /// Not just the first component: where the SDK and CRT roots end up depends on each MSI's
 /// `Directory` table, and the CRT's puts its headers several levels down. Matching at any
-/// depth means the counts mean "headers the toolchain ships" regardless of that layout —
+/// depth means the counts mean "headers the toolchain ships" regardless of that layout -
 /// which is what makes them comparable between runs. Case-insensitive because fix-up 3 makes
 /// both spellings exist.
 fn under_directory_named(directory: &Path, root: &Path, name: &str) -> bool {
@@ -244,7 +244,7 @@ mod tests {
         assert!(report.missing.is_empty());
     }
 
-    /// The SDK spells its own files inconsistently — `Kernel32.Lib` beside `msvcrt.lib` —
+    /// The SDK spells its own files inconsistently - `Kernel32.Lib` beside `msvcrt.lib` -
     /// and on Windows no fix-up runs to add a lowercase alias, because NTFS never needed one.
     /// Matching exactly reported a file the compiler opens perfectly well as missing, and the
     /// sentence it produced sent the player to clear a data folder that was never at fault.
@@ -284,7 +284,7 @@ mod tests {
         assert!(!error.message().contains("windows.h"));
     }
 
-    /// The counts are the comparison baseline, so they must mean the same thing every run —
+    /// The counts are the comparison baseline, so they must mean the same thing every run -
     /// which means not counting the case symlinks the fix-ups add.
     #[cfg(unix)]
     #[test]
@@ -328,7 +328,7 @@ mod tests {
 
         let report = verify_extraction(dir.path()).unwrap();
 
-        // Include/: windows.h, windef.h, DriverSpecs.h, gl/gl.h — plus the CRT's two, which
+        // Include/: windows.h, windef.h, DriverSpecs.h, gl/gl.h - plus the CRT's two, which
         // live at VC/include/ and count all the same.
         assert_eq!(report.headers, 6);
         // Lib/kernel32.lib, Lib/gdi32.lib, VC/lib/msvcrt.lib.

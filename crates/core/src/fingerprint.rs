@@ -6,7 +6,7 @@
 //! DLL's own hash; when both still match, the build is skipped."
 //!
 //! The source-input half arrives from the source-provider boundary as
-//! [`crate::MaterializedSource::source_identity`] — a git commit id for a checked-out
+//! [`crate::MaterializedSource::source_identity`] - a git commit id for a checked-out
 //! Version, a content walk over [`DLL_SOURCE_INPUT_ROOTS`] for a Local Repo. The compiler
 //! flags are not hashed literally: every flag the toolchain runner passes is a function of
 //! the Build Configuration, the 43-Civs toggle, the toolchain identity, and the sources
@@ -14,8 +14,8 @@
 //! ever stops being derivable from these, it must join the fingerprint explicitly.
 //!
 //! Hashing is FNV-1a 64 implemented here in a dozen lines, because the Core has no
-//! dependencies and the job is integrity against accident — a swapped DLL, an
-//! edited source — not against an adversary forging collisions on purpose.
+//! dependencies and the job is integrity against accident - a swapped DLL, an
+//! edited source - not against an adversary forging collisions on purpose.
 
 use std::fmt::Write as _;
 use std::fs;
@@ -32,8 +32,8 @@ pub const FINGERPRINT_FILE_NAME: &str = "CvGameCore_Expansion2.dll.fingerprint";
 ///
 /// Used by the Local Repo provider to derive `source_identity` from working-file contents.
 /// Deliberately the top-level compile roots rather than the exact per-Version file list: a
-/// change to any file under them forces a rebuild even if the build happens not to read it —
-/// conservative, so there are no false skips — while edits to the mod-content folders
+/// change to any file under them forces a rebuild even if the build happens not to read it -
+/// conservative, so there are no false skips - while edits to the mod-content folders
 /// (`(1)`, `(2)`, LUA, SQL…) never force a needless compile.
 pub const DLL_SOURCE_INPUT_ROOTS: [&str; 8] = [
     "CvGameCoreDLL_Expansion2",
@@ -66,11 +66,11 @@ impl BuildFingerprint {
             FortyThreeCivs::Enabled => "on",
             FortyThreeCivs::Disabled => "off",
         };
-        // One line per input, in a fixed order — same input must yield the same
+        // One line per input, in a fixed order - same input must yield the same
         // fingerprint, byte for byte. `v1` is the format's own version: a future installer whose fingerprint
         // means something different must not skip on a sidecar it does not understand. The
         // installer version rides along because the compiler flags are *derived by this
-        // code* from the other lines — a release that changes the derivation must
+        // code* from the other lines - a release that changes the derivation must
         // invalidate old sidecars, and a version bump is the one thing a release reliably
         // does. The cost is one rebuild per installer upgrade, which is also the honest
         // thing to do.
@@ -91,7 +91,7 @@ impl BuildFingerprint {
     /// Whether `sidecar` records this same fingerprint, and if so, the DLL hash it promised.
     ///
     /// `None` means the sidecar is missing, unreadable, from another fingerprint version, or
-    /// simply different — all of which mean the same thing to the caller: build.
+    /// simply different - all of which mean the same thing to the caller: build.
     pub fn matches_sidecar(&self, sidecar: &str) -> Option<u64> {
         let (fingerprint_part, dll_line) = sidecar.split_once("dll fnv1a64:")?;
         if fingerprint_part != self.rendered {
@@ -101,7 +101,7 @@ impl BuildFingerprint {
     }
 }
 
-/// FNV-1a, 64-bit, incremental — the one hash everything here uses.
+/// FNV-1a, 64-bit, incremental - the one hash everything here uses.
 struct Fnv1a(u64);
 
 impl Fnv1a {
@@ -125,7 +125,7 @@ pub fn fnv1a64(bytes: &[u8]) -> u64 {
 }
 
 /// Hash a file's contents without reading it into memory at once (the DLL is ~10 MB).
-/// `None` for any IO failure — to every caller that means "cannot be trusted: rebuild".
+/// `None` for any IO failure - to every caller that means "cannot be trusted: rebuild".
 pub fn fnv1a64_of_file(path: &Path) -> Option<u64> {
     let mut file = fs::File::open(path).ok()?;
     let mut hash = Fnv1a::new();
@@ -139,12 +139,12 @@ pub fn fnv1a64_of_file(path: &Path) -> Option<u64> {
     }
 }
 
-/// Derive a `source_identity` from the working files under `root` — the Local Repo case,
+/// Derive a `source_identity` from the working files under `root` - the Local Repo case,
 /// where there is no commit to name.
 ///
 /// Walks [`DLL_SOURCE_INPUT_ROOTS`] in a fixed order, hashing each file's relative path and
 /// contents. Roots that do not exist contribute their absence, so adding one later changes
-/// the identity. Returns `Err` with the offending path when a file cannot be read — an
+/// the identity. Returns `Err` with the offending path when a file cannot be read - an
 /// unreadable input must fail loudly rather than fingerprint as "unchanged".
 pub fn dll_source_identity(root: &Path) -> Result<String, std::path::PathBuf> {
     let mut combined: u64 = 0xcbf2_9ce4_8422_2325;
@@ -185,7 +185,7 @@ fn hash_directory(
     for path in paths {
         let relative = path.strip_prefix(relative_to).unwrap_or(&path);
         // The OS bytes, not a lossy string: two names that differ only outside UTF-8 must
-        // not hash alike — a false skip is exactly what that would risk.
+        // not hash alike - a false skip is exactly what that would risk.
         mix(fnv1a64(relative.as_os_str().as_encoded_bytes()));
         if path.is_dir() {
             hash_directory(&path, relative_to, mix)?;

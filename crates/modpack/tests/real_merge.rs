@@ -1,6 +1,6 @@
 //! A dry run of a real Vox Populi merge, on a machine that has real data.
 //!
-//! Ignored in the fast suite — multi-hundred-megabyte inputs, minutes of work. Run by hand
+//! Ignored in the fast suite - multi-hundred-megabyte inputs, minutes of work. Run by hand
 //! while developing:
 //!
 //! ```text
@@ -10,7 +10,7 @@
 //! cargo test -p civ5vp-modpack --test real_merge -- --ignored --nocapture
 //! ```
 //!
-//! `LIST` is the ordered update files, one absolute path per line — what
+//! `LIST` is the ordered update files, one absolute path per line - what
 //! `core::modpack::collect_database_updates` would produce.
 
 use std::path::PathBuf;
@@ -53,7 +53,7 @@ fn the_real_vox_populi_merge_runs_dry() {
         }
     }
     if let Err(error) = &result {
-        panic!("merge failed: {} — {}", error.message(), error.detail());
+        panic!("merge failed: {} - {}", error.message(), error.detail());
     }
     println!(
         "merged in {:?}; gameplay dump {} MB, text dump {} MB",

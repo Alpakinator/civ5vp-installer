@@ -23,7 +23,7 @@ use host::HostRunner;
 /// The game binaries whose Lua imports the built engine has to satisfy.
 ///
 /// The two stock DLLs and the executable are always there. Vox Populi's own gamecore DLL is
-/// not — it lives in the MODS Folder and is checked separately when it can be found — so this
+/// not - it lives in the MODS Folder and is checked separately when it can be found - so this
 /// is the set that exists in any Game Installation.
 const GAME_CONSUMERS: [&str; 3] = [
     "CivilizationV_DX11.exe",
@@ -65,7 +65,7 @@ pub fn run(
     // Nothing about this engine depends on the mod: it is the pinned source, the patches, and
     // the bootstrapped compiler. A player who installs a new Version would spend a minute
     // producing a byte-identical DLL, so an engine already built from these inputs is used as
-    // it is — and still checked against the game before it goes anywhere.
+    // it is - and still checked against the game before it goes anywhere.
     let fingerprint = cache::fingerprint(&request.source_root, toolchain.identity())?;
     if let Some(engine) = cache::look_up(toolchain.engines_dir(), &fingerprint) {
         progress.report(Stage::Build, "The LuaJIT engine is already built.");

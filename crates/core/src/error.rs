@@ -11,7 +11,7 @@ use crate::boundaries::BoundaryError;
 /// holds if the root itself is a real, absolute location: a relative or empty path would
 /// send Sync's deletes and copies at whatever the working directory happens to be.
 ///
-/// This is the safety floor, not folder detection — detection does the marker checks
+/// This is the safety floor, not folder detection - detection does the marker checks
 /// (`CivilizationV.exe`, `Assets/DLC/Expansion2/`, `UserSettings.ini`) that decide whether a
 /// folder really is the game.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,7 +47,7 @@ pub enum SourceItem {
 
 /// Anything that can stop a Deployment.
 ///
-/// `user_message` is what the UI shows — a sentence a non-programmer can act on.
+/// `user_message` is what the UI shows - a sentence a non-programmer can act on.
 /// `log_detail` is what goes in the log file, and is where raw compiler, git, and IO text
 /// is allowed to appear.
 #[derive(Debug)]
@@ -60,7 +60,7 @@ pub enum InstallError {
     MissingBuiltDll { expected: PathBuf },
     /// A file operation against the game folders failed.
     Deployment {
-        /// What was being attempted, e.g. "copy" — used to build the log line.
+        /// What was being attempted, e.g. "copy" - used to build the log line.
         action: &'static str,
         path: PathBuf,
         cause: std::io::Error,
@@ -68,7 +68,7 @@ pub enum InstallError {
     /// The Installation Source does not contain something the configuration needs.
     MissingInSource {
         item: SourceItem,
-        /// The name to show the user — a folder name, or a path relative to the source root.
+        /// The name to show the user - a folder name, or a path relative to the source root.
         name: String,
         path: PathBuf,
     },
@@ -84,7 +84,7 @@ pub enum InstallError {
     /// The Modpack's base databases are not available yet: the game's cache is
     /// missing or was written by a modded session, and no snapshot has been taken.
     ModpackBaseUnavailable { detail: String },
-    /// A Local Repo mod folder is missing files its own `.modinfo` lists — deploying it
+    /// A Local Repo mod folder is missing files its own `.modinfo` lists - deploying it
     /// would install a mod the game cannot load whole. Dev mode only: an Upstream Cache
     /// Version ships what upstream released, and a player cannot act on the difference.
     ModManifestMismatch {
@@ -172,7 +172,7 @@ impl InstallError {
                 };
                 format!(
                     "Your checkout's \"{folder_name}\" no longer has {listed}, but its \
-                     .modinfo still lists it — the game would refuse the mod. Restore the \
+                     .modinfo still lists it - the game would refuse the mod. Restore the \
                      file or regenerate the .modinfo, then try again. Your game is unchanged."
                 )
             }

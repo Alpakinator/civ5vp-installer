@@ -1,10 +1,10 @@
-//! Running the bootstrapped tools — the one place the build touches `std::process`.
+//! Running the bootstrapped tools - the one place the build touches `std::process`.
 //!
 //! External processes are forbidden throughout the installer, with exactly one permitted
 //! exception: the clang/lld the installer bootstrapped itself, driven through the
 //! toolchain-runner boundary. This module is that exception's narrow waist. It is a seam
-//! rather than a bare `Command::new` so the fast suite can drive the whole orchestration —
-//! staleness, parallelism, logging, failure surfacing — against a fake that never starts a
+//! rather than a bare `Command::new` so the fast suite can drive the whole orchestration -
+//! staleness, parallelism, logging, failure surfacing - against a fake that never starts a
 //! process.
 
 use std::path::PathBuf;
@@ -12,7 +12,7 @@ use std::process::Command;
 
 /// One tool invocation: which binary, its arguments, and where to run it.
 ///
-/// The working directory is always the source root, and sources are passed relative to it —
+/// The working directory is always the source root, and sources are passed relative to it -
 /// clang-cl mistakes bare absolute Unix paths for MSVC-style options, which is why the
 /// reference script also compiles from the project directory.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,7 +29,7 @@ pub struct ToolCommand {
 }
 
 impl ToolCommand {
-    /// An invocation that inherits the environment unchanged — every command but the LuaJIT
+    /// An invocation that inherits the environment unchanged - every command but the LuaJIT
     /// host tools.
     pub fn new(program: PathBuf, args: Vec<String>, current_dir: PathBuf) -> Self {
         Self {
@@ -45,7 +45,7 @@ impl ToolCommand {
 #[derive(Debug, Clone)]
 pub struct ToolOutput {
     pub success: bool,
-    /// stdout then stderr, lossily decoded — this goes into the build log verbatim.
+    /// stdout then stderr, lossily decoded - this goes into the build log verbatim.
     pub output: String,
 }
 

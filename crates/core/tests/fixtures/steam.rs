@@ -1,10 +1,10 @@
 //! Steam library trees, built in a temporary directory.
 //!
 //! Built in code rather than committed, because the interesting parts of a Civilization V
-//! install are empty marker directories (`Assets/DLC/Expansion2/`) and zero-byte executables
-//! — neither of which git can carry. Keeping every layout in one file also makes the
-//! differences between them (native port, no Brave New World, Proton prefix vs Windows user
-//! profile) readable side by side.
+//! install are empty marker directories (`Assets/DLC/Expansion2/`) and zero-byte
+//! executables - neither of which git can carry. Keeping every layout in one file also makes
+//! the differences between them (native port, no Brave New World, Proton prefix vs Windows
+//! user profile) readable side by side.
 //!
 //! Included with `#[path]` by the test files that need it, the way `tests/support/mod.rs` is
 //! included by `tests/deployment.rs`.
@@ -21,7 +21,7 @@ pub const APP_ID: &str = "8930";
 /// The Game Installation's folder name in a Steam library. Roman numeral.
 pub const GAME_FOLDER: &str = "Sid Meier's Civilization V";
 
-/// The Documents side's folder name. Arabic numeral — a different name, not a different
+/// The Documents side's folder name. Arabic numeral - a different name, not a different
 /// spelling of the same one.
 pub const DOCUMENTS_FOLDER: &str = "Sid Meier's Civilization 5";
 
@@ -46,7 +46,7 @@ pub fn install_windows_game(library: &Path) -> PathBuf {
         "not really an executable",
     );
     directory(root.join("Assets/DLC/Expansion2"));
-    // Not a marker, but every real install has more DLC than BNW — present so a test that
+    // Not a marker, but every real install has more DLC than BNW - present so a test that
     // asserts on the DLC Folder is looking at something realistic.
     directory(root.join("Assets/DLC/Expansion"));
     root

@@ -8,7 +8,7 @@
 //!
 //! **Windows is not verified here.** The spec's platform-verification constraint says so
 //! plainly: there is no Windows machine and no CI runner yet. What the Windows half does is
-//! therefore restricted to reading the environment variables every Windows process has —
+//! therefore restricted to reading the environment variables every Windows process has -
 //! honest, and wrong only in ways a user can correct by picking the folders by hand. The
 //! known-folder API (`SHGetKnownFolderPath`) and the Steam registry key
 //! (`HKCU\Software\Valve\Steam\SteamPath`) are the two things that would make it exact; both

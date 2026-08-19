@@ -30,8 +30,8 @@ const EXCLUDED_NAMES: &[&str] = &[
 
 /// Should this entry of the Installation Source be left out of every Deployment?
 ///
-/// These are the spec's "standard exclusions" — project files, source art, docs, checked-in
-/// DLLs — and they apply at every depth, unlike a [`SourceSelection`], which is one
+/// These are the spec's "standard exclusions" - project files, source art, docs, checked-in
+/// DLLs - and they apply at every depth, unlike a [`SourceSelection`], which is one
 /// configuration's choice about one folder's top level.
 ///
 /// The checked-in DLL is the load-bearing one: ADR-0001 says the repository's DLL is stale
@@ -54,7 +54,7 @@ pub(crate) fn is_excluded(name: &str) -> bool {
 
 /// Copy the part of `from` that `selection` admits into `to`.
 ///
-/// The selection applies to the top level only — nested folders are copied whole. That is the
+/// The selection applies to the top level only - nested folders are copied whole. That is the
 /// official installer's meaning too: its `\LUA` exclusion is anchored to the source root, so a
 /// `LUA` folder deeper in the tree survives.
 pub(crate) fn copy_selected(
@@ -75,7 +75,7 @@ pub(crate) fn copy_selected(
         let destination = to.join(name);
         if source.is_dir() {
             // Below the top level the selection no longer applies, only the standard
-            // exclusions — which is what anchors an entry like `LUA` to the source root.
+            // exclusions - which is what anchors an entry like `LUA` to the source root.
             copy_selected(&source, &destination, &SourceSelection::Everything)?;
         } else {
             copy_file(&source, &destination)?;
@@ -85,11 +85,11 @@ pub(crate) fn copy_selected(
     Ok(())
 }
 
-/// Copy `from` into `to` verbatim — no selection, no standard exclusions.
+/// Copy `from` into `to` verbatim - no selection, no standard exclusions.
 ///
 /// For trees the Core assembled itself (the Modpack stage): the exclusions exist
 /// to keep repository clutter out of the game, and everything in an assembled tree is there
-/// because the Core put it there — including the Built DLL, which `is_excluded` would strip.
+/// because the Core put it there - including the Built DLL, which `is_excluded` would strip.
 pub(crate) fn copy_all(from: &Path, to: &Path) -> Result<(), InstallError> {
     create_dir_all(to)?;
     for source in sorted_entries(from)? {
@@ -109,9 +109,9 @@ pub(crate) fn copy_all(from: &Path, to: &Path) -> Result<(), InstallError> {
 /// Does this source folder hold anything `selection` would take?
 ///
 /// A named-entries selection matching nothing means the source is not shaped the way this
-/// installer expects — a file renamed upstream, most likely. Deploying the empty folder that
+/// installer expects - a file renamed upstream, most likely. Deploying the empty folder that
 /// would result looks like success and leaves the player with a mod that silently does
-/// nothing, so it is reported instead. Asked before the Deployment starts, never during it —
+/// nothing, so it is reported instead. Asked before the Deployment starts, never during it -
 /// the game must stay untouched while anything can still be wrong.
 pub(crate) fn holds_anything_selected(
     from: &Path,

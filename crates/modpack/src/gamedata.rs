@@ -1,7 +1,7 @@
 //! A small document tree for the game's GameData XML.
 //!
-//! The applier in [`crate::apply`] wants to look at a file the way the game does — a root
-//! element whose children are table operations — so this parses the whole file into a plain
+//! The applier in [`crate::apply`] wants to look at a file the way the game does - a root
+//! element whose children are table operations - so this parses the whole file into a plain
 //! tree first and keeps the streaming details of quick-xml out of the semantics code. Mod
 //! update files are at most a few megabytes; holding one as a tree is nothing.
 
@@ -135,7 +135,7 @@ fn attach(
     Ok(())
 }
 
-/// Resolve `&#NN;` / `&#xHH;` and the five predefined entities — everything the game's own
+/// Resolve `&#NN;` / `&#xHH;` and the five predefined entities - everything the game's own
 /// XML would ever contain.
 fn resolve_reference(name: &[u8]) -> Result<char, String> {
     match name {

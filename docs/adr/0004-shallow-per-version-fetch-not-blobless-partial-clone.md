@@ -32,7 +32,7 @@ which *can* do all of these, so the strategies could be compared before one was 
 | | wire | note |
 | --- | --- | --- |
 | Full clone | ~4.5 GB | the documented first fallback |
-| Blobless clone, no checkout | 10.2 MiB | commits + trees only — the history is almost entirely blobs |
+| Blobless clone, no checkout | 10.2 MiB | commits + trees only - the history is almost entirely blobs |
 | …then checkout `master` | +~149 MiB | the blobs of one snapshot, fetched lazily |
 | **Shallow `--depth 1` clone of `master`** | **147.7 MiB** | one snapshot, commits and trees included |
 | Shallow switch to `Release-5.2` | 14.5 MiB | |
@@ -50,7 +50,7 @@ The Upstream Cache is **one repository that accumulates a depth-1 snapshot per V
 
 - every materialized Version keeps its own local ref under `refs/civ5vp/`, and nothing is ever
   pruned. Those refs are what the next fetch offers the server as "already have", which is why
-  a switch transfers a fraction of a first fetch rather than a second whole snapshot —
+  a switch transfers a fraction of a first fetch rather than a second whole snapshot -
   `CONTEXT.md`'s "no file content is ever downloaded twice";
 - the working tree is emptied and rewritten from the selected commit rather than updated in
   place, because `gix` has no equivalent of `git checkout`'s stale-file removal, and because

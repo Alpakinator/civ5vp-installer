@@ -1,4 +1,4 @@
-//! Finding the game — and deciding whether a folder really is the game.
+//! Finding the game - and deciding whether a folder really is the game.
 //!
 //! Two halves, deliberately separated:
 //!
@@ -30,7 +30,7 @@ const STEAM_APP_ID: &str = "8930";
 /// The Game Installation's folder name inside a Steam library. Roman numeral.
 const GAME_FOLDER_NAME: &str = "Sid Meier's Civilization V";
 
-/// The Documents side's folder name. Arabic numeral — a *different name*, not a different
+/// The Documents side's folder name. Arabic numeral - a *different name*, not a different
 /// spelling of the same one. Neither is ever derived from the other: substituting the numeral
 /// produces a folder that does not exist, and `tests/detection.rs` plants a decoy at exactly
 /// that path to make the mistake fail loudly rather than silently.
@@ -157,7 +157,7 @@ impl FolderRejected {
 /// Windows game, with Brave New World.
 ///
 /// Only [`validate_game_installation`] makes one, so holding one is the proof that the check
-/// happened — a caller cannot assemble an unchecked one and hand it on.
+/// happened - a caller cannot assemble an unchecked one and hand it on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GameInstallation {
     root: PathBuf,
@@ -225,7 +225,7 @@ pub fn validate_game_installation(path: &Path) -> Result<GameInstallation, Folde
     let kind = FolderKind::GameInstallation;
     let root = usable_directory(path, kind)?;
 
-    // The native port first. It really is Civilization V — it just cannot load the Built DLL —
+    // The native port first. It really is Civilization V - it just cannot load the Built DLL -
     // and saying so is far more use to the player than "CivilizationV.exe is missing".
     if locate(&root, GAME_MARKERS[0]).is_none()
         && NATIVE_PORT_MARKERS
@@ -297,7 +297,7 @@ fn reject(folder: FolderKind, path: PathBuf, reason: RejectionReason) -> FolderR
 }
 
 /// The floor every picked path has to clear before its contents are worth looking at: a real,
-/// absolute directory — Sync derives its write paths from these roots.
+/// absolute directory - Sync derives its write paths from these roots.
 fn usable_directory(path: &Path, folder: FolderKind) -> Result<PathBuf, FolderRejected> {
     let reason = if path.as_os_str().is_empty() {
         RejectionReason::NotChosen
@@ -318,7 +318,7 @@ fn usable_directory(path: &Path, folder: FolderKind) -> Result<PathBuf, FolderRe
 /// which is how the Windows arrangement is exercised on Linux.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SearchLocations {
-    /// Steam installation roots — the folders that hold `steamapps/`. Every library named in
+    /// Steam installation roots - the folders that hold `steamapps/`. Every library named in
     /// each one's `libraryfolders.vdf` is searched too.
     pub steam_roots: Vec<PathBuf>,
     /// Documents folders to look under, for `My Games/Sid Meier's Civilization 5`. This is the
@@ -353,7 +353,7 @@ impl DetectedGame {
 pub enum Detection {
     /// Everything needed, found.
     Found(DetectedGame),
-    /// The game is there but its Documents side is not — which is what a game that has never
+    /// The game is there but its Documents side is not - which is what a game that has never
     /// been launched looks like.
     DocumentsNotFound {
         game_installation: GameInstallation,
@@ -381,7 +381,7 @@ impl Detection {
             } => Some(format!(
                 "Found Civilization V at {}, but not the folder the game keeps your mods and \
                  settings in. Start the game once so that it creates that folder, then reopen \
-                 this installer — or enter the folder below yourself.",
+                 this installer - or enter the folder below yourself.",
                 game_installation.root().display()
             )),
             Self::Refused(rejected) => Some(rejected.user_message()),
@@ -551,8 +551,8 @@ fn push_unique(paths: &mut Vec<PathBuf>, path: PathBuf) {
 /// it is not there.
 ///
 /// Segments are matched exactly first and case-insensitively second. Every tree this walks is
-/// a Windows tree — a Steam library holding the Windows game, or a Proton prefix mirroring a
-/// Windows drive — where case has never been a difference. Returning the on-disk spelling
+/// a Windows tree - a Steam library holding the Windows game, or a Proton prefix mirroring a
+/// Windows drive - where case has never been a difference. Returning the on-disk spelling
 /// rather than the one asked for matters: it is the path Sync will later write to.
 fn locate(root: &Path, relative: &str) -> Option<PathBuf> {
     let mut current = root.to_path_buf();

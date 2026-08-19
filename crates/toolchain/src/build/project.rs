@@ -1,8 +1,8 @@
-//! The source list, read from the project file at the selected Version — never hardcoded,
+//! The source list, read from the project file at the selected Version - never hardcoded,
 //! so builds don't break when upstream adds a source file.
 //!
-//! The reference script carries a frozen copy of this list and is already stale —
-//! `stackwalker/StackWalker.cpp` exists in today's project file but not in the script —
+//! The reference script carries a frozen copy of this list and is already stale -
+//! `stackwalker/StackWalker.cpp` exists in today's project file but not in the script -
 //! which is exactly the failure mode this module exists to close.
 //!
 //! The file parsed is `CvGameCoreDLL_Expansion2/VoxPopuli.vcxproj`, the MSBuild project the
@@ -10,7 +10,7 @@
 //! `.civ5proj`"). Its `<ClCompile Include="…">` items are the source list. Two quirks of the
 //! real file are handled here rather than passed downstream:
 //!
-//! * Entries use Windows separators and Windows case — today's file says `lua\CvLuaArea.cpp`
+//! * Entries use Windows separators and Windows case - today's file says `lua\CvLuaArea.cpp`
 //!   where the directory on disk is `Lua/`. Fine under MSBuild, fatal on a case-sensitive
 //!   filesystem, so every entry is resolved against the directory listing case-insensitively.
 //! * `_precompile.cpp` is in the list but exists to *create* the precompiled header
@@ -33,7 +33,7 @@ pub const PROJECT_FILE: &str = "CvGameCoreDLL_Expansion2/VoxPopuli.vcxproj";
 /// The DLL project at one Version: what to compile.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DllProject {
-    /// The directory holding the project file — the directory `ClCompile` entries are
+    /// The directory holding the project file - the directory `ClCompile` entries are
     /// relative to.
     pub project_dir: PathBuf,
     /// Every source to compile through the precompiled header, relative to `project_dir`,
@@ -245,7 +245,7 @@ mod tests {
     #[test]
     fn reads_the_source_list_with_disk_case_and_without_the_pch_creator() {
         let dir = tempfile::tempdir().unwrap();
-        // On disk the directory is `Lua`, while the project file says `lua\` — the real
+        // On disk the directory is `Lua`, while the project file says `lua\` - the real
         // repository's exact mismatch.
         write_fixture(
             dir.path(),

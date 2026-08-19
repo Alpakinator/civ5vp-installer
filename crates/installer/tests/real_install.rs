@@ -1,9 +1,9 @@
 //! A real Deployment end to end: real source provider, real toolchain, real compile, real
-//! Sync — into throwaway game folders, never the developer's game.
+//! Sync - into throwaway game folders, never the developer's game.
 //!
 //! `#[ignore]`d. Proves that a real Version installs end to end with a genuinely built
 //! DLL, exercised through the same `wiring::core_at` composition
-//! the shipped binary uses — only the App Data Store root and the game folders are
+//! the shipped binary uses - only the App Data Store root and the game folders are
 //! test-owned.
 //!
 //! ```bash
@@ -27,11 +27,11 @@ use civ5vp_core::{
 use civ5vp_installer::wiring;
 
 /// Point this store's Toolchain Cache at a prepared one, when `CIV5VP_TOOLCHAIN_CACHE` names
-/// it, so a real run does not fetch 2.4 GB from archive.org again — that download path has its
+/// it, so a real run does not fetch 2.4 GB from archive.org again - that download path has its
 /// own proof in `real_bootstrap.rs`.
 ///
 /// Unix only, and quietly nothing elsewhere. The share is a symlink, and creating one on
-/// Windows needs a privilege the installer deliberately does not require — the same reason the
+/// Windows needs a privilege the installer deliberately does not require - the same reason the
 /// SDK fix-ups do not run there. On Windows these tests use whatever the store already holds.
 fn link_toolchain_cache(store_root: &Path) {
     #[cfg(not(unix))]
@@ -49,11 +49,11 @@ fn link_toolchain_cache(store_root: &Path) {
 }
 
 /// The fresh-machine walkthrough: a clean App Data Store, empty game folders, and
-/// the exact path a new player takes — list the versions, pick the newest Release, fetch it
+/// the exact path a new player takes - list the versions, pick the newest Release, fetch it
 /// from the real GitHub, build the DLL, Sync into the game.
 ///
 /// The one concession: `CIV5VP_TOOLCHAIN_CACHE`, when set, is symlinked in as the Toolchain
-/// Cache so the run does not re-download 2.4 GB from archive.org every time — that download
+/// Cache so the run does not re-download 2.4 GB from archive.org every time - that download
 /// path has its own proof (`real_bootstrap.rs`). Everything else starts from
 /// nothing, including the ~600 MB upstream fetch.
 #[test]
@@ -90,7 +90,7 @@ fn a_fresh_machine_installs_the_newest_release_from_github() {
 
     let configuration = InstallConfiguration {
         source: InstallationSource::UpstreamCache { version: newest },
-        // The suggested default is Vox Populi with EUI — the full first-run experience.
+        // The suggested default is Vox Populi with EUI - the full first-run experience.
         flavor: Flavor::suggested(),
         forty_three_civs: FortyThreeCivs::Disabled,
         build_configuration: BuildConfiguration::Release,
@@ -216,7 +216,7 @@ fn a_real_version_installs_end_to_end_with_a_genuinely_built_dll() {
     );
     println!("installed {} bytes to {}", bytes.len(), deployed.display());
 
-    // Repeat install: same configuration, nothing changed — the Build
+    // Repeat install: same configuration, nothing changed - the Build
     // Fingerprint sidecar and the intact DLL make the second run skip the build entirely.
     let started = std::time::Instant::now();
     let (sender, receiver) = mpsc::channel::<civ5vp_core::ProgressEvent>();
@@ -243,7 +243,7 @@ fn a_real_version_installs_end_to_end_with_a_genuinely_built_dll() {
     );
 
     // The edit-to-game loop: edit a Lua file in the checkout, redeploy, and the
-    // change is in MODS — without the DLL recompiling. The fixture checkout is shared with
+    // change is in MODS - without the DLL recompiling. The fixture checkout is shared with
     // other tests, so the file is restored afterwards (a panic in between leaves an edit
     // behind; re-materializing the Version puts it right).
     let lua = PathBuf::from(std::env::var_os("CIV5VP_DLL_SOURCE_ROOT").unwrap())
@@ -289,7 +289,7 @@ fn a_real_version_installs_end_to_end_with_a_genuinely_built_dll() {
 /// toolchain, replace the engine, then give the original back.
 ///
 /// The game folders are throwaway, but the Game Installation they point at holds real copies
-/// of Civilization V's own binaries — the build refuses to hand back an engine it has not
+/// of Civilization V's own binaries - the build refuses to hand back an engine it has not
 /// checked against those, so a fixture of empty files would not exercise the thing worth
 /// proving. Nothing under `CIV5_GAME_DIR` is written; it is only read from.
 ///

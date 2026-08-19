@@ -1,7 +1,7 @@
 //! The exact clang-cl and lld-link settings that produce a DLL the game accepts.
 //!
 //! Transcribed from `build_vp_clang_linux.py` on the `docker` branch of
-//! `Alpakinator/Community-Patch-DLL` — `build_cl_config_args` and `build_link_config_args`,
+//! `Alpakinator/Community-Patch-DLL` - `build_cl_config_args` and `build_link_config_args`,
 //! plus the constant tables they draw from. The spec is blunt about this: only that
 //! configuration is proven, and Release settings taken from anywhere else yield a DLL the
 //! game rejects. So this file *copies*; it does not derive, improve, or tidy. When comparing
@@ -12,7 +12,7 @@
 //! The one knowing deviation: the reference merges the VC9 CRT headers into a single SDK
 //! `Include` directory at extraction time, so its flag builder takes one include root. Our
 //! extraction honours the MSIs' real layout, which keeps the CRT and the SDK
-//! apart, so `-external:I` appears once per directory — same directories, same compiler
+//! apart, so `-external:I` appears once per directory - same directories, same compiler
 //! search list, just not physically merged.
 
 use std::path::Path;
@@ -114,7 +114,7 @@ const CL_SUPPRESS: [&str; 5] = [
 /// `/Fp`, in the reference order.
 ///
 /// `sdk_include_dirs` are the extracted SDK and VC9 CRT include roots (`crt_first` in the
-/// orchestrator decides their order). `stackwalker` comes from the Version's project file —
+/// orchestrator decides their order). `stackwalker` comes from the Version's project file -
 /// see [`super::project::DllProject::stackwalker`]; when set, the define lands where
 /// upstream's own clang scripts put it, right after `EXTERNAL_PAUSING`.
 pub fn compiler_args(
@@ -209,7 +209,7 @@ pub fn linker_args(configuration: BuildConfiguration, source_root: &Path) -> Vec
 mod tests {
     use std::path::PathBuf;
 
-    /// The flags carry real paths, and `Path::join` uses the platform's separator — `\` on
+    /// The flags carry real paths, and `Path::join` uses the platform's separator - `\` on
     /// Windows, `/` everywhere else. Both are correct: clang-cl and lld-link accept either,
     /// and nothing downstream cares. Comparing against one written spelling therefore means
     /// normalising the separator, not asserting which platform the test runs on.
@@ -226,7 +226,7 @@ mod tests {
         ]
     }
 
-    /// The Release flags, spelled out in full against the reference script — a transcription
+    /// The Release flags, spelled out in full against the reference script - a transcription
     /// is only trustworthy if a reviewer can diff it without opening the Python.
     #[test]
     fn release_compiler_flags_match_the_reference_build() {
@@ -344,7 +344,7 @@ mod tests {
     }
 
     /// `STACKWALKER` tracks the Version's project file, and lands where upstream's own clang
-    /// scripts put it — directly after `EXTERNAL_PAUSING`.
+    /// scripts put it - directly after `EXTERNAL_PAUSING`.
     #[test]
     fn stackwalker_is_defined_only_when_the_project_file_says_so() {
         let with = compiler_args(

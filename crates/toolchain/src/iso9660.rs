@@ -1,7 +1,7 @@
 //! A read-only ISO9660 reader, enough to pull four known paths out of the SDK image.
 //!
-//! Hand-rolled rather than taken from crates.io. A dependency would have been legal — only
-//! external *programs* are forbidden — but every ISO9660 crate on crates.io is
+//! Hand-rolled rather than taken from crates.io. A dependency would have been legal - only
+//! external *programs* are forbidden - but every ISO9660 crate on crates.io is
 //! either explicitly incomplete, `no_std`-shaped for bootloaders, or unmaintained, and the
 //! part of the format we need is small: descriptors start at a fixed sector, a volume
 //! descriptor points at the root directory record, and directory records are a flat list of
@@ -19,7 +19,7 @@ use crate::error::{ToolchainError, missing_member, stream_error};
 /// Every offset in the format is in units of this.
 const LOGICAL_SECTOR_SIZE: u64 = 2048;
 
-/// Volume descriptors start here — the first 16 sectors are the "system area" and are not
+/// Volume descriptors start here - the first 16 sectors are the "system area" and are not
 /// part of the filesystem.
 const FIRST_DESCRIPTOR_SECTOR: u64 = 16;
 
@@ -81,7 +81,7 @@ impl<R: Read + Seek> Iso9660<R> {
     ///
     /// Joliet wins when it is there. On Microsoft's SDK image the primary descriptor holds
     /// mangled 8.3 names (`WINSDK~1.MSI`) while Joliet holds `WinSDK_x86.msi`, so reading the
-    /// primary would mean guessing at manglings — exactly what the extraction contract says
+    /// primary would mean guessing at manglings - exactly what the extraction contract says
     /// not to do.
     pub fn open(mut reader: R) -> Result<Self, ToolchainError> {
         // Each candidate carries the encoding its names are stored in, so choosing a
@@ -327,9 +327,9 @@ fn parse_record(bytes: &[u8], encoding: NameEncoding) -> Result<RawRecord, Toolc
 }
 
 /// Turn an identifier into a name: decode, then drop the `;1` version suffix ISO9660 appends
-/// to every file. Trailing `.` on extension-less names goes too — the format pads them.
+/// to every file. Trailing `.` on extension-less names goes too - the format pads them.
 fn decode_name(bytes: &[u8], encoding: NameEncoding) -> String {
-    // `.` and `..` are the single bytes 0x00 and 0x01 in *both* encodings — they are not
+    // `.` and `..` are the single bytes 0x00 and 0x01 in *both* encodings - they are not
     // UCS-2 under Joliet, which a general decoder would turn into an empty name.
     if bytes == [0] {
         return DOT.to_string();

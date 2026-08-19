@@ -1,13 +1,13 @@
 //! The Local Repo: a developer's own checkout, used byte-for-byte as it is.
 //!
 //! There is deliberately no git in this file. Uncommitted changes must be installed, which
-//! means the working tree is the source — not `HEAD`, not the index. So the installer does
+//! means the working tree is the source - not `HEAD`, not the index. So the installer does
 //! not clean it, stash it, check anything out in it, or even read which ref it is on. It
 //! reads the path, confirms it is a real directory, and hands it back.
 //!
 //! The same reasoning picks the `source_identity`: with uncommitted changes in play, no
 //! commit can name what will be built, so the identity comes from the working files
-//! themselves — [`civ5vp_core::dll_source_identity`] over the DLL's input roots, which reads
+//! themselves - [`civ5vp_core::dll_source_identity`] over the DLL's input roots, which reads
 //! the tree without writing a byte to it.
 
 use std::path::Path;

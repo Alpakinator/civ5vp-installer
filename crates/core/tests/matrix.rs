@@ -6,7 +6,7 @@
 //! component, named after it, and each asserts the *complete* resulting tree rather than
 //! spot-checking a file. An exact list is what catches a folder that should not be there.
 //!
-//! The seventh combination — EUI with Community Patch only — has no test because it cannot be
+//! The seventh combination - EUI with Community Patch only - has no test because it cannot be
 //! written down: `Eui` is reachable only through `Flavor::VoxPopuli`, so the illegal
 //! configuration is a compile error rather than a runtime rejection. `eui_is_unrepresentable_
 //! with_community_patch_only` documents that, since a rule enforced by the type system is
@@ -27,11 +27,11 @@ use support::{
 // so a test body reads as its row of the table rather than as a wall of paths.
 
 /// `(1) Community Patch` minus its top-level Lua. Note what is *not* here: the checked-in
-/// `CvGameCore_Expansion2.dll` (ADR-0001 — the Built DLL below replaces it), the `.civ5proj`,
+/// `CvGameCore_Expansion2.dll` (ADR-0001 - the Built DLL below replaces it), the `.civ5proj`,
 /// and `MANUAL INSTALL.txt`. Note what is: `Kit/`, which the official installer does ship.
 ///
 /// `Core Files/LUA/CoreHelper.lua` is here on purpose and in every configuration. The EUI
-/// strip removes the *top-level* `LUA` only — the official installer's exclusion is `\LUA`,
+/// strip removes the *top-level* `LUA` only - the official installer's exclusion is `\LUA`,
 /// and the leading backslash anchors it to the source root. A nested `LUA` deeper in the tree
 /// is ordinary mod content and must survive. Without this entry, making the exclusion
 /// recursive would pass every test in this file.
@@ -40,7 +40,7 @@ const COMMUNITY_PATCH: &[&str] = &[
     "MODS/(1) Community Patch/Core Files/Core Values/DefinesChanges.sql",
     "MODS/(1) Community Patch/Core Files/LUA/CoreHelper.lua",
     "MODS/(1) Community Patch/CvGameCore_Expansion2.dll",
-    // The Build Fingerprint sidecar, recorded beside the deployed DLL — inside a Claimed
+    // The Build Fingerprint sidecar, recorded beside the deployed DLL - inside a Claimed
     // Folder, and part of every configuration's expected tree.
     "MODS/(1) Community Patch/CvGameCore_Expansion2.dll.fingerprint",
     "MODS/(1) Community Patch/Kit/ReadMe.txt",
@@ -82,7 +82,7 @@ const UI_BC1_DLC: &[&str] = &[
     "DLC/UI_bc1/EUI_0.Civ5Pkg",
 ];
 
-/// The loading-screen tips, from `VPUI Text/` in the source — a different folder from the
+/// The loading-screen tips, from `VPUI Text/` in the source - a different folder from the
 /// `VPUI` deployed as DLC.
 const TIPS: &[&str] = &["Text/VPUI_tips_en_us.xml"];
 
@@ -194,7 +194,7 @@ fn vox_populi_without_eui() {
     );
 }
 
-/// InnoSetup component `FullEUI`. The Lua in `(1)` and `(2)` is gone — `(3a)` replaces it.
+/// InnoSetup component `FullEUI`. The Lua in `(1)` and `(2)` is gone - `(3a)` replaces it.
 #[test]
 fn vox_populi_with_eui() {
     let game = GameFixture::new();
@@ -241,7 +241,7 @@ fn vox_populi_without_eui_with_43_civs() {
     );
 }
 
-/// InnoSetup component `Civ43EUI` — every toggle on at once.
+/// InnoSetup component `Civ43EUI` - every toggle on at once.
 #[test]
 fn vox_populi_with_eui_and_43_civs() {
     let game = GameFixture::new();
@@ -274,7 +274,7 @@ fn vox_populi_with_eui_and_43_civs() {
 fn eui_is_unrepresentable_with_community_patch_only() {
     let community_patch = Flavor::CommunityPatch;
     // There is no `eui` to set here. `Flavor::CommunityPatch { eui: Eui::Enabled }` does not
-    // compile, which is the whole point — the check happens before the program runs.
+    // compile, which is the whole point - the check happens before the program runs.
     assert!(matches!(community_patch, Flavor::CommunityPatch));
     assert!(matches!(
         vox_populi(Eui::Enabled),
@@ -285,7 +285,7 @@ fn eui_is_unrepresentable_with_community_patch_only() {
 /// Switching configurations removes exactly what no longer belongs.
 ///
 /// This is the case that corrupts hand-made installs. Going from the largest configuration to
-/// the smallest has to leave the game as if the smallest had been installed on a clean game —
+/// the smallest has to leave the game as if the smallest had been installed on a clean game -
 /// no orphaned DLC folder, no leftover Lua, no stale tips file.
 #[test]
 fn switching_from_the_largest_configuration_to_the_smallest_converges() {
@@ -431,7 +431,7 @@ fn the_largest_configuration_leaves_unrelated_content_alone() {
     );
 }
 
-/// Uninstalling after the largest configuration restores an unmodded game — including the
+/// Uninstalling after the largest configuration restores an unmodded game - including the
 /// Claimed File in the Text Folder, which is the one that is easy to forget.
 #[test]
 fn uninstall_after_the_largest_configuration_restores_an_unmodded_game() {
@@ -559,7 +559,7 @@ fn copy_dir(from: &std::path::Path, to: &std::path::Path) {
     }
 }
 
-/// The DLC folders are read from the source root, not from a `DLC` subdirectory — a mistake
+/// The DLC folders are read from the source root, not from a `DLC` subdirectory - a mistake
 /// that would silently produce an install with no user interface at all.
 #[test]
 fn the_dlc_folders_come_from_the_source_root() {
@@ -593,7 +593,7 @@ fn community_patch_only_puts_nothing_in_the_dlc_or_text_folders() {
 /// Upstream renamed `(3a) EUI Compatibility Files` to `(3a) VP - EUI Compatibility Files`
 /// between `Release-5.0` and `Release-5.4.2`. Both are Versions this installer offers, so a
 /// single hardcoded name would fail on every Release up to 5.0 with "the mod files are missing
-/// the (3a) VP - EUI Compatibility Files folder" — for a folder sitting right there under its
+/// the (3a) VP - EUI Compatibility Files folder" - for a folder sitting right there under its
 /// old name. It is deployed under the current name whichever the source used.
 #[test]
 fn a_version_that_uses_the_old_name_for_the_eui_folder_still_installs() {

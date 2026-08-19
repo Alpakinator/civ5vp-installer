@@ -13,7 +13,7 @@ pub struct GameFolders {
     pub dlc: PathBuf,
     /// `…/Documents/My Games/Sid Meier's Civilization 5/Text`
     pub text: PathBuf,
-    /// `…/Sid Meier's Civilization V` — the Game Installation root.
+    /// `…/Sid Meier's Civilization V` - the Game Installation root.
     ///
     /// Held rather than derived from the DLC Folder's grandparent, because this is where the
     /// Replaced File is written (ADR-0006). A path that decides where a file belonging to the
@@ -22,12 +22,12 @@ pub struct GameFolders {
 }
 
 impl GameFolders {
-    /// The Documents-side root — the `Sid Meier's Civilization 5` folder holding `MODS`,
+    /// The Documents-side root - the `Sid Meier's Civilization 5` folder holding `MODS`,
     /// `Text`, `ModUserData`, `UserSettings.ini` and `cache`.
     ///
     /// Derived rather than stored, and deliberately only when the MODS and Text Folders agree
     /// on it. That agreement is checked before a Deployment runs, so by the time Sync asks for
-    /// the `cache` folder the answer is a real location and not a guess — which matters,
+    /// the `cache` folder the answer is a real location and not a guess - which matters,
     /// because clearing `cache` is the one write permitted outside a Claimed Folder.
     pub(crate) fn documents_root(&self) -> Option<&Path> {
         match (self.mods.parent(), self.text.parent()) {
@@ -38,7 +38,7 @@ impl GameFolders {
 
     /// The game's `cache` folder, whose contents are cleared after every Deployment.
     ///
-    /// `ModUserData` sits beside it and is never touched — that is the whole reason this
+    /// `ModUserData` sits beside it and is never touched - that is the whole reason this
     /// returns one specific child rather than the Documents root itself.
     pub(crate) fn cache(&self) -> Option<PathBuf> {
         self.documents_root().map(|root| root.join("cache"))
@@ -111,13 +111,13 @@ pub enum ClaimedFolder {
     Vpui,
     UiBc1,
     /// The generated Modpack. Unlike every other Claimed Folder it is not filled
-    /// from the Installation Source — the Core assembles it in the App Data Store and Sync
+    /// from the Installation Source - the Core assembles it in the App Data Store and Sync
     /// deploys the result.
     Modpack,
 }
 
 impl ClaimedFolder {
-    /// Every Claimed Folder, in a fixed order. Iterating this — rather than a `HashSet` — is
+    /// Every Claimed Folder, in a fixed order. Iterating this - rather than a `HashSet` - is
     /// what keeps Sync's file operations deterministic.
     pub const ALL: [Self; 8] = [
         Self::CommunityPatch,
@@ -154,7 +154,7 @@ impl ClaimedFolder {
             Self::Vpui => &["VPUI"],
             Self::UiBc1 => &["UI_bc1"],
             // The name is the Community Patch DLL's own (`CvGame::CreateMPMP`), and the
-            // in-game Modpack Maker writes the same folder — so a Deployment that removes
+            // in-game Modpack Maker writes the same folder - so a Deployment that removes
             // this also cleans up a modpack the player made by hand, which is exactly the
             // conflict removal exists to prevent.
             Self::Modpack => &["VP_MODPACK"],
@@ -163,7 +163,7 @@ impl ClaimedFolder {
 
     /// The name this folder is deployed under: the current one, whatever the source called it.
     pub fn folder_name(self) -> &'static str {
-        // `folder_names` is never empty — every arm above is a non-empty literal — so this
+        // `folder_names` is never empty - every arm above is a non-empty literal - so this
         // cannot fall through. The crate denies `unwrap`, hence the explicit arm.
         match self.folder_names() {
             [current, ..] => current,
@@ -261,7 +261,7 @@ mod tests {
     }
 
     /// The Game Installation root decides where the Replaced File is written, so it is held
-    /// to exactly the standard the other three are — an unset one must stop a Deployment
+    /// to exactly the standard the other three are - an unset one must stop a Deployment
     /// before it starts, not surface as a write to a relative path.
     #[test]
     fn an_unset_game_root_is_refused() {

@@ -3,7 +3,7 @@
 //! The engine this builds is not a general-purpose LuaJIT: it is a replacement for the exact
 //! Lua 5.1 the game ships, dropped in under the game's own file name. Where LuaJIT and
 //! PUC-Lua 5.1 disagree about behaviour the language leaves undefined, the game's mods were
-//! written against PUC's answer — so an engine that answers differently is not faster, it is
+//! written against PUC's answer - so an engine that answers differently is not faster, it is
 //! broken. These patches close those gaps, and nothing else.
 //!
 //! Each is an exact-text replacement rather than a diff, and a source that does not contain
@@ -25,7 +25,7 @@ struct SourcePatch {
     /// What replaces it.
     replacement: &'static str,
     /// Text that exists only once the patch is in. How a second build knows not to look for
-    /// the anchor again — the checkout is fetched once and reused, patched source and all.
+    /// the anchor again - the checkout is fetched once and reused, patched source and all.
     marker: &'static str,
 }
 
@@ -34,7 +34,7 @@ struct SourcePatch {
 /// `#t` on a table with a hole is undefined: any index whose successor is nil is a valid
 /// answer, and PUC-Lua 5.1 and LuaJIT pick different ones because their tables grow
 /// differently. `table.insert` uses that number to decide how far to shift, so on a holey
-/// table the two engines produce *different arrays* — not merely a different length.
+/// table the two engines produce *different arrays* - not merely a different length.
 ///
 /// Vox Populi's top panel hits this. It builds the strategic-resource icons with
 ///
@@ -51,7 +51,7 @@ struct SourcePatch {
 /// iron to index 3, and the next insert overwrites iron with coal. `ipairs` then stops at the
 /// hole and the panel shows one icon: horses. Iron and paper are gone entirely.
 ///
-/// The fix is to measure the prefix — the largest `n` where `t[1..n]` are all non-nil, which
+/// The fix is to measure the prefix - the largest `n` where `t[1..n]` are all non-nil, which
 /// is the smallest valid border and the one every caller means. For a table without holes it
 /// is `#t` exactly, so nothing else changes: measured against PUC-Lua 5.1 and stock LuaJIT
 /// across every shape of insert, the only case whose *contents* differ is the broken one.
