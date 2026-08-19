@@ -199,11 +199,11 @@ fn flavor_choices() -> [(Flavor, &'static str); 3] {
         (Flavor::CommunityPatch, "Community Patch only"),
         (
             Flavor::VoxPopuli { eui: Eui::Disabled },
-            "Vox Populi — the full overhaul",
+            "Community Patch + Vox Populi",
         ),
         (
             Flavor::VoxPopuli { eui: Eui::Enabled },
-            "Vox Populi with EUI — adds the Enhanced User Interface",
+            "Community Patch + Vox Populi + EUI",
         ),
     ]
 }

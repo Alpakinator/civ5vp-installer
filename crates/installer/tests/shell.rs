@@ -312,7 +312,7 @@ fn picking_vox_populi_with_eui_installs_the_whole_thing() {
     enter_dev_mode(&mut harness, &miniature_repo().display().to_string());
 
     harness
-        .get_by_label("Vox Populi with EUI — adds the Enhanced User Interface")
+        .get_by_label("Community Patch + Vox Populi + EUI")
         .click();
     harness.get_by_label("Install").click();
     wait_for_the_install_to_finish(&mut harness);
@@ -384,9 +384,7 @@ fn picking_the_modpack_mode_builds_a_modpack_and_is_remembered() {
     let mut harness = harness_over(game.launch(&game.locations()));
     harness.step();
     enter_dev_mode(&mut harness, &miniature_repo().display().to_string());
-    harness
-        .get_by_label("Vox Populi — the full overhaul")
-        .click();
+    harness.get_by_label("Community Patch + Vox Populi").click();
     harness
         .get_by_label("Install as a modpack — loads automatically, works in multiplayer")
         .click();
@@ -451,7 +449,7 @@ fn switching_the_flavor_down_removes_what_no_longer_belongs() {
     enter_dev_mode(&mut harness, &miniature_repo().display().to_string());
 
     harness
-        .get_by_label("Vox Populi with EUI — adds the Enhanced User Interface")
+        .get_by_label("Community Patch + Vox Populi + EUI")
         .click();
     harness.get_by_label("Install").click();
     wait_for_the_install_to_finish(&mut harness);
