@@ -1841,6 +1841,14 @@ impl eframe::App for InstallerApp {
 mod tests {
     use super::*;
 
+    /// `elided_path` rebuilds the path through `PathBuf`, which renders with the platform's
+    /// own separator - `\` on Windows, `/` everywhere else. Both are correct, and nothing a
+    /// player reads depends on which. Comparing against one written spelling therefore means
+    /// normalising the separator rather than asserting which platform the test runs on.
+    fn with_forward_slashes(path: String) -> String {
+        path.replace('\\', "/")
+    }
+
     /// The two ends survive and the middle goes: exactly the two things a player checks in a
     /// derived path - that it is under the right home, and that it lands on the right folder.
     #[test]
@@ -1850,7 +1858,7 @@ mod tests {
              /steamuser/Documents/My Games/Sid Meier's Civilization 5/MODS",
         );
         assert_eq!(
-            elided_path(path),
+            with_forward_slashes(elided_path(path)),
             "/home/sunny/…/My Games/Sid Meier's Civilization 5/MODS",
         );
     }
@@ -1860,14 +1868,23 @@ mod tests {
     #[test]
     fn a_short_path_is_left_alone() {
         let path = Path::new("/home/sunny/Games/Civ/MODS");
-        assert_eq!(elided_path(path), "/home/sunny/Games/Civ/MODS");
+        assert_eq!(
+            with_forward_slashes(elided_path(path)),
+            "/home/sunny/Games/Civ/MODS"
+        );
     }
 
     /// The boundary. Seven components - the root counts as one - is the longest that is left
     /// whole, because taking a single component out would only replace it with an ellipsis.
     #[test]
     fn nothing_is_taken_out_unless_two_components_go() {
-        assert_eq!(elided_path(Path::new("/a/b/c/d/e/f")), "/a/b/c/d/e/f");
-        assert_eq!(elided_path(Path::new("/a/b/c/d/e/f/g")), "/a/b/…/e/f/g");
+        assert_eq!(
+            with_forward_slashes(elided_path(Path::new("/a/b/c/d/e/f"))),
+            "/a/b/c/d/e/f"
+        );
+        assert_eq!(
+            with_forward_slashes(elided_path(Path::new("/a/b/c/d/e/f/g"))),
+            "/a/b/…/e/f/g"
+        );
     }
 }
