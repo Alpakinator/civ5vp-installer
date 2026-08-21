@@ -227,7 +227,11 @@ fn a_launch_pre_fills_the_folders_it_detects() {
         field_value(&mut harness, "Civilization 5 Documents folder"),
         game.documents_folder().display().to_string(),
     );
-    // …and the three the Core derives from them.
+    // …and the three the Core derives from them. Read out of the accessibility tree rather
+    // than matched against the drawn text: the three derived lines are *shown* with their
+    // middles taken out, because a Proton path is nine levels deep and wraps otherwise, and
+    // it is the whole path that a screen reader is given.
+    let announced = visible_labels(&mut harness);
     for expected in [
         format!("MODS folder: {}", game.mods_folder().display()),
         format!(
@@ -240,8 +244,8 @@ fn a_launch_pre_fills_the_folders_it_detects() {
         ),
     ] {
         assert!(
-            harness.query_by_label(&expected).is_some(),
-            "expected the shell to show {expected:?}",
+            announced.contains(&expected),
+            "expected the shell to announce {expected:?}; it announced {announced:?}",
         );
     }
 }
@@ -494,10 +498,13 @@ fn what_one_launch_settles_the_next_launch_starts_from() {
     let mut next = harness_over(game.launch(&game.nowhere()));
     next.step();
 
+    // Read out of the accessibility tree: the derived lines are drawn with their middles
+    // taken out, and the whole path is what is announced.
+    let expected = format!("MODS folder: {}", game.mods_folder().display());
+    let announced = visible_labels(&mut next);
     assert!(
-        next.query_by_label(&format!("MODS folder: {}", game.mods_folder().display()))
-            .is_some(),
-        "the remembered folders should have pre-filled the next launch",
+        announced.contains(&expected),
+        "the remembered folders should have pre-filled the next launch; it announced          {announced:?}",
     );
     assert_eq!(
         field_value(&mut next, "Community-Patch-DLL folder"),
@@ -772,12 +779,12 @@ fn the_version_picker_defaults_to_the_newest_release_and_the_pick_is_remembered(
     // The list arrives from a lookup thread - a fixture catalog here, never a socket. The
     // combo exposes its selection as its accessibility *value*, the way a screen reader
     // reads a closed dropdown.
-    wait_for_combo_value(&mut harness, "Latest release - Release-5.2");
+    wait_for_combo_value(&mut harness, "Latest Release-5.2");
 
     // Pick an older Release through the combo, as a player would.
     harness.get_by_label("Version").click();
     harness.step();
-    // The open list names the newest release once - inside "Latest release - …" - and
+    // The open list names the newest release once - inside "Latest Release-…" - and
     // never again as a bare entry; older releases keep their own rows.
     assert_eq!(
         harness.query_all_by_label_contains("Release-5.2").count(),
@@ -793,15 +800,96 @@ fn the_version_picker_defaults_to_the_newest_release_and_the_pick_is_remembered(
     wait_for_combo_value(&mut next, "Release-5.1");
 }
 
-/// The picker offers official Releases only, until the unofficial toggle brings
-/// in the changes since the newest one - truncated to fit, newest first - and a picked
-/// build is remembered like any other Version.
+/// A settings file naming the Latest Development Version opens on the newest Release.
+///
+/// That version is not a row this picker draws, so restoring it as the selection left the
+/// combo reading "Latest development version" with nothing in the list to change it back to -
+/// and installing `master` under a name that says nothing about which commit that is. The
+/// newest Unofficial Build is the same commit, named for where it sits.
+#[test]
+fn a_remembered_development_version_opens_on_the_newest_release() {
+    let game = TempGame::new();
+    // Written by hand, because no build still produces it - which is the point: the file on
+    // an upgrading player's disk was written by one that did.
+    let store = game.store();
+    let mut settings = store.load().unwrap();
+    settings.game_installation = Some(game.game_folder());
+    settings.documents_folder = Some(game.documents_folder());
+    settings.configuration = Some(civ5vp_core::InstallConfiguration {
+        source: civ5vp_core::InstallationSource::UpstreamCache {
+            version: civ5vp_core::Version::LatestDevelopmentVersion,
+        },
+        flavor: civ5vp_core::Flavor::CommunityPatch,
+        forty_three_civs: civ5vp_core::FortyThreeCivs::Disabled,
+        build_configuration: civ5vp_core::BuildConfiguration::Release,
+        install_mode: civ5vp_core::InstallMode::Mods,
+        extra_mods: Vec::new(),
+        luajit: LuaJitEngine::Stock,
+        dll_source: civ5vp_core::DllSource::ShippedWhenCurrent,
+    });
+    store.save(&settings).unwrap();
+
+    let mut harness = harness_over(game.launch(&game.locations()));
+    wait_for_combo_value(&mut harness, "Latest Release-5.2");
+    assert!(
+        harness
+            .query_all_by_label_contains("development")
+            .next()
+            .is_none(),
+        "no screen of this installer says \"development version\" any more"
+    );
+}
+
+/// A remembered pick that names the newest Release reads as "Latest …", not as a bare tag.
+///
+/// The settings file records the tag "latest release" resolved to, which is the honest thing
+/// to write down - but restoring it as a bare pick put one install on screen under two names:
+/// `Release-5.2` in the closed combo, `Latest Release-5.2` in the list underneath it.
+#[test]
+fn the_newest_release_is_always_shown_as_the_latest_one() {
+    let game = TempGame::new();
+    let store = game.store();
+    let mut settings = store.load().unwrap();
+    settings.game_installation = Some(game.game_folder());
+    settings.documents_folder = Some(game.documents_folder());
+    settings.configuration = Some(civ5vp_core::InstallConfiguration {
+        // The tag a previous run wrote down after picking "latest release".
+        source: civ5vp_core::InstallationSource::UpstreamCache {
+            version: civ5vp_core::Version::Release("Release-5.2".to_owned()),
+        },
+        flavor: civ5vp_core::Flavor::CommunityPatch,
+        forty_three_civs: civ5vp_core::FortyThreeCivs::Disabled,
+        build_configuration: civ5vp_core::BuildConfiguration::Release,
+        install_mode: civ5vp_core::InstallMode::Mods,
+        extra_mods: Vec::new(),
+        luajit: LuaJitEngine::Stock,
+        dll_source: civ5vp_core::DllSource::ShippedWhenCurrent,
+    });
+    store.save(&settings).unwrap();
+
+    let mut harness = harness_over(game.launch(&game.locations()));
+    wait_for_combo_value(&mut harness, "Latest Release-5.2");
+
+    // And still exactly one row for it, which is the one the combo is naming.
+    harness.get_by_label("Version").click();
+    harness.step();
+    assert_eq!(
+        harness.query_all_by_label_contains("Release-5.2").count(),
+        1,
+        "the newest release must appear under one name only"
+    );
+    harness.step();
+}
+
+/// The picker offers official Releases only, until the unofficial toggle brings in the
+/// changes around the two newest ones - truncated to fit, newest first - and a picked build
+/// is remembered like any other Version.
 #[test]
 fn the_unofficial_toggle_lists_the_changes_since_the_newest_release() {
     use egui_kittest::kittest::NodeT as _;
     let game = TempGame::new();
     let mut harness = harness_over(game.launch(&game.locations()));
-    wait_for_combo_value(&mut harness, "Latest release - Release-5.2");
+    wait_for_combo_value(&mut harness, "Latest Release-5.2");
 
     // Off by default - and "latest development version" is no longer an offer either.
     harness.get_by_label("Version").click();
@@ -824,7 +912,7 @@ fn the_unofficial_toggle_lists_the_changes_since_the_newest_release() {
     harness.step();
 
     harness
-        .get_by_label("Unofficial versions - every change since the newest release")
+        .get_by_label("Unofficial versions - every change since the release before last")
         .click();
     harness.step();
     harness.get_by_label("Version").click();
@@ -855,6 +943,25 @@ fn the_unofficial_toggle_lists_the_changes_since_the_newest_release() {
         row_label.chars().count()
     );
 
+    // The list reaches back past the newest Release, not only forward from it: the changes
+    // that *became* Release-5.2 are here too, under Release-5.1's numbers. Right after a
+    // release the forward half is empty, and those are exactly the changes someone opening
+    // this toggle is looking for.
+    for label in ["5.1.01", "5.1.02"] {
+        assert!(
+            harness.query_all_by_label_contains(label).next().is_some(),
+            "{label} - the changes between Release-5.1 and Release-5.2 - should be listed"
+        );
+    }
+    // And Release-5.2 itself is not among them under a second name.
+    assert!(
+        harness
+            .query_all_by_label_contains("5.1.03")
+            .next()
+            .is_none(),
+        "the Release commit that ended that range is offered as a Release, not as a build"
+    );
+
     harness.get_by_label_contains("5.2.01").click();
     harness.step();
     harness.step();
@@ -865,7 +972,7 @@ fn the_unofficial_toggle_lists_the_changes_since_the_newest_release() {
     wait_for_combo_value(&mut next, "5.2.01");
     assert!(is_ticked(
         &mut next,
-        "Unofficial versions - every change since the newest release"
+        "Unofficial versions - every change since the release before last"
     ));
 }
 
@@ -954,6 +1061,102 @@ fn clicking_uninstall_restores_an_unmodded_game() {
     );
 }
 
+/// The `Browse` button beside the game folder puts a file browser on screen.
+///
+/// Found by its accessible name, not by the `Browse` on its face: three rows carry the same
+/// short label, and the name is what tells them apart for a screen reader too. What is
+/// asserted afterwards is the browser's own furniture - the crate draws a `🗀 Home` shortcut
+/// and a `Cancel` button, neither of which the installer's page has anywhere.
+#[test]
+fn browsing_for_the_game_folder_opens_a_file_browser() {
+    let game = TempGame::new();
+    let mut harness = harness_over(game.launch(&game.locations()));
+    harness.step();
+
+    assert!(
+        harness.query_by_label_contains("Cancel").is_none(),
+        "nothing should have been browsing before the click",
+    );
+
+    harness
+        .get_by_label("Browse for the Civilization V game folder")
+        .click();
+    harness.step();
+    harness.step();
+
+    // Substrings, never exact labels: the browser's rows and shortcuts carry icon prefixes
+    // and are truncated to their column.
+    wait_for_label(&mut harness, "Cancel");
+    assert!(
+        harness.query_by_label_contains("Home").is_some(),
+        "the browser should offer its Home shortcut; visible: {:?}",
+        visible_labels(&mut harness),
+    );
+}
+
+/// The browser opens where the Core's ladder says, and cancelling it leaves the box alone.
+///
+/// The detected game folder is already in the box, so this is the ladder's first rung: the
+/// path that is there wins, and nothing is written back.
+#[test]
+fn cancelling_the_browser_leaves_the_folder_as_it_was() {
+    let game = TempGame::new();
+    let mut harness = harness_over(game.launch(&game.locations()));
+    harness.step();
+
+    harness
+        .get_by_label("Browse for the Civilization 5 Documents folder")
+        .click();
+    harness.step();
+    harness.step();
+    wait_for_label(&mut harness, "Cancel");
+
+    // The button reads "🚫 Cancel" - icon prefixes are why nothing here matches exactly.
+    harness.get_by_label_contains("Cancel").click();
+    harness.step();
+    harness.step();
+
+    assert_eq!(
+        field_value(&mut harness, "Civilization 5 Documents folder"),
+        game.documents_folder().display().to_string(),
+    );
+    assert!(
+        harness.query_by_label_contains("Cancel").is_none(),
+        "the browser should have closed",
+    );
+}
+
+/// A box holding a path that is not there - a folder moved since last launch, say - is
+/// corrected the moment the browser opens, so a player who then cancels still comes away with
+/// the folder detection found for them.
+#[test]
+fn browsing_from_a_path_that_is_gone_fills_in_what_detection_found() {
+    let game = TempGame::new();
+    let mut harness = harness_over(game.launch(&game.locations()));
+    harness.step();
+
+    let stale = game
+        .temp_path()
+        .join("moved away/Sid Meier's Civilization 5");
+    set_text(
+        &mut harness,
+        "Civilization 5 Documents folder",
+        &stale.display().to_string(),
+    );
+    harness.step();
+
+    harness
+        .get_by_label("Browse for the Civilization 5 Documents folder")
+        .click();
+    harness.step();
+    harness.step();
+
+    assert_eq!(
+        field_value(&mut harness, "Civilization 5 Documents folder"),
+        game.documents_folder().display().to_string(),
+    );
+}
+
 /// Every screen has a baseline. Reviewed before committing - an updated baseline nobody
 /// looked at proves nothing.
 #[test]
@@ -998,20 +1201,35 @@ fn the_dev_checkout_survives_a_switch_back_to_github_and_a_relaunch() {
 /// The first-run cost is on screen before the click, while the toolchain
 /// would still have to be downloaded, and the sentence disappears the moment an install
 /// has made it untrue.
+///
+/// It is not announced on the default screen, and that is the other half of the same
+/// promise: the newest Release ships its own DLL, so nothing is compiled and nothing is
+/// downloaded. Warning about 2.4 GB there would send a player away from the one path that
+/// never costs it.
 #[test]
 fn the_first_run_cost_is_announced_until_the_toolchain_exists() {
     let game = TempGame::new();
     let mut harness = harness_over(game.launch(&game.locations()));
+    harness.step();
+    harness.step();
+    assert!(
+        harness
+            .query_all_by_label_contains("First install downloads about")
+            .next()
+            .is_none(),
+        "a release install compiles nothing, so it must not announce a build-tools download"
+    );
+
+    enter_dev_mode(&mut harness, &miniature_repo().display().to_string());
     harness.step();
     assert!(
         harness
             .query_all_by_label_contains("First install downloads about")
             .next()
             .is_some(),
-        "a fresh App Data Store must announce the first-run cost"
+        "building from a checkout needs the toolchain, so the cost must be announced"
     );
 
-    enter_dev_mode(&mut harness, &miniature_repo().display().to_string());
     harness.get_by_label("Community Patch only").click();
     harness.get_by_label("Install").click();
     wait_for_the_install_to_finish(&mut harness);
@@ -1030,5 +1248,29 @@ fn the_first_run_cost_is_announced_until_the_toolchain_exists() {
         next.query_all_by_label_contains("First install downloads about")
             .next()
             .is_none()
+    );
+}
+
+/// Ticking "Compile the DLL myself" on a Release brings the first-run cost back.
+///
+/// The box is the escape hatch from the Shipped DLL, and taking it means the Toolchain
+/// Bootstrap is back in the price - so the sentence that warns about it has to return with
+/// it, before the click rather than after.
+#[test]
+fn choosing_to_compile_a_release_announces_the_first_run_cost_again() {
+    let game = TempGame::new();
+    let mut harness = harness_over(game.launch(&game.locations()));
+    harness.step();
+    harness.step();
+
+    harness.get_by_label("Compile the DLL myself").click();
+    harness.step();
+
+    assert!(
+        harness
+            .query_all_by_label_contains("First install downloads about")
+            .next()
+            .is_some(),
+        "compiling a release by choice still costs the build tools"
     );
 }

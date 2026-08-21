@@ -64,7 +64,7 @@ impl RefTarget {
 ///
 /// The picker hands back what [`VersionCatalog::releases`] listed, which always has it. A
 /// version typed or restored from settings might be just `5.4.2`.
-fn release_tag_name(name: &str) -> String {
+pub(crate) fn release_tag_name(name: &str) -> String {
     if name.starts_with(RELEASE_PREFIX) {
         name.to_owned()
     } else {

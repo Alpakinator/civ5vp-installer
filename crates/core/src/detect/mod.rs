@@ -23,6 +23,12 @@ mod vdf;
 // answered in the same adapter rather than in a second `#[cfg]` split elsewhere.
 pub(crate) use platform::{APP_DATA_VARIABLE, app_data_root};
 
+/// The user's home directory, as this platform reports it. The shell hands it back to
+/// [`browse_start`] as the ladder's last rung.
+pub fn home_directory() -> Option<PathBuf> {
+    platform::home_directory()
+}
+
 /// Steam's app id for Civilization V. It names the Proton prefix on Linux:
 /// `steamapps/compatdata/8930`.
 const STEAM_APP_ID: &str = "8930";
@@ -576,4 +582,178 @@ fn case_insensitive_child(directory: &Path, name: &str) -> Option<PathBuf> {
         }
     }
     None
+}
+
+/// Which path field a `Browse` click was for.
+///
+/// Three fields, three different things worth opening at - which is the whole reason this is
+/// a Core decision rather than one starting directory for all of them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BrowseField {
+    /// The Game Installation field.
+    GameInstallation,
+    /// The Documents side field.
+    Documents,
+    /// Dev mode's Community-Patch-DLL checkout field.
+    DevCheckout,
+}
+
+/// What a `Browse` click has to go on: which field was clicked, what both folder boxes
+/// currently hold, and where this machine keeps Steam and the user's home.
+///
+/// Named fields rather than positional arguments because four of the five are paths and
+/// three of those are interchangeable at the type level.
+#[derive(Debug, Clone, Copy)]
+pub struct BrowseRequest<'a> {
+    pub field: BrowseField,
+    /// Exactly what the game-folder box holds, trimmed. May be empty, or nonsense.
+    pub game_folder: &'a Path,
+    /// Exactly what the Documents box holds, trimmed. May be empty, or nonsense.
+    pub documents_folder: &'a Path,
+    /// Exactly what Dev mode's checkout box holds, trimmed. May be empty, or nonsense.
+    pub dev_checkout: &'a Path,
+    pub locations: &'a SearchLocations,
+    /// The user's home directory, the last rung of the ladder. `None` when the platform
+    /// cannot say - the browser then opens wherever it would have anyway.
+    pub home: Option<&'a Path>,
+}
+
+/// Where a `Browse` click should open the file browser, and what - if anything - it should
+/// put in the box on the way.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrowseStart {
+    /// The directory to open at. `None` only when nothing at all could be worked out, not
+    /// even a home directory.
+    pub directory: Option<PathBuf>,
+    /// A path to write into the box before the browser opens.
+    ///
+    /// Set only when detection was consulted, which only happens on a path that is not
+    /// there - so this can never overwrite a folder the player deliberately chose. It is
+    /// written immediately rather than on picking, so cancelling the browser keeps the
+    /// correction.
+    pub correction: Option<PathBuf>,
+}
+
+/// The start-directory ladder: the first rung that answers wins.
+///
+/// | | Game folder | Documents folder | Dev checkout |
+/// |---|---|---|---|
+/// | 1 | the box, if that path exists | the box, if that path exists | the box, if that path exists |
+/// | 2 | else detection | else detection | - |
+/// | 3 | - | else derived from the game-folder box, at its deepest existing part | - |
+/// | 4 | else home | else home | else home |
+///
+/// The checkout has no detection rung: a checkout can be anywhere and there is nothing about
+/// this game to detect. It is deliberately not seeded at the Upstream Cache either - that
+/// clone is rewritten under the user.
+pub fn browse_start(request: BrowseRequest<'_>) -> BrowseStart {
+    let box_contents = match request.field {
+        BrowseField::GameInstallation => request.game_folder,
+        BrowseField::Documents => request.documents_folder,
+        BrowseField::DevCheckout => request.dev_checkout,
+    };
+    // Rung 1. `is_dir` on an empty path is false, so "nothing typed" falls through here.
+    if box_contents.is_dir() {
+        return BrowseStart {
+            directory: Some(box_contents.to_path_buf()),
+            correction: None,
+        };
+    }
+
+    // Rung 2 - only for the two folders detection knows how to look for.
+    if let Some(detected) = detected_folder(request.field, request.locations) {
+        return BrowseStart {
+            directory: Some(detected.clone()),
+            correction: Some(detected),
+        };
+    }
+
+    // Rung 3 - the Documents side derived from the game folder, which on Linux is nine
+    // levels inside a Proton prefix and hopeless to reach by hand.
+    if request.field == BrowseField::Documents
+        && let Some(derived) = documents_near(request.game_folder)
+    {
+        return BrowseStart {
+            directory: Some(derived),
+            correction: None,
+        };
+    }
+
+    // Rung 4.
+    BrowseStart {
+        directory: request.home.map(Path::to_path_buf),
+        correction: None,
+    }
+}
+
+/// Rung 2: what detection makes of this machine, for the field that was clicked.
+fn detected_folder(field: BrowseField, locations: &SearchLocations) -> Option<PathBuf> {
+    match (field, detect_game(locations)) {
+        // A Game Installation found without its Documents side is still a Game Installation,
+        // and it is exactly the case where the player is about to correct the other field.
+        (BrowseField::GameInstallation, Detection::Found(game)) => {
+            Some(game.game_installation.root().to_path_buf())
+        }
+        (
+            BrowseField::GameInstallation,
+            Detection::DocumentsNotFound {
+                game_installation, ..
+            },
+        ) => Some(game_installation.root().to_path_buf()),
+        (BrowseField::Documents, Detection::Found(game)) => {
+            Some(game.documents.root().to_path_buf())
+        }
+        // A refused folder is Civilization V but not one this installer can use - offering it
+        // as the answer would be putting a known-bad path in the box.
+        _ => None,
+    }
+}
+
+/// Rung 3: the Documents side as it would sit relative to this game folder, opened as deep as
+/// the tree actually goes.
+///
+/// The game folder is not trusted to be `…/steamapps/common/Sid Meier's Civilization V`, so
+/// every ancestor of it is tried as a Steam library, deepest first. The candidates are the
+/// same ones detection uses, so there is one answer to "where would the Documents side be".
+fn documents_near(game_folder: &Path) -> Option<PathBuf> {
+    for library in game_folder.ancestors() {
+        if !library.is_dir() {
+            continue;
+        }
+        for (root, relative) in documents_candidates(&[library.to_path_buf()], &[]) {
+            if let Some(deepest) = deepest_existing(&root, &relative, PREFIX_DEPTH) {
+                return Some(deepest);
+            }
+        }
+    }
+    None
+}
+
+/// How far into a candidate the trail has to go before it is worth following:
+/// `steamapps/compatdata/8930`, the Proton prefix Steam makes for this game the first time it
+/// is run. Stopping short of that means there is no prefix here at all, only a Steam library -
+/// which tells a player looking for their Documents folder nothing that home does not.
+const PREFIX_DEPTH: usize = 3;
+
+/// How much of `relative` exists under `root`, as a real path. `None` unless at least `least`
+/// of its segments are there.
+fn deepest_existing(root: &Path, relative: &str, least: usize) -> Option<PathBuf> {
+    let mut deepest = None;
+    let mut depth = 0;
+    let mut current = root.to_path_buf();
+    for segment in relative.split('/').filter(|segment| !segment.is_empty()) {
+        let exact = current.join(segment);
+        let found = if exact.is_dir() {
+            Some(exact)
+        } else {
+            case_insensitive_child(&current, segment).filter(|found| found.is_dir())
+        };
+        // The first segment that is not there is where the trail stops: what was walked so
+        // far is the deepest real folder on the way to where the answer would be.
+        let Some(found) = found else { break };
+        current = found;
+        depth += 1;
+        deepest = Some(current.clone());
+    }
+    deepest.filter(|_| depth >= least)
 }

@@ -11,7 +11,7 @@ use civ5vp_core::{
 };
 
 use crate::bootstrap::ToolchainBootstrap;
-use crate::build::{DllBuild, ProcessInvoker};
+use crate::build::{DllBuild, ProcessInvoker, flags};
 use crate::cache::{Toolchain, ToolchainCache};
 use crate::luajit;
 
@@ -89,6 +89,16 @@ impl ToolchainRunner for BootstrappedToolchain {
         // pinned, not of what happens to be on disk. The Build Fingerprint folds this in,
         // so it has to be knowable up front.
         self.cache.expected_identity()
+    }
+
+    /// The maintainer's optimisation override, if `dll-flags.txt` sits beside the installer.
+    ///
+    /// Read here rather than remembered from the last build, because the Core asks *before*
+    /// deciding whether to build at all - which is the whole point: a changed flag file has
+    /// to invalidate the sidecar, or the run that was meant to test it is skipped and the
+    /// previous run's DLL is redeployed in its place.
+    fn dll_flag_override(&self) -> Option<String> {
+        flags::read_optimisation_override().map(|found| found.flags.summary())
     }
 
     fn first_run_expectation(&self) -> Option<String> {

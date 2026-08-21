@@ -102,10 +102,10 @@ impl SourceProvider for DirectorySourceProvider {
 
     fn unofficial_versions(
         &self,
-        newest_release: &str,
+        releases: &[String],
         _progress: &ProgressReporter,
     ) -> Result<Vec<civ5vp_core::UnofficialVersion>, BoundaryError> {
-        Ok(fixture_unofficial_versions(newest_release))
+        Ok(fixture_unofficial_versions(releases))
     }
 
     fn materialize_luajit(&self, progress: &ProgressReporter) -> Result<PathBuf, BoundaryError> {
@@ -130,25 +130,29 @@ fn placeholder_luajit_source() -> Result<PathBuf, BoundaryError> {
     Ok(root)
 }
 
-/// The unofficial list every offline surface shares: two changes after the
-/// newest Release, the second with a summary far too long for any dropdown - the shape the
-/// shell has to cope with.
-pub fn fixture_unofficial_versions(newest_release: &str) -> Vec<civ5vp_core::UnofficialVersion> {
-    let base = newest_release.trim_start_matches("Release-").to_owned();
-    vec![
-        civ5vp_core::UnofficialVersion {
+/// The unofficial list every offline surface shares: two changes after each Release named,
+/// oldest range first, one of them with a summary far too long for any dropdown - the shape
+/// the shell has to cope with.
+pub fn fixture_unofficial_versions(releases: &[String]) -> Vec<civ5vp_core::UnofficialVersion> {
+    let mut versions = Vec::new();
+    // Oldest range first, the way the real provider builds it.
+    for (index, release) in releases.iter().enumerate().rev() {
+        let base = release.trim_start_matches("Release-").to_owned();
+        let seed = char::from(b'c' + index as u8);
+        versions.push(civ5vp_core::UnofficialVersion {
             label: format!("{base}.01"),
             summary: "Fix a promotion".to_owned(),
-            commit: "c".repeat(40),
-        },
-        civ5vp_core::UnofficialVersion {
+            commit: seed.to_string().repeat(40),
+        });
+        versions.push(civ5vp_core::UnofficialVersion {
             label: format!("{base}.02"),
             summary: "A very long commit message that certainly does not fit into the \
                       width of any dropdown a version picker could reasonably draw"
                 .to_owned(),
-            commit: "d".repeat(40),
-        },
-    ]
+            commit: char::from(b'A' + index as u8).to_string().repeat(40),
+        });
+    }
+    versions
 }
 
 /// The catalog every offline surface shares - the fake provider, the screen previews - so
@@ -225,6 +229,11 @@ impl ToolchainRunner for PlaceholderToolchainRunner {
                 .to_owned(),
         )
     }
+
+    /// Nothing here reads a flag file, so there is never an override to report.
+    fn dll_flag_override(&self) -> Option<String> {
+        None
+    }
 }
 
 /// Believes any readable cache file is pristine unless it says "modded", and writes marker
@@ -263,5 +272,103 @@ impl ModpackAssembler for PlaceholderModpackAssembler {
         };
         write(&job.gameplay_dump)?;
         write(&job.text_dump)
+    }
+}
+
+/// The Proton prefix a preview's file browser is opened in, as the Core's ladder would have
+/// worked it out on a real Linux machine. Kept here beside the tree it names.
+pub const PREVIEW_BROWSER_DIRECTORY: &str = "/home/player/.local/share/Steam/steamapps/compatdata/8930/pfx/drive_c/users/steamuser\
+     /Documents/My Games";
+
+/// A fixed folder tree for the file browser to walk, so the browser's screen renders the same
+/// PNG on every machine.
+///
+/// The real browser reads the real disk, which would make its snapshot baseline a picture of
+/// whoever ran the suite. This is the same trick the rest of `placeholder` plays on the Core's
+/// boundaries: a stand-in narrow enough that what is being verified - the layout, the theme,
+/// the fact that a browser is up at all - is exactly what the picture shows.
+pub fn preview_file_system() -> std::sync::Arc<dyn egui_file_dialog::FileSystem + Send + Sync> {
+    std::sync::Arc::new(PreviewFileSystem)
+}
+
+/// The tree [`preview_file_system`] serves: a Proton prefix with the game's Documents folder
+/// in it, plus the two neighbours a player would see beside it.
+const PREVIEW_TREE: [(&str, &[&str]); 2] = [
+    (
+        PREVIEW_BROWSER_DIRECTORY,
+        &["Sid Meier's Civilization 5", "Sid Meier's Civilization IV"],
+    ),
+    (
+        "/home/player/.local/share/Steam/steamapps/compatdata/8930/pfx/drive_c/users/steamuser\
+         /Documents/My Games/Sid Meier's Civilization 5",
+        &["MODS", "ModUserData", "Text", "UserSettings.ini"],
+    ),
+];
+
+struct PreviewFileSystem;
+
+impl PreviewFileSystem {
+    fn children(path: &Path) -> Option<&'static [&'static str]> {
+        PREVIEW_TREE
+            .iter()
+            .find(|(directory, _)| Path::new(directory) == path)
+            .map(|(_, children)| *children)
+    }
+}
+
+impl egui_file_dialog::FileSystem for PreviewFileSystem {
+    fn metadata(&self, _path: &Path) -> std::io::Result<egui_file_dialog::Metadata> {
+        Ok(egui_file_dialog::Metadata::default())
+    }
+
+    fn is_dir(&self, path: &Path) -> bool {
+        // Every listed name is a folder except the one file, which is there because a
+        // Documents folder without `UserSettings.ini` is not one a player would recognise.
+        Self::children(path).is_some()
+            || (path.extension().is_none()
+                && path
+                    .parent()
+                    .and_then(Self::children)
+                    .is_some_and(|children| children.iter().any(|child| path.ends_with(child))))
+    }
+
+    fn is_file(&self, path: &Path) -> bool {
+        path.extension().is_some()
+    }
+
+    fn read_dir(&self, path: &Path) -> std::io::Result<Vec<PathBuf>> {
+        Ok(Self::children(path)
+            .unwrap_or(&[])
+            .iter()
+            .map(|child| path.join(child))
+            .collect())
+    }
+
+    fn get_disks(&self, _canonicalize_paths: bool) -> egui_file_dialog::Disks {
+        egui_file_dialog::Disks::new(Vec::new())
+    }
+
+    fn is_path_hidden(&self, _path: &Path) -> bool {
+        false
+    }
+
+    fn create_dir(&self, _path: &Path) -> std::io::Result<()> {
+        Ok(())
+    }
+
+    fn user_dirs(&self, _canonicalize_paths: bool) -> Option<egui_file_dialog::UserDirectories> {
+        Some(egui_file_dialog::UserDirectories::new(
+            Some(PathBuf::from("/home/player")),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+    }
+
+    fn current_dir(&self) -> std::io::Result<PathBuf> {
+        Ok(PathBuf::from("/home/player"))
     }
 }

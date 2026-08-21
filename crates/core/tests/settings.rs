@@ -6,7 +6,7 @@ mod steam;
 use std::path::PathBuf;
 
 use civ5vp_core::{
-    AppDataStore, BuildConfiguration, Eui, Flavor, FortyThreeCivs, InstallConfiguration,
+    AppDataStore, BuildConfiguration, DllSource, Eui, Flavor, FortyThreeCivs, InstallConfiguration,
     InstallMode, InstallationSource, LuaJitEngine, SearchLocations, Settings, Version, start_up,
 };
 
@@ -83,6 +83,7 @@ fn the_remembered_state_survives_the_round_trip() {
             install_mode: InstallMode::Mods,
             extra_mods: Vec::new(),
             luajit: LuaJitEngine::Stock,
+            dll_source: DllSource::ShippedWhenCurrent,
         },
         InstallConfiguration {
             source: InstallationSource::UpstreamCache {
@@ -96,6 +97,7 @@ fn the_remembered_state_survives_the_round_trip() {
             // LuaJIT in the round-trip: a choice that replaces a file belonging to the game
             // must survive a relaunch, or the next Deployment would quietly revert it.
             luajit: LuaJitEngine::LuaJit,
+            dll_source: DllSource::ShippedWhenCurrent,
         },
         InstallConfiguration {
             source: InstallationSource::UpstreamCache {
@@ -107,6 +109,7 @@ fn the_remembered_state_survives_the_round_trip() {
             install_mode: InstallMode::Mods,
             extra_mods: Vec::new(),
             luajit: LuaJitEngine::Stock,
+            dll_source: DllSource::ShippedWhenCurrent,
         },
         InstallConfiguration {
             source: InstallationSource::UpstreamCache {
@@ -118,6 +121,7 @@ fn the_remembered_state_survives_the_round_trip() {
             install_mode: InstallMode::Mods,
             extra_mods: Vec::new(),
             luajit: LuaJitEngine::Stock,
+            dll_source: DllSource::ShippedWhenCurrent,
         },
         // An unofficial build: the label and the commit both survive.
         InstallConfiguration {
@@ -133,6 +137,22 @@ fn the_remembered_state_survives_the_round_trip() {
             install_mode: InstallMode::Mods,
             extra_mods: Vec::new(),
             luajit: LuaJitEngine::Stock,
+            dll_source: DllSource::ShippedWhenCurrent,
+        },
+        // Compiling a release by choice: the one setting that costs a multi-gigabyte
+        // download, so a relaunch that forgot it would be a surprise the player never asked
+        // for a second time.
+        InstallConfiguration {
+            source: InstallationSource::UpstreamCache {
+                version: Version::Release("Release-4.19.1".to_owned()),
+            },
+            flavor: Flavor::CommunityPatch,
+            forty_three_civs: FortyThreeCivs::Disabled,
+            build_configuration: BuildConfiguration::Release,
+            install_mode: InstallMode::Mods,
+            extra_mods: Vec::new(),
+            luajit: LuaJitEngine::Stock,
+            dll_source: DllSource::AlwaysCompile,
         },
         // Modpack mode with extra picks - names with spaces and parentheses, like real
         // mod folders have.
@@ -146,6 +166,7 @@ fn the_remembered_state_survives_the_round_trip() {
             install_mode: InstallMode::Modpack,
             extra_mods: vec!["Even More Bonuses (v 3)".to_owned(), "My Modmod".to_owned()],
             luajit: LuaJitEngine::Stock,
+            dll_source: DllSource::ShippedWhenCurrent,
         },
     ];
 
@@ -223,6 +244,7 @@ fn remembered_folders_pre_fill_the_next_launch() {
         install_mode: InstallMode::Mods,
         extra_mods: Vec::new(),
         luajit: LuaJitEngine::Stock,
+        dll_source: DllSource::ShippedWhenCurrent,
     };
 
     store
@@ -380,6 +402,7 @@ fn a_configuration_with_no_installation_source_still_remembers_its_flavor() {
                 install_mode: InstallMode::Mods,
                 extra_mods: Vec::new(),
                 luajit: LuaJitEngine::Stock,
+                dll_source: DllSource::ShippedWhenCurrent,
             }),
             dev_checkout: None,
         })
@@ -416,6 +439,7 @@ fn a_remembered_upstream_version_survives_a_round_trip() {
                 install_mode: InstallMode::Mods,
                 extra_mods: Vec::new(),
                 luajit: LuaJitEngine::Stock,
+                dll_source: DllSource::ShippedWhenCurrent,
             }),
             dev_checkout: None,
         })
@@ -448,6 +472,7 @@ fn the_dev_checkout_outlives_a_switch_back_to_github() {
                 install_mode: InstallMode::Mods,
                 extra_mods: Vec::new(),
                 luajit: LuaJitEngine::Stock,
+                dll_source: DllSource::ShippedWhenCurrent,
             }),
             dev_checkout: Some(PathBuf::from("/home/player/src/Community-Patch-DLL")),
         })
@@ -522,6 +547,7 @@ fn a_known_key_left_out_this_time_is_not_resurrected() {
                 install_mode: InstallMode::Mods,
                 extra_mods: Vec::new(),
                 luajit: LuaJitEngine::Stock,
+                dll_source: DllSource::ShippedWhenCurrent,
             }),
             ..Settings::default()
         })

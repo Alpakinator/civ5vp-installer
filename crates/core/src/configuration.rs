@@ -73,6 +73,34 @@ impl BuildConfiguration {
     }
 }
 
+/// Where the `CvGameCore_Expansion2.dll` a Deployment installs comes from.
+///
+/// Upstream refreshes the DLL checked into the repository in the Release commit itself and
+/// nowhere else, so at a Release commit - and only there - the Shipped DLL is exactly what a
+/// local compile would produce. Every other Version's checked-in DLL is older than the
+/// sources beside it, which is what ADR-0001 is about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DllSource {
+    /// Deploy the Shipped DLL when it is current for the commit being installed; compile
+    /// otherwise. The default, and what every Version that is not a Release still means.
+    #[default]
+    ShippedWhenCurrent,
+    /// Compile, whatever the Installation Source ships. What the "Compile the DLL myself"
+    /// checkbox asks for, and what a Local Repo always gets.
+    AlwaysCompile,
+}
+
+impl DllSource {
+    /// The one lowercase token used everywhere this is written down - the settings file and
+    /// the Build Fingerprint - so the two can never drift apart.
+    pub(crate) fn token(self) -> &'static str {
+        match self {
+            Self::ShippedWhenCurrent => "shipped-when-current",
+            Self::AlwaysCompile => "always-compile",
+        }
+    }
+}
+
 /// The ref of the Community-Patch-DLL repository being installed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Version {
@@ -172,4 +200,35 @@ pub struct InstallConfiguration {
     pub extra_mods: Vec<String>,
     /// Whether to replace the game's Lua engine with LuaJIT. Opt-in; see ADR-0006.
     pub luajit: LuaJitEngine,
+    /// Whether a current Shipped DLL may be deployed instead of compiling one.
+    pub dll_source: DllSource,
+}
+
+impl InstallConfiguration {
+    /// Will this configuration have to compile something?
+    ///
+    /// The one question that decides whether the Toolchain Bootstrap's multi-gigabyte
+    /// download is part of this install, so it is answered here rather than guessed by the
+    /// shell. `false` only when every artifact is ready-made: a Release install taking the
+    /// Shipped DLL, on the game's own Lua engine.
+    ///
+    /// Deliberately conservative about an Arbitrary Ref. A typed ref *might* name a Release
+    /// commit, but that is only known once it is resolved, and a warning that failed to
+    /// appear costs far more than one that turned out to be unnecessary.
+    pub fn needs_the_toolchain(&self) -> bool {
+        // The Replaced File is compiled every time it is asked for - no repository ships a
+        // LuaJIT build of the game's engine.
+        if self.luajit == LuaJitEngine::LuaJit {
+            return true;
+        }
+        if self.dll_source == DllSource::AlwaysCompile {
+            return true;
+        }
+        !matches!(
+            &self.source,
+            InstallationSource::UpstreamCache {
+                version: Version::Release(_)
+            }
+        )
+    }
 }

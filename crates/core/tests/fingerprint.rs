@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use civ5vp_core::{
-    BuildConfiguration, Core, Flavor, FortyThreeCivs, InstallConfiguration, InstallMode,
+    BuildConfiguration, Core, DllSource, Flavor, FortyThreeCivs, InstallConfiguration, InstallMode,
     InstallationSource, LuaJitEngine, ProgressReporter,
 };
 use support::{
@@ -52,11 +52,34 @@ fn configuration(repo: &Path, forty_three_civs: FortyThreeCivs) -> InstallConfig
         install_mode: InstallMode::Mods,
         extra_mods: Vec::new(),
         luajit: LuaJitEngine::Stock,
+        dll_source: DllSource::ShippedWhenCurrent,
     }
 }
 
 fn core_over(game: &GameFixture, repo: &Path, identity: &str) -> (Core, Arc<AtomicUsize>) {
     let (runner, builds) = CountingToolchainRunner::new(identity);
+    let core = Core::new(
+        Box::new(FixtureSourceProvider::new(repo.to_path_buf())),
+        Box::new(runner),
+        Box::new(FixtureModpackAssembler::ignored()),
+        game.work_dir(),
+    );
+    (core, builds)
+}
+
+/// [`core_over`] for a runner that reports an optimisation override, so a test can change
+/// the flags without changing anything else about the build.
+fn core_over_with_flags(
+    game: &GameFixture,
+    repo: &Path,
+    identity: &str,
+    flags: Option<&str>,
+) -> (Core, Arc<AtomicUsize>) {
+    let (runner, builds) = CountingToolchainRunner::new(identity);
+    let runner = match flags {
+        Some(flags) => runner.with_flag_override(flags),
+        None => runner,
+    };
     let core = Core::new(
         Box::new(FixtureSourceProvider::new(repo.to_path_buf())),
         Box::new(runner),
@@ -267,6 +290,7 @@ fn a_debug_build_outside_dev_mode_is_refused() {
         install_mode: InstallMode::Mods,
         extra_mods: Vec::new(),
         luajit: LuaJitEngine::Stock,
+        dll_source: DllSource::ShippedWhenCurrent,
     };
 
     let refused = core.plan(&config, &game.folders()).unwrap_err();
@@ -300,5 +324,51 @@ fn a_missing_deployed_dll_forces_a_rebuild() {
     assert_eq!(
         game.read("MODS/(1) Community Patch/CvGameCore_Expansion2.dll"),
         DLL_MARKER
+    );
+}
+
+/// Changing the optimisation flags must rebuild, and going back to none must rebuild again.
+///
+/// This is the whole point of the `dll-flags.txt` knob: a maintainer measuring a dozen flag
+/// sets gets a dozen DLLs. The flags are the one build input the fingerprint cannot derive
+/// from the configuration, so if they are not folded in explicitly, every run after the first
+/// silently redeploys the first run's DLL and the campaign measures nothing.
+#[test]
+fn changing_the_optimisation_flags_forces_a_rebuild() {
+    let game = GameFixture::new();
+    let repo = editable_repo(game.work_dir().as_path());
+    let config = configuration(&repo, FortyThreeCivs::Disabled);
+
+    // Run one: the default, no override.
+    let (core, builds) = core_over_with_flags(&game, &repo, "fake-toolchain-0", None);
+    install(&core, &game, &config);
+    assert_eq!(builds.load(Ordering::Relaxed), 1);
+
+    // Run two: the same flags again - still a skip, so the flags line has not made every
+    // build unconditional.
+    let (core, builds) = core_over_with_flags(&game, &repo, "fake-toolchain-0", None);
+    install(&core, &game, &config);
+    assert_eq!(builds.load(Ordering::Relaxed), 0, "same flags, no rebuild");
+
+    // Run three: a different flag set - must rebuild.
+    let (core, builds) =
+        core_over_with_flags(&game, &repo, "fake-toolchain-0", Some("compiler /O2 /Ob0"));
+    install(&core, &game, &config);
+    assert_eq!(builds.load(Ordering::Relaxed), 1, "new flags, new build");
+
+    // Run four: a third flag set - must rebuild again, not settle into a skip.
+    let (core, builds) =
+        core_over_with_flags(&game, &repo, "fake-toolchain-0", Some("compiler /O2 /Ob2"));
+    install(&core, &game, &config);
+    assert_eq!(builds.load(Ordering::Relaxed), 1, "changed flags, new build");
+
+    // Run five: back to no override - the default is a flag set like any other, and the
+    // DLL sitting in the game folder is the /O2 /Ob2 one, so this must rebuild too.
+    let (core, builds) = core_over_with_flags(&game, &repo, "fake-toolchain-0", None);
+    install(&core, &game, &config);
+    assert_eq!(
+        builds.load(Ordering::Relaxed),
+        1,
+        "removing the override must rebuild, not keep the overridden DLL"
     );
 }

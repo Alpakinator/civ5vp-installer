@@ -15,6 +15,7 @@
 )]
 
 pub mod app;
+pub mod browse;
 pub mod cli;
 pub mod deco;
 pub mod placeholder;

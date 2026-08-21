@@ -84,15 +84,45 @@ pub trait SourceProvider: Send + Sync {
         progress: &ProgressReporter,
     ) -> Result<crate::VersionCatalog, BoundaryError>;
 
-    /// Every commit after `newest_release` (a `Release-*` tag name), oldest first - what
-    /// the picker lists as unofficial versions. One small HTTP round trip for
-    /// the Upstream Cache; a Local Repo has no notion of this and returns an error saying
-    /// so.
+    /// Every commit between `releases` and after the newest of them, oldest first - what
+    /// the picker lists as unofficial versions.
+    ///
+    /// `releases` is `Release-*` tag names, newest first. Each one's range ends where the
+    /// next newer Release begins, and the newest one's ends at the development branch, so
+    /// the list spans the Releases named rather than only trailing the newest. Release
+    /// commits themselves are not listed - the picker offers those as Releases.
+    ///
+    /// One small HTTP round trip per range for the Upstream Cache; a Local Repo has no
+    /// notion of this and returns an error saying so.
     fn unofficial_versions(
         &self,
-        newest_release: &str,
+        releases: &[String],
         progress: &ProgressReporter,
     ) -> Result<Vec<crate::UnofficialVersion>, BoundaryError>;
+
+    /// Is the DLL checked in at `dll_path` current for what was just materialized?
+    ///
+    /// `dll_path` is relative to the materialized tree, with forward slashes. "Current"
+    /// means one thing: the commit being installed is the commit that last changed that
+    /// file. Upstream refreshes both checked-in DLLs in the Release commit itself, so this
+    /// is true at a Release and false one commit later - which is exactly the line between
+    /// "the DLL beside these sources was built from them" and "it is stale".
+    ///
+    /// Asked per path rather than per tree because the configuration decides which DLL
+    /// matters: the 43-civ build lives in `(3b)`, everything else in `(1)`.
+    ///
+    /// The default is `false`: a provider with no commits to compare - a Local Repo, whose
+    /// working tree may hold uncommitted changes no commit could describe - cannot show a
+    /// DLL is current, and "cannot show" must mean "compile it". An `Err` means the same
+    /// thing to the Core; it carries a sentence saying why the question went unanswered.
+    fn shipped_dll_is_current(
+        &self,
+        _source: &InstallationSource,
+        _dll_path: &str,
+        _progress: &ProgressReporter,
+    ) -> Result<bool, BoundaryError> {
+        Ok(false)
+    }
 
     /// The pinned LuaJIT source tree, fetched if it is not cached yet.
     ///
@@ -167,6 +197,20 @@ pub trait ToolchainRunner: Send + Sync {
     /// A stable identifier for this toolchain, e.g. `clang-18.1.8`. Folded into the Build
     /// Fingerprint.
     fn toolchain_identity(&self) -> String;
+
+    /// The optimisation flags a maintainer has overridden for this build, if any, rendered
+    /// as one stable line. Folded into the Build Fingerprint.
+    ///
+    /// The fingerprint otherwise stands in for the compiler flags by hashing the four things
+    /// they are derived from - configuration, 43-Civs, toolchain, sources. An override is a
+    /// flag that is *not* derivable from those, so without this the installer would find a
+    /// matching sidecar and skip the very build whose flags it was asked to change. The
+    /// Deliberately without a default. A runner that forgets this returns "no override" for
+    /// a build that *has* one, the fingerprint stops describing the DLL, and the installer
+    /// skips the very build the flags were changed to test - a silent wrong answer, and one
+    /// that compiles. Every implementor must therefore say so in its own words, including
+    /// the ones whose answer is `None`.
+    fn dll_flag_override(&self) -> Option<String>;
 
     /// A sentence to show *before* the first Deployment, while getting the toolchain still
     /// costs a download - `None` once it is set up (the multi-GB download must not be a

@@ -44,16 +44,17 @@ pub use boundaries::{
 };
 pub use claimed::{ClaimedFile, ClaimedFolder, DeploymentTarget, GameFolders};
 pub use configuration::{
-    BuildConfiguration, Eui, Flavor, FortyThreeCivs, InstallConfiguration, InstallMode,
+    BuildConfiguration, DllSource, Eui, Flavor, FortyThreeCivs, InstallConfiguration, InstallMode,
     InstallationSource, LuaJitEngine, Version,
 };
 pub use detect::{
-    DetectedGame, Detection, DocumentsFolder, FolderKind, FolderRejected, GameInstallation,
-    RejectionReason, SearchLocations, detect_game, game_folders, resolve_game_folders,
-    validate_documents_folder, validate_game_installation,
+    BrowseField, BrowseRequest, BrowseStart, DetectedGame, Detection, DocumentsFolder, FolderKind,
+    FolderRejected, GameInstallation, RejectionReason, SearchLocations, browse_start, detect_game,
+    game_folders, home_directory, resolve_game_folders, validate_documents_folder,
+    validate_game_installation,
 };
 pub use error::{GameFolderProblem, InstallError, SourceItem};
-pub use fingerprint::dll_source_identity;
+pub use fingerprint::{DllProvenance, dll_source_identity};
 pub use install::{Core, InstallOutcome, UninstallOutcome};
 pub use modpack::available_extra_mods;
 pub use plan::Plan;

@@ -21,8 +21,8 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 
 use civ5vp_core::{
-    BuildConfiguration, Flavor, FortyThreeCivs, GameFolders, InstallConfiguration, InstallMode,
-    InstallationSource, LuaJitEngine, ProgressReporter,
+    BuildConfiguration, DllSource, Flavor, FortyThreeCivs, GameFolders, InstallConfiguration,
+    InstallMode, InstallationSource, LuaJitEngine, ProgressReporter,
 };
 use civ5vp_installer::wiring;
 
@@ -50,14 +50,20 @@ fn link_toolchain_cache(store_root: &Path) {
 
 /// The fresh-machine walkthrough: a clean App Data Store, empty game folders, and
 /// the exact path a new player takes - list the versions, pick the newest Release, fetch it
-/// from the real GitHub, build the DLL, Sync into the game.
+/// from the real GitHub, take the DLL that Release ships, Sync into the game.
 ///
-/// The one concession: `CIV5VP_TOOLCHAIN_CACHE`, when set, is symlinked in as the Toolchain
-/// Cache so the run does not re-download 2.4 GB from archive.org every time - that download
-/// path has its own proof (`real_bootstrap.rs`). Everything else starts from
-/// nothing, including the ~600 MB upstream fetch.
+/// No compile, and that is the assertion, not an omission: a Release commit is the one place
+/// upstream refreshes the checked-in DLL, so a player on the default path gets a DLL that
+/// matches its sources without the Toolchain Bootstrap's 2.4 GB ever being fetched. The
+/// compile path has its own proof in
+/// `a_real_version_installs_end_to_end_with_a_genuinely_built_dll`, which builds from a Local
+/// Repo.
+///
+/// `CIV5VP_TOOLCHAIN_CACHE`, when set, is still symlinked in - it costs nothing and keeps this
+/// test honest if the shipped DLL ever turns out to be missing and the Core falls back to
+/// building. Everything else starts from nothing, including the ~600 MB upstream fetch.
 #[test]
-#[ignore = "fetches ~600 MB from GitHub and compiles the real DLL; slow"]
+#[ignore = "fetches ~600 MB from GitHub; slow"]
 fn a_fresh_machine_installs_the_newest_release_from_github() {
     let store_root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("fresh-machine-store");
     let _ = fs::remove_dir_all(&store_root);
@@ -97,6 +103,7 @@ fn a_fresh_machine_installs_the_newest_release_from_github() {
         install_mode: InstallMode::Mods,
         extra_mods: Vec::new(),
         luajit: LuaJitEngine::Stock,
+        dll_source: DllSource::ShippedWhenCurrent,
     };
     let plan = core.plan(&configuration, &folders).unwrap_or_else(|error| {
         panic!("{}\n  detail: {}", error.user_message(), error.log_detail())
@@ -112,6 +119,17 @@ fn a_fresh_machine_installs_the_newest_release_from_github() {
     let dll = fs::read(&outcome.built_dll).unwrap();
     assert_eq!(&dll[..2], b"MZ");
     assert!(dll.len() > 5_000_000);
+    // Byte for byte the one the Release ships. Anything else means the Core decided to
+    // compile, which on this path it must not have to.
+    let shipped = store_root
+        .join("upstream-cache")
+        .join("(1) Community Patch")
+        .join("CvGameCore_Expansion2.dll");
+    assert_eq!(
+        fs::read(&shipped).unwrap(),
+        dll,
+        "the newest Release's own DLL should have been deployed as-is"
+    );
     for expected in [
         "(1) Community Patch",
         "(2) Vox Populi",
@@ -171,6 +189,7 @@ fn a_real_version_installs_end_to_end_with_a_genuinely_built_dll() {
         install_mode: InstallMode::Mods,
         extra_mods: Vec::new(),
         luajit: LuaJitEngine::Stock,
+        dll_source: DllSource::ShippedWhenCurrent,
     };
     let plan = core.plan(&configuration, &folders).unwrap_or_else(|error| {
         panic!("{}\n  detail: {}", error.user_message(), error.log_detail())
@@ -352,6 +371,7 @@ fn luajit_is_built_deployed_and_restored() {
         install_mode: InstallMode::Mods,
         extra_mods: Vec::new(),
         luajit: LuaJitEngine::LuaJit,
+        dll_source: DllSource::ShippedWhenCurrent,
     };
 
     let plan = core.plan(&configuration, &folders).unwrap_or_else(|error| {

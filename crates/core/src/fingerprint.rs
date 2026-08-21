@@ -11,7 +11,9 @@
 //! flags are not hashed literally: every flag the toolchain runner passes is a function of
 //! the Build Configuration, the 43-Civs toggle, the toolchain identity, and the sources
 //! themselves (which carry the project file), so those four stand in for them. If a flag
-//! ever stops being derivable from these, it must join the fingerprint explicitly.
+//! ever stops being derivable from these, it must join the fingerprint explicitly - which is
+//! exactly what the maintainer's optimisation override is, and why
+//! [`crate::ToolchainRunner::dll_flag_override`] is one of the inputs below.
 //!
 //! Hashing is FNV-1a 64 implemented here in a dozen lines, because the Core has no
 //! dependencies and the job is integrity against accident - a swapped DLL, an
@@ -46,6 +48,30 @@ pub const DLL_SOURCE_INPUT_ROOTS: [&str; 8] = [
     "clang.cpp",
 ];
 
+/// Where the DLL a Deployment installed actually came from.
+///
+/// Part of the fingerprint rather than a note beside it, because it changes what the recorded
+/// hash means: the same sources at the same Version give one DLL when compiled here and a
+/// different one when taken from the repository (upstream's compiler is not ours). Without
+/// this line, ticking "Compile the DLL myself" on an already-installed Release would find a
+/// matching sidecar and skip the very build it asked for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DllProvenance {
+    /// Compiled here, by the bootstrapped Toolchain.
+    Built,
+    /// The Shipped DLL, taken from the Installation Source as-is.
+    Shipped,
+}
+
+impl DllProvenance {
+    fn token(self) -> &'static str {
+        match self {
+            Self::Built => "built",
+            Self::Shipped => "shipped",
+        }
+    }
+}
+
 /// A computed Build Fingerprint, ready to compare against a sidecar or be recorded in one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BuildFingerprint {
@@ -59,26 +85,38 @@ impl BuildFingerprint {
         version_label: &str,
         configuration: BuildConfiguration,
         forty_three_civs: FortyThreeCivs,
+        provenance: DllProvenance,
         toolchain_identity: &str,
+        flag_override: Option<&str>,
     ) -> Self {
         let configuration = configuration.token();
+        let provenance = provenance.token();
         let forty_three = match forty_three_civs {
             FortyThreeCivs::Enabled => "on",
             FortyThreeCivs::Disabled => "off",
         };
         // One line per input, in a fixed order - same input must yield the same
-        // fingerprint, byte for byte. `v1` is the format's own version: a future installer whose fingerprint
-        // means something different must not skip on a sidecar it does not understand. The
+        // fingerprint, byte for byte. `v2` is the format's own version: a future installer whose fingerprint
+        // means something different must not skip on a sidecar it does not understand. It
+        // went to v2 when the `dll` line arrived, so a sidecar written before Shipped DLLs
+        // existed - which always described a compiled one - is not read as either. The
         // installer version rides along because the compiler flags are *derived by this
         // code* from the other lines - a release that changes the derivation must
         // invalidate old sidecars, and a version bump is the one thing a release reliably
         // does. The cost is one rebuild per installer upgrade, which is also the honest
-        // thing to do.
+        // thing to do. It went to v3 when the `flags` line arrived: a v2 sidecar cannot say
+        // whether the DLL beside it was built with an optimisation override, so it must not
+        // be trusted to answer that question either way.
         let installer = env!("CARGO_PKG_VERSION");
+        // Always written, `none` included, so that "no override" is a stated fact rather than
+        // an absent line. A sidecar left behind by a run that *did* override must not read as
+        // a default build.
+        let flags = flag_override.unwrap_or("none");
         let rendered = format!(
-            "fingerprint v1\ninstaller {installer}\nsource {source_identity}\n\
+            "fingerprint v3\ninstaller {installer}\nsource {source_identity}\n\
              label {version_label}\nconfiguration {configuration}\n\
-             forty-three-civs {forty_three}\ntoolchain {toolchain_identity}\n"
+             forty-three-civs {forty_three}\ndll {provenance}\n\
+             toolchain {toolchain_identity}\nflags {flags}\n"
         );
         Self { rendered }
     }

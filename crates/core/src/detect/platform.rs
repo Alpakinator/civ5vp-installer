@@ -56,6 +56,19 @@ pub(crate) fn app_data_root() -> Option<PathBuf> {
     Some(variable("LOCALAPPDATA")?.join(APP_DATA_FOLDER_NAME))
 }
 
+/// The user's home directory - the last rung of the `Browse` start-directory ladder, and
+/// the only thing that ladder needs from the platform.
+///
+/// `HOME` on Linux, `USERPROFILE` on Windows: the same environment variables the rest of this
+/// adapter reads, and wrong only in ways the browser itself lets a user walk out of.
+pub(crate) fn home_directory() -> Option<PathBuf> {
+    #[cfg(unix)]
+    let name = "HOME";
+    #[cfg(windows)]
+    let name = "USERPROFILE";
+    variable(name)
+}
+
 /// Where this platform keeps Steam, and where it keeps the user's Documents.
 #[cfg(unix)]
 pub(crate) fn search_locations() -> SearchLocations {

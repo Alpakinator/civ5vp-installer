@@ -105,8 +105,18 @@ Four motifs, and only these four. Restraint is the style.
 
 - **Painted panels:** chamfered corners, 8 px cut at 45° on the outer line; the inner line
   follows at its 3 px inset with a 6 px cut. Never rounded.
-- **Native widgets** (buttons, fields, checks): 2 px corner radius - at that size a small
-  radius and a small chamfer are indistinguishable, and the widget frame stays crisp.
+- **Painted widgets** (buttons, path boxes, the version box): chamfered corners, 4 px cut at
+  45°, painted by the shell rather than by egui - egui draws widget frames as rounded
+  rectangles and has no chamfer, so the frame is drawn underneath and the widget's own is
+  suppressed (`deco::button`, `deco::text_field`, `deco::plate`).
+- **Radio buttons**: a diamond - a square standing on its corner, the 45° cut taken all the
+  way - with a smaller filled diamond inside the one chosen. Painted by the shell
+  (`deco::radio_value`); egui's own is a circle, and a circle is the one shape this skin does
+  not have.
+- **Everything else** (checks, and every part of the embedded file browser): square,
+  zero radius. Nothing in this skin is rounded; deco is straight lines and 45° cuts, and a
+  radius - however small - is the one shape it does not have. Where the cut cannot be painted,
+  square is at least in the language.
 - Chamfers are always 45° and always symmetrical.
 
 ## Proportions and spacing

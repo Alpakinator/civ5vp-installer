@@ -12,12 +12,13 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 
 use civ5vp_core::{
-    AppDataStore, BuildConfiguration, Core, Eui, Flavor, FolderRejected, FortyThreeCivs,
-    GameFolders, InstallConfiguration, InstallError, InstallMode, InstallationSource, LuaJitEngine,
-    ProgressEvent, ProgressReporter, SearchLocations, Settings, Version, VersionCatalog,
-    resolve_game_folders, start_up,
+    AppDataStore, BrowseField, BrowseRequest, BuildConfiguration, Core, DllSource, Eui, Flavor,
+    FolderRejected, FortyThreeCivs, GameFolders, InstallConfiguration, InstallError, InstallMode,
+    InstallationSource, LuaJitEngine, ProgressEvent, ProgressReporter, SearchLocations, Settings,
+    Version, VersionCatalog, browse_start, home_directory, resolve_game_folders, start_up,
 };
 
+use crate::browse::{Browsing, FileSystemChoice};
 use crate::{deco, placeholder, theme};
 
 /// How many lines of the Activity log the panel is always tall enough to hold.
@@ -47,15 +48,18 @@ pub enum Screen {
     Installing,
     Installed,
     Failed,
+    /// The Ready page with the file browser open over it - what a `Browse` click looks like.
+    Browsing,
 }
 
 impl Screen {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::FoldersNeeded,
         Self::Ready,
         Self::Installing,
         Self::Installed,
         Self::Failed,
+        Self::Browsing,
     ];
 
     /// Used to name the PNG this screen renders to.
@@ -66,6 +70,7 @@ impl Screen {
             Self::Installing => "installing",
             Self::Installed => "installed",
             Self::Failed => "failed",
+            Self::Browsing => "browsing",
         }
     }
 }
@@ -105,9 +110,6 @@ enum PickedVersion {
     /// The default: whatever the newest Release turns out to be.
     NewestRelease,
     Release(String),
-    /// No longer offered by the picker - kept so a configuration remembered
-    /// before that still restores and installs.
-    Development,
     /// One commit after the newest Release, from the unofficial list.
     Unofficial {
         label: String,
@@ -118,7 +120,7 @@ enum PickedVersion {
 }
 
 /// The unofficial-versions lookup - same life cycle as [`VersionsState`], but
-/// started only when the toggle is on and the catalog has named the newest Release.
+/// started only when the toggle is on and the catalog has named the Releases to span.
 enum UnofficialState {
     NotAsked,
     Fetching(Receiver<Result<Vec<civ5vp_core::UnofficialVersion>, String>>),
@@ -140,7 +142,7 @@ pub struct InstallerApp {
     source_choice: SourceChoice,
     versions: VersionsState,
     picked_version: PickedVersion,
-    /// Whether the picker also lists every change since the newest Release.
+    /// Whether the picker also lists the individual changes around the newest Releases.
     /// Off by default - official Releases are the offer; this is the opt-in.
     show_unofficial: bool,
     unofficial: UnofficialState,
@@ -153,6 +155,10 @@ pub struct InstallerApp {
     /// be set without a click - the tests prefer clicking, but nothing here needs hiding.
     pub luajit: bool,
     build_configuration: BuildConfiguration,
+    /// Whether the player asked for the DLL to be compiled even where a Release ships a
+    /// ready-made one. Off by default: the shipped DLL is the same file, minutes sooner, and
+    /// without the Toolchain Bootstrap's download.
+    compile_dll: bool,
     install_mode: InstallMode,
     /// The player's own MODS-folder mods a Modpack could bake in: what the
     /// Core found, and which of those are ticked. Recomputed when the folders resolve -
@@ -176,6 +182,11 @@ pub struct InstallerApp {
     /// real binary - the shell tests and previews never open a socket.
     update_check: Option<Receiver<String>>,
     newer_installer: Option<String>,
+    /// Where this machine keeps Steam, kept from the launch so a `Browse` click can ask the
+    /// Core the same question detection asked.
+    locations: SearchLocations,
+    /// The file browser, while one is open. Presentation state: which window is up.
+    browsing: Option<Browsing>,
 }
 
 /// The first `max` characters of a commit summary, with an ellipsis when it was cut -
@@ -190,6 +201,14 @@ fn truncated(summary: &str, max: usize) -> String {
 
 /// How far a caption is pushed in to clear the radio button above it.
 const RADIO_INDENT: f32 = 22.0;
+
+/// How many Releases back the unofficial-versions list reaches.
+///
+/// Two: the changes since the newest Release, and the changes that *became* it. One was not
+/// enough - right after a Release the list is empty, and the changes a player most wants to
+/// look up are the ones that release just shipped. Each one costs a small round trip, which
+/// is what keeps this from being "all of them".
+const SPANNED_RELEASES: usize = 2;
 
 /// The Flavor choices, as the player reads them.
 ///
@@ -243,8 +262,12 @@ impl InstallerApp {
             }
             Some(InstallationSource::UpstreamCache { version }) => match version {
                 Version::Release(tag) => picked_version = PickedVersion::Release(tag.clone()),
+                // The Latest Development Version is not a Version this picker offers, so
+                // a configuration remembered before it stopped being one opens on the
+                // default instead of on a choice that has no row to select. The newest
+                // Unofficial Build is that same commit under a name that says what it is.
                 Version::LatestDevelopmentVersion => {
-                    picked_version = PickedVersion::Development;
+                    picked_version = PickedVersion::NewestRelease;
                 }
                 Version::ArbitraryRef(reference) => {
                     picked_version = PickedVersion::Custom;
@@ -266,6 +289,7 @@ impl InstallerApp {
             forty_three_civs,
             luajit,
             build_configuration,
+            compile_dll,
             install_mode,
             extra_mods_picked,
         ) = match &startup.configuration {
@@ -274,6 +298,7 @@ impl InstallerApp {
                 configuration.forty_three_civs,
                 configuration.luajit == LuaJitEngine::LuaJit,
                 configuration.build_configuration,
+                configuration.dll_source == DllSource::AlwaysCompile,
                 configuration.install_mode,
                 configuration.extra_mods.clone(),
             ),
@@ -282,6 +307,7 @@ impl InstallerApp {
                 FortyThreeCivs::Disabled,
                 false,
                 BuildConfiguration::Release,
+                false,
                 InstallMode::Mods,
                 Vec::new(),
             ),
@@ -319,6 +345,7 @@ impl InstallerApp {
             forty_three_civs,
             luajit,
             build_configuration,
+            compile_dll,
             install_mode,
             extra_mods_available: Vec::new(),
             extra_mods_picked,
@@ -330,6 +357,8 @@ impl InstallerApp {
             first_run_note,
             update_check: None,
             newer_installer: None,
+            locations: locations.clone(),
+            browsing: None,
         };
         // Detected folders are worth remembering too: the next launch then starts from them
         // without searching.
@@ -374,6 +403,8 @@ impl InstallerApp {
             // A picture of a first run, and a first run never replaces the game's engine.
             luajit: false,
             build_configuration: BuildConfiguration::Release,
+            // A picture of the ordinary case: a Release install takes the DLL it ships.
+            compile_dll: false,
             install_mode: InstallMode::Mods,
             extra_mods_available: Vec::new(),
             extra_mods_picked: Vec::new(),
@@ -385,6 +416,9 @@ impl InstallerApp {
             first_run_note: None,
             update_check: None,
             newer_installer: None,
+            // A preview never detects anything: the paths above are stated, not found.
+            locations: SearchLocations::default(),
+            browsing: None,
         };
         match screen {
             Screen::Ready => {}
@@ -422,6 +456,16 @@ impl InstallerApp {
                     "Building the DLL: DLL built.".to_owned(),
                     format!("Installing into the game: {summary}"),
                 ];
+            }
+            // The Ready page with a browser over it. The folder tree it walks is a fixed
+            // fake one (see `placeholder::preview_file_system`), so this picture is of the
+            // browser rather than of whoever's machine rendered it.
+            Screen::Browsing => {
+                app.browsing = Some(Browsing::open(
+                    BrowseField::Documents,
+                    Some(PathBuf::from(placeholder::PREVIEW_BROWSER_DIRECTORY)),
+                    FileSystemChoice::Fake(placeholder::preview_file_system()),
+                ));
             }
             Screen::Failed => {
                 app.status = Status::Failed {
@@ -475,6 +519,9 @@ impl InstallerApp {
                     self.contents(ui);
                 });
         });
+        // Last, and outside the page: the browser is a window of its own, drawn over
+        // everything the page just put on screen.
+        self.update_browser(ui.ctx());
     }
 
     fn contents(&mut self, ui: &mut egui::Ui) {
@@ -488,8 +535,8 @@ impl InstallerApp {
         );
         ui.label(
             egui::RichText::new(
-                "Pick a version to download, or point the installer at your own checkout; \
-                 the installer compiles the mod's DLL itself with its own build tools.",
+                "Pick a version to download, or point the installer at your own checkout. \
+                 A release brings its own mod DLL; anything else is built here.",
             )
             .small()
             .color(theme::PARCHMENT_DIM),
@@ -512,21 +559,20 @@ impl InstallerApp {
         ui.add_space(6.0);
 
         let mut edited = false;
+        let mut browse = None;
         deco::panel(ui, Some("Game folders"), |ui| {
-            egui::Grid::new("folders")
-                .num_columns(2)
-                .spacing([12.0, 4.0])
-                .show(ui, |ui| {
-                    // The two folders the installer detects and the player can correct. The
-                    // three Deployment targets are not editable, because they are not separate
-                    // choices: the Core derives them from these two.
-                    edited |= folder_field(ui, "Civilization V game folder", &mut self.game_folder);
-                    edited |= folder_field(
-                        ui,
-                        "Civilization 5 Documents folder",
-                        &mut self.documents_folder,
-                    );
-                });
+            // The two folders the installer detects and the player can correct. The three
+            // Deployment targets are not editable, because they are not separate choices:
+            // the Core derives them from these two.
+            let game = folder_field(ui, GAME_FOLDER_CAPTION, &mut self.game_folder);
+            let documents = folder_field(ui, DOCUMENTS_CAPTION, &mut self.documents_folder);
+            edited |= game.edited | documents.edited;
+            if game.browse {
+                browse = Some(BrowseField::GameInstallation);
+            }
+            if documents.browse {
+                browse = Some(BrowseField::Documents);
+            }
 
             ui.add_space(6.0);
             if let Ok(folders) = &self.resolved {
@@ -538,16 +584,31 @@ impl InstallerApp {
                     ("Text folder", &folders.text),
                     ("DLC folder", &folders.dlc),
                 ] {
-                    ui.label(
-                        egui::RichText::new(format!("{label}: {}", path.display()))
-                            .small()
-                            .color(theme::PARCHMENT_DIM),
-                    );
+                    // Shortened on screen, whole everywhere it can be read in full. A real
+                    // Proton path is long enough to wrap onto a second line, and the wrap
+                    // lands mid-path - three facts become six lines of grey that read as
+                    // damage. The middle is the part that carries nothing.
+                    let full = format!("{label}: {}", path.display());
+                    let line = ui
+                        .label(
+                            egui::RichText::new(format!("{label}: {}", elided_path(path)))
+                                .small()
+                                .color(theme::PARCHMENT_DIM),
+                        )
+                        .on_hover_text(&full);
+                    // The whole path is what a screen reader announces and what the shell
+                    // tests read, so nothing is actually hidden by the shortening.
+                    ui.ctx().accesskit_node_builder(line.id, |node| {
+                        node.set_label(full.clone());
+                    });
                 }
             }
         });
         if edited {
             self.folders_changed();
+        }
+        if let Some(field) = browse {
+            self.open_browser(field);
         }
 
         if let Err(explanation) = &self.resolved {
@@ -563,7 +624,7 @@ impl InstallerApp {
         let mut chosen = false;
         deco::panel(ui, Some("What to install"), |ui| {
             for (choice, label, caption) in flavor_choices() {
-                chosen |= ui.radio_value(&mut self.flavor, choice, label).changed();
+                chosen |= deco::radio_value(ui, &mut self.flavor, choice, label).changed();
                 if let Some(caption) = caption {
                     ui.horizontal(|ui| {
                         // Clear of the radio button, so the caption reads as belonging to
@@ -611,20 +672,20 @@ impl InstallerApp {
             ui.add_space(4.0);
             // How the selection reaches the game. Two radios, not a checkbox:
             // "as mods" and "as a modpack" are both real things a player asks for by name.
-            chosen |= ui
-                .radio_value(
-                    &mut self.install_mode,
-                    InstallMode::Mods,
-                    "Install as mods - activate them in the game's Mods menu",
-                )
-                .changed();
-            chosen |= ui
-                .radio_value(
-                    &mut self.install_mode,
-                    InstallMode::Modpack,
-                    "Install as a modpack - loads automatically, works in multiplayer",
-                )
-                .changed();
+            chosen |= deco::radio_value(
+                ui,
+                &mut self.install_mode,
+                InstallMode::Mods,
+                "Install as mods - activate them in the game's Mods menu",
+            )
+            .changed();
+            chosen |= deco::radio_value(
+                ui,
+                &mut self.install_mode,
+                InstallMode::Modpack,
+                "Install as a modpack - loads automatically, works in multiplayer",
+            )
+            .changed();
             if self.install_mode == InstallMode::Modpack {
                 ui.label(
                     egui::RichText::new(
@@ -680,7 +741,16 @@ impl InstallerApp {
         // The Core's up-front cost warning: the 1.1 GB first-run bootstrap
         // must be known before the click, and the sentence disappears the moment the
         // Toolchain Cache makes it untrue.
-        if let Some(note) = &self.first_run_note {
+        //
+        // Two conditions, both the Core's: the tools are not there yet, *and* this
+        // configuration would have to compile something. A Release install taking the
+        // Shipped DLL downloads nothing however empty the cache is, so warning about it
+        // would send players away from the fast path for a cost they were never going to pay.
+        // `needs_the_toolchain` errs towards showing it - a typed ref is not known to be a
+        // Release until it is resolved - so the note is never missing when it is due.
+        if self.configuration().needs_the_toolchain()
+            && let Some(note) = &self.first_run_note
+        {
             ui.vertical_centered(|ui| {
                 ui.label(
                     egui::RichText::new(note.as_str())
@@ -698,9 +768,8 @@ impl InstallerApp {
                     let free = ui.available_width();
                     ui.add_space((free - 220.0).max(0.0) / 2.0);
                     let install = deco::primary_button(ui, self.can_install(), "Install").clicked();
-                    let uninstall = ui
-                        .add_enabled(!busy, egui::Button::new("Uninstall"))
-                        .clicked();
+                    let uninstall =
+                        deco::button(ui, !busy, egui::Button::new("Uninstall")).clicked();
                     (install, uninstall)
                 })
                 .inner
@@ -785,6 +854,72 @@ impl InstallerApp {
         ui.add_space(6.0);
     }
 
+    /// A `Browse` click: ask the Core where to open, apply any correction it hands back,
+    /// and put a folder picker on screen.
+    ///
+    /// Nothing about *where* is decided here. The ladder - the box, then detection, then the
+    /// Documents side derived from the game folder, then home - is [`browse_start`]'s, and it
+    /// is unit tested rung by rung behind the Core seam. The shell's whole part is reporting
+    /// what the boxes hold and where this machine keeps Steam.
+    fn open_browser(&mut self, field: BrowseField) {
+        let home = home_directory();
+        let start = browse_start(BrowseRequest {
+            field,
+            game_folder: Path::new(self.game_folder.trim()),
+            documents_folder: Path::new(self.documents_folder.trim()),
+            dev_checkout: Path::new(self.source_folder.trim()),
+            locations: &self.locations,
+            home: home.as_deref(),
+        });
+        // Written now rather than on picking, so cancelling the browser keeps the correction.
+        // It can never overwrite a deliberate choice: the Core only reaches the rung that
+        // produces one on a path that is not there.
+        if let Some(correction) = start.correction {
+            self.set_field(field, display_path(&correction));
+        }
+        self.browsing = Some(Browsing::open(
+            field,
+            start.directory,
+            FileSystemChoice::Native,
+        ));
+    }
+
+    /// Draw the file browser, if one is open, and take what it picked.
+    ///
+    /// A picked folder goes through exactly the same path as a typed one - it lands in the
+    /// box and the Core is asked what it means - so a wrong pick is refused by the same
+    /// inline notice, in the same words, as a wrong path typed in by hand.
+    fn update_browser(&mut self, ctx: &egui::Context) {
+        let Some(browsing) = &mut self.browsing else {
+            return;
+        };
+        let field = browsing.field();
+        let picked = browsing.update(ctx);
+        let still_open = browsing.is_open();
+        if let Some(picked) = picked {
+            self.set_field(field, display_path(&picked));
+            match field {
+                BrowseField::GameInstallation | BrowseField::Documents => self.folders_changed(),
+                BrowseField::DevCheckout if self.resolved.is_ok() => self.remember(),
+                BrowseField::DevCheckout => {}
+            }
+        }
+        if !still_open {
+            self.browsing = None;
+        }
+    }
+
+    /// The box a [`BrowseField`] names. The one place the shell maps the Core's idea of a
+    /// field onto its own state, so a correction and a pick cannot disagree about which box
+    /// they meant.
+    fn set_field(&mut self, field: BrowseField, value: String) {
+        match field {
+            BrowseField::GameInstallation => self.game_folder = value,
+            BrowseField::Documents => self.documents_folder = value,
+            BrowseField::DevCheckout => self.source_folder = value,
+        }
+    }
+
     fn folders_changed(&mut self) {
         self.resolved =
             resolve(&self.game_folder, &self.documents_folder).map_err(|r| r.user_message());
@@ -805,10 +940,25 @@ impl InstallerApp {
     }
 
     fn remember(&self) {
+        let mut configuration = self.configuration();
+        // "Latest release" before the lookup has said which one that is. There is no Version
+        // to write yet, and writing the placeholder would put a nameless release in the
+        // settings file for the next launch to restore. Recording the source as unchosen is
+        // what that file already means by "the player has not named one" - the Flavor and the
+        // toggles beside it are still remembered, and the next launch opens on the newest
+        // release, which is where this pick was pointing anyway.
+        if matches!(
+            &configuration.source,
+            InstallationSource::UpstreamCache {
+                version: Version::Release(tag),
+            } if tag.is_empty()
+        ) {
+            configuration.source = InstallationSource::unchosen();
+        }
         let settings = Settings {
             game_installation: Some(PathBuf::from(self.game_folder.trim())),
             documents_folder: Some(PathBuf::from(self.documents_folder.trim())),
-            configuration: Some(self.configuration()),
+            configuration: Some(configuration),
             // Kept separately from the configuration, which only stores the *active*
             // source: a player who names a checkout once must find it pre-filled even
             // after installing from GitHub in between.
@@ -836,39 +986,37 @@ impl InstallerApp {
     /// Core's business - this draws choices and reports the pick.
     fn source_section(&mut self, ui: &mut egui::Ui) {
         let mut chosen = false;
+        let mut browse = false;
         deco::panel(ui, Some("Install from"), |ui| {
-            chosen |= ui
-                .radio_value(
-                    &mut self.source_choice,
-                    SourceChoice::GitHub,
-                    "Download from GitHub - pick a version",
-                )
-                .changed();
-            chosen |= ui
-                .radio_value(
-                    &mut self.source_choice,
-                    SourceChoice::OwnCheckout,
-                    "My own Community-Patch-DLL checkout - Dev mode",
-                )
-                .changed();
+            chosen |= deco::radio_value(
+                ui,
+                &mut self.source_choice,
+                SourceChoice::GitHub,
+                "Download from GitHub - pick a version",
+            )
+            .changed();
+            chosen |= deco::radio_value(
+                ui,
+                &mut self.source_choice,
+                SourceChoice::OwnCheckout,
+                "My own Community-Patch-DLL checkout - Dev mode",
+            )
+            .changed();
             ui.add_space(4.0);
             match self.source_choice {
                 SourceChoice::GitHub => chosen |= self.version_picker(ui),
                 SourceChoice::OwnCheckout => {
-                    egui::Grid::new("own-checkout")
-                        .num_columns(2)
-                        .show(ui, |ui| {
-                            chosen |= folder_field(
-                                ui,
-                                "Community-Patch-DLL folder",
-                                &mut self.source_folder,
-                            );
-                        });
+                    let row = folder_field(ui, CHECKOUT_CAPTION, &mut self.source_folder);
+                    chosen |= row.edited;
+                    browse = row.browse;
                 }
             }
         });
         if chosen && self.resolved.is_ok() {
             self.remember();
+        }
+        if browse {
+            self.open_browser(BrowseField::DevCheckout);
         }
     }
 
@@ -909,18 +1057,29 @@ impl InstallerApp {
             }
         }
 
-        // The unofficial lookup: started once the toggle is on and the catalog
-        // has named the newest Release, polled like the catalog's own lookup.
+        // The unofficial lookup: started once the toggle is on and the catalog has named the
+        // Releases to span, polled like the catalog's own lookup. Two of them, so the list
+        // covers the changes that became the newest Release as well as the ones since -
+        // which release a given change first shipped in is exactly what someone opening this
+        // toggle is trying to find out.
+        let spanned: Vec<String> = match &self.versions {
+            VersionsState::Ready(catalog) => catalog
+                .releases()
+                .iter()
+                .take(SPANNED_RELEASES)
+                .cloned()
+                .collect(),
+            _ => Vec::new(),
+        };
         if self.show_unofficial
             && matches!(self.unofficial, UnofficialState::NotAsked)
-            && let VersionsState::Ready(catalog) = &self.versions
-            && let Some(Version::Release(tag)) = catalog.newest_release()
+            && !spanned.is_empty()
         {
             let (sender, receiver) = channel();
             let core = Arc::clone(&self.core);
             std::thread::spawn(move || {
                 let found = core
-                    .unofficial_versions(&tag, &ProgressReporter::silent())
+                    .unofficial_versions(&spanned, &ProgressReporter::silent())
                     .map_err(|error| {
                         crate::log_detail(&error.log_detail());
                         error.user_message()
@@ -939,12 +1098,28 @@ impl InstallerApp {
                 }
                 Err(TryRecvError::Disconnected) => {
                     self.unofficial = UnofficialState::Failed(
-                        "Could not look up the changes since the newest release. Check \
+                        "Could not look up the changes around the newest releases. Check \
                          your internet connection and try again."
                             .to_owned(),
                     );
                 }
             }
+        }
+
+        // One name for one Version. A pick that names the newest Release *is* the "Latest …"
+        // entry - it is what the settings file records for it, because that is the tag it
+        // resolved to - and leaving it as a bare tag put the same install on screen under two
+        // spellings: "Release-5.4.4" in the closed combo, "Latest Release-5.4.4" in the list
+        // that is supposed to say which row is selected. Folded here rather than at launch
+        // because which Release is newest is not known until the catalog lands.
+        let picks_the_newest = match (&self.versions, &self.picked_version) {
+            (VersionsState::Ready(catalog), PickedVersion::Release(tag)) => {
+                catalog.newest_release() == Some(Version::Release(tag.clone()))
+            }
+            _ => false,
+        };
+        if picks_the_newest {
+            self.picked_version = PickedVersion::NewestRelease;
         }
 
         let mut changed = false;
@@ -962,7 +1137,7 @@ impl InstallerApp {
                     ui.label(&message);
                     self.support_buttons(ui, &message);
                 });
-                if ui.button("Try again").clicked() {
+                if deco::button(ui, true, egui::Button::new("Try again")).clicked() {
                     self.versions = VersionsState::NotAsked;
                 }
             }
@@ -970,11 +1145,10 @@ impl InstallerApp {
                 let newest = catalog.newest_release();
                 let selected_label = match &self.picked_version {
                     PickedVersion::NewestRelease => match &newest {
-                        Some(Version::Release(tag)) => format!("Latest release - {tag}"),
+                        Some(Version::Release(tag)) => format!("Latest {tag}"),
                         _ => "Latest release".to_owned(),
                     },
                     PickedVersion::Release(tag) => tag.clone(),
-                    PickedVersion::Development => "Latest development version".to_owned(),
                     PickedVersion::Unofficial { label, .. } => label.clone(),
                     PickedVersion::Custom => "Custom branch, tag, or commit".to_owned(),
                 };
@@ -985,73 +1159,119 @@ impl InstallerApp {
                         _ => Vec::new(),
                     };
                 let releases: Vec<String> = catalog.releases().to_vec();
-                egui::ComboBox::from_label("Version")
-                    .selected_text(selected_label)
-                    .show_ui(ui, |ui| {
-                        if let Some(Version::Release(tag)) = &newest {
-                            changed |= ui
-                                .selectable_value(
-                                    &mut self.picked_version,
-                                    PickedVersion::NewestRelease,
-                                    format!("Latest release - {tag}"),
-                                )
-                                .changed();
-                        }
-                        // Unofficial versions, newest first - the top entry is
-                        // what "latest development version" used to mean. The whole commit
-                        // message never fits a dropdown row, so the row truncates and the
-                        // full message is the hover text.
-                        for build in unofficial.iter().rev() {
-                            changed |= ui
-                                .selectable_value(
-                                    &mut self.picked_version,
-                                    PickedVersion::Unofficial {
-                                        label: build.label.clone(),
-                                        commit: build.commit.clone(),
-                                    },
-                                    format!("{} - {}", build.label, truncated(&build.summary, 44)),
-                                )
-                                .on_hover_text(format!(
-                                    "{}\n{}",
-                                    build.summary,
-                                    &build.commit[..build.commit.len().min(12)]
-                                ))
-                                .changed();
-                        }
-                        // The newest release is already the "Latest release - …" entry.
-                        let newest_tag = match &newest {
-                            Some(Version::Release(tag)) => Some(tag.as_str()),
-                            _ => None,
-                        };
-                        for tag in releases
-                            .iter()
-                            .filter(|tag| Some(tag.as_str()) != newest_tag)
-                        {
-                            changed |= ui
-                                .selectable_value(
-                                    &mut self.picked_version,
-                                    PickedVersion::Release(tag.clone()),
-                                    tag,
-                                )
-                                .changed();
-                        }
-                        changed |= ui
-                            .selectable_value(
-                                &mut self.picked_version,
-                                PickedVersion::Custom,
-                                "Custom branch, tag, or commit",
-                            )
-                            .changed();
-                    });
+                // Built from an id rather than `from_label`, so that the response is the
+                // box alone: `from_label`'s covers the caption beside it too, and a plate
+                // painted to that rectangle would run out across the panel. The caption is
+                // drawn and tied on below, exactly as `from_label` would have.
+                //
+                // The blanking is undone at the top of the dropdown's own closure: the rows
+                // in the list are ordinary widgets and need their real colours back to show
+                // which one the pointer is on.
+                let dropdown = ui.visuals().clone();
+                ui.horizontal(|ui| {
+                    let plate = deco::plate(ui);
+                    let combo = ui
+                        .scope(|ui| {
+                            deco::blank_frames(ui);
+                            egui::ComboBox::from_id_salt("version")
+                                .selected_text(selected_label)
+                                .show_ui(ui, |ui| {
+                                    *ui.visuals_mut() = dropdown;
+                                    if let Some(Version::Release(tag)) = &newest {
+                                        changed |= ui
+                                            .selectable_value(
+                                                &mut self.picked_version,
+                                                PickedVersion::NewestRelease,
+                                                format!("Latest {tag}"),
+                                            )
+                                            .changed();
+                                    }
+                                    // Unofficial versions, newest first - the top entry is
+                                    // what "latest development version" used to mean. The whole commit
+                                    // message never fits a dropdown row, so the row truncates and the
+                                    // full message is the hover text.
+                                    for build in unofficial.iter().rev() {
+                                        changed |= ui
+                                            .selectable_value(
+                                                &mut self.picked_version,
+                                                PickedVersion::Unofficial {
+                                                    label: build.label.clone(),
+                                                    commit: build.commit.clone(),
+                                                },
+                                                format!(
+                                                    "{} - {}",
+                                                    build.label,
+                                                    truncated(&build.summary, 44)
+                                                ),
+                                            )
+                                            .on_hover_text(format!(
+                                                "{}\n{}",
+                                                build.summary,
+                                                &build.commit[..build.commit.len().min(12)]
+                                            ))
+                                            .changed();
+                                    }
+                                    // The newest release is already the "Latest Release-…" entry.
+                                    let newest_tag = match &newest {
+                                        Some(Version::Release(tag)) => Some(tag.as_str()),
+                                        _ => None,
+                                    };
+                                    for tag in releases
+                                        .iter()
+                                        .filter(|tag| Some(tag.as_str()) != newest_tag)
+                                    {
+                                        changed |= ui
+                                            .selectable_value(
+                                                &mut self.picked_version,
+                                                PickedVersion::Release(tag.clone()),
+                                                tag,
+                                            )
+                                            .changed();
+                                    }
+                                    changed |= ui
+                                        .selectable_value(
+                                            &mut self.picked_version,
+                                            PickedVersion::Custom,
+                                            "Custom branch, tag, or commit",
+                                        )
+                                        .changed();
+                                })
+                        })
+                        .inner;
+                    plate.settle(ui, &combo.response);
+                    let caption = ui.label("Version");
+                    combo.response.labelled_by(caption.id);
+                });
                 if self.picked_version == PickedVersion::Custom {
                     ui.horizontal(|ui| {
                         ui.label("Ref:");
-                        changed |= ui.text_edit_singleline(&mut self.custom_ref).changed();
+                        changed |=
+                            deco::text_field(ui, egui::TextEdit::singleline(&mut self.custom_ref))
+                                .changed();
                     });
+                }
+                // Only where it can change anything. A Release ships the DLL it was built
+                // with, and a typed ref might name one; every other pick compiles regardless,
+                // and a box that does nothing is worse than no box.
+                if matches!(
+                    self.picked_version,
+                    PickedVersion::NewestRelease
+                        | PickedVersion::Release(_)
+                        | PickedVersion::Custom
+                ) {
+                    changed |= ui
+                        .checkbox(&mut self.compile_dll, "Compile the DLL myself")
+                        .on_hover_text(
+                            "A release ships the DLL it was built from, so the installer \
+                             deploys that one and has nothing to compile. Tick this to build \
+                             it here instead - the first build downloads the build tools, \
+                             which takes a while.",
+                        )
+                        .changed();
                 }
                 ui.checkbox(
                     &mut self.show_unofficial,
-                    "Unofficial versions - every change since the newest release",
+                    "Unofficial versions - every change since the release before last",
                 );
                 if self.show_unofficial
                     && let UnofficialState::Ready(list) = &self.unofficial
@@ -1060,11 +1280,9 @@ impl InstallerApp {
                     // Master sitting exactly at the newest Release is normal right after
                     // one ships - say so, or an empty-looking toggle reads as broken.
                     ui.label(
-                        egui::RichText::new(
-                            "There are no unofficial versions after the newest release yet.",
-                        )
-                        .small()
-                        .color(theme::PARCHMENT_DIM),
+                        egui::RichText::new("There are no unofficial versions to list yet.")
+                            .small()
+                            .color(theme::PARCHMENT_DIM),
                     );
                 }
                 if self.show_unofficial
@@ -1074,7 +1292,7 @@ impl InstallerApp {
                     deco::notice(ui, theme::EMBER, |ui| {
                         ui.label(&message);
                     });
-                    if ui.button("Try again").clicked() {
+                    if deco::button(ui, true, egui::Button::new("Try again")).clicked() {
                         self.unofficial = UnofficialState::NotAsked;
                     }
                 }
@@ -1090,17 +1308,21 @@ impl InstallerApp {
     fn effective_version(&self) -> Version {
         match &self.picked_version {
             PickedVersion::Release(tag) => Version::Release(tag.clone()),
-            PickedVersion::Development => Version::LatestDevelopmentVersion,
             PickedVersion::Unofficial { label, commit } => Version::UnofficialBuild {
                 label: label.clone(),
                 commit: commit.clone(),
             },
             PickedVersion::Custom => Version::ArbitraryRef(self.custom_ref.trim().to_owned()),
+            // A Release with no name, until the catalog says which one. `can_install`
+            // keeps it off the install path; if it ever got there the source provider would
+            // refuse it by name, which is the right failure. It must not fall back to
+            // `master` - "latest release" quietly installing the development version is the
+            // one wrong answer available here.
             PickedVersion::NewestRelease => match &self.versions {
                 VersionsState::Ready(catalog) => catalog
                     .newest_release()
-                    .unwrap_or(Version::LatestDevelopmentVersion),
-                _ => Version::LatestDevelopmentVersion,
+                    .unwrap_or_else(|| Version::Release(String::new())),
+                _ => Version::Release(String::new()),
             },
         }
     }
@@ -1139,10 +1361,7 @@ impl InstallerApp {
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
                     let busy = self.status == Status::Installing;
-                    if ui
-                        .add_enabled(!busy, egui::Button::new("Clear stored data"))
-                        .clicked()
-                    {
+                    if deco::button(ui, !busy, egui::Button::new("Clear stored data")).clicked() {
                         match self.store.clear() {
                             Ok(()) => {
                                 self.store_size = None;
@@ -1160,7 +1379,7 @@ impl InstallerApp {
                             }
                         }
                     }
-                    if ui.button("Recalculate size").clicked() {
+                    if deco::button(ui, true, egui::Button::new("Recalculate size")).clicked() {
                         self.store_size = None;
                     }
                 });
@@ -1186,10 +1405,10 @@ impl InstallerApp {
     fn support_buttons(&self, ui: &mut egui::Ui, headline: &str) {
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            if ui.button("Copy details").clicked() {
+            if deco::button(ui, true, egui::Button::new("Copy details")).clicked() {
                 ui.ctx().copy_text(self.log_text_for_report(headline));
             }
-            if ui.button("Open log").clicked() {
+            if deco::button(ui, true, egui::Button::new("Open log")).clicked() {
                 self.open_log();
             }
             if let Some(path) = crate::log_file() {
@@ -1258,6 +1477,13 @@ impl InstallerApp {
             // which Build Configurations are legal with which sources is the Core's ruling,
             // and it refuses an illegal pair with a sentence.
             build_configuration: self.build_configuration,
+            // Likewise: whether a Version has a Shipped DLL worth taking is settled by the
+            // Core once the sources are in hand, so the box only ever says "compile anyway".
+            dll_source: if self.compile_dll {
+                DllSource::AlwaysCompile
+            } else {
+                DllSource::ShippedWhenCurrent
+            },
         }
     }
 
@@ -1427,22 +1653,122 @@ impl InstallerApp {
     }
 }
 
-/// One row of the folder grid: a caption and the box it names. The two are tied together for
-/// AccessKit, so a screen reader announces the box by its caption - which is also how the
-/// shell tests find it, meaning they reach the field the same way a user does.
-///
-/// Returns whether the text changed this frame.
-fn folder_field(ui: &mut egui::Ui, caption: &str, value: &mut String) -> bool {
-    let caption = ui.label(caption);
-    // The field takes every point between the label column and the panel's right edge, so it
-    // scales with the window exactly like the panel behind it, and a real path is readable
-    // rather than clipped at a fixed 360 points.
-    let field = ui
-        .add(egui::TextEdit::singleline(value).desired_width(ui.available_width()))
-        .labelled_by(caption.id);
-    ui.end_row();
-    field.changed()
+/// What one folder row reported this frame.
+#[derive(Default)]
+struct FolderRow {
+    /// The text in the box changed.
+    edited: bool,
+    /// `Browse` was clicked.
+    browse: bool,
 }
+
+/// The three captions the folder rows carry, and the source of truth for how wide their
+/// column is. A row whose caption is not in this list would be measured against a column
+/// sized without it, and would line up with nothing - so add here as well as at the call
+/// site.
+const GAME_FOLDER_CAPTION: &str = "Civilization V game folder";
+const DOCUMENTS_CAPTION: &str = "Civilization 5 Documents folder";
+const CHECKOUT_CAPTION: &str = "Community-Patch-DLL folder";
+const FOLDER_CAPTIONS: [&str; 3] = [GAME_FOLDER_CAPTION, DOCUMENTS_CAPTION, CHECKOUT_CAPTION];
+
+/// How wide the caption column has to be: the widest of the three, measured in the font the
+/// window is actually using.
+///
+/// Measured rather than written down. A constant that clears the longest caption by six
+/// points today stops clearing it the moment the font, its size, or the user's scaling
+/// changes - and what it fails into is a caption sitting on top of the path box.
+fn caption_column(ui: &egui::Ui) -> f32 {
+    let font = egui::TextStyle::Body.resolve(ui.style());
+    FOLDER_CAPTIONS
+        .iter()
+        .map(|caption| {
+            ui.painter()
+                .layout_no_wrap((*caption).to_owned(), font.clone(), theme::PARCHMENT)
+                .size()
+                .x
+        })
+        .fold(0.0_f32, f32::max)
+        .ceil()
+}
+
+/// The fixed width the button is given. The path box takes what is left, and a box sized from
+/// the space around it, inside a container sized from the box, is a feedback loop that
+/// settles at a different width on every row.
+const BROWSE_BUTTON_WIDTH: f32 = 48.0;
+
+/// The button's own padding, tighter than the page's: it is a small control beside a box, not
+/// one of the page's own buttons, and at the page's padding it stands taller than the box it
+/// belongs to.
+const BROWSE_BUTTON_PADDING: egui::Vec2 = egui::vec2(3.0, 1.0);
+
+/// How tall the button is: a little under the path box beside it, so the box stays the thing
+/// the row is about.
+const BROWSE_BUTTON_HEIGHT: f32 = 24.0;
+
+/// The narrowest the path box is allowed to get before the row simply overflows. A window
+/// squeezed below this has bigger problems than a clipped path.
+const MIN_PATH_WIDTH: f32 = 160.0;
+
+/// One row of the folder panel: a caption, the box it names, and the button that opens a
+/// file browser for it.
+///
+/// The caption and the box are tied together for AccessKit, so a screen reader announces the
+/// box by its caption - which is also how the shell tests find it, meaning they reach the
+/// field the same way a user does. The button reads only `Browse` on screen, because three
+/// of them stacked read as a column rather than as three separate offers; its *accessible*
+/// name says which folder it is for, so a screen reader - and the tests - can tell the three
+/// apart without the window having to.
+fn folder_field(ui: &mut egui::Ui, caption: &str, value: &mut String) -> FolderRow {
+    let mut row = FolderRow::default();
+    let caption_width = caption_column(ui);
+    // Measured out here, from the panel, rather than inside the row: a horizontal layout
+    // reports the width it *could* grow to, and a row sized from that grows the panel it is
+    // in, one row at a time, until nothing lines up with anything.
+    let gap = ui.spacing().item_spacing.x;
+    // The row fills the panel's content width exactly: caption, gap, box, gap, button. Going
+    // over it is not a small mistake - the panel grows to fit the row, which widens the
+    // content area, which widens the row again, and every panel on the page ends up drawn
+    // out under the page's scroll bar.
+    let width = (ui.available_width() - caption_width - BROWSE_BUTTON_WIDTH - 2.0 * gap)
+        .max(MIN_PATH_WIDTH);
+    let height = ui.spacing().interact_size.y;
+    ui.horizontal(|ui| {
+        let label = ui
+            .allocate_ui_with_layout(
+                egui::vec2(caption_width, height),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    // Without this the caption column shrink-wraps its text, and the three
+                    // rows - whose captions are three different lengths - line up with
+                    // nothing at all.
+                    ui.set_min_width(caption_width);
+                    ui.label(caption)
+                },
+            )
+            .inner;
+        let field = deco::text_field(ui, egui::TextEdit::singleline(value).desired_width(width))
+            .labelled_by(label.id);
+        ui.spacing_mut().button_padding = BROWSE_BUTTON_PADDING;
+        let browse = deco::button(
+            ui,
+            true,
+            egui::Button::new(egui::RichText::new(BROWSE_LABEL).small())
+                .min_size(egui::vec2(BROWSE_BUTTON_WIDTH, BROWSE_BUTTON_HEIGHT)),
+        );
+        let spoken = format!("{BROWSE_LABEL} for the {caption}");
+        ui.ctx().accesskit_node_builder(browse.id, |node| {
+            node.set_label(spoken.clone());
+        });
+        row = FolderRow {
+            edited: field.changed(),
+            browse: browse.clicked(),
+        };
+    });
+    row
+}
+
+/// What the button says on screen. The accessible name adds the folder - see [`folder_field`].
+const BROWSE_LABEL: &str = "Browse";
 
 /// Ask the Core what a pair of typed-in folders means, logging the detail either way.
 ///
@@ -1482,8 +1808,66 @@ fn display_path(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
+/// A path with its middle taken out: the first few components, an ellipsis, the last few.
+///
+/// What a player checks in a derived path is the two ends - that it is under the right home
+/// or drive, and that it lands on the right folder. Everything between is nine levels of
+/// Proton prefix that is the same on every machine that has one.
+fn elided_path(path: &Path) -> String {
+    /// Components kept at each end. Three at the front covers a root and two names -
+    /// `/home/sunny`, or `C:\Users\sunny` - and three at the back covers
+    /// `My Games/Sid Meier's Civilization 5/MODS`.
+    const KEPT: usize = 3;
+
+    let components: Vec<_> = path.components().collect();
+    // Nothing to gain unless at least two components would come out.
+    if components.len() <= KEPT * 2 + 1 {
+        return display_path(path);
+    }
+    let mut short = PathBuf::new();
+    short.extend(&components[..KEPT]);
+    short.push("…");
+    short.extend(&components[components.len() - KEPT..]);
+    display_path(&short)
+}
+
 impl eframe::App for InstallerApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.show(ui);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The two ends survive and the middle goes: exactly the two things a player checks in a
+    /// derived path - that it is under the right home, and that it lands on the right folder.
+    #[test]
+    fn a_long_path_keeps_its_two_ends() {
+        let path = Path::new(
+            "/home/sunny/chest/SteamLibrary/steamapps/compatdata/8930/pfx/drive_c/users\
+             /steamuser/Documents/My Games/Sid Meier's Civilization 5/MODS",
+        );
+        assert_eq!(
+            elided_path(path),
+            "/home/sunny/…/My Games/Sid Meier's Civilization 5/MODS",
+        );
+    }
+
+    /// A path short enough to read is left exactly as it is - shortening it would cost a
+    /// component and save nothing.
+    #[test]
+    fn a_short_path_is_left_alone() {
+        let path = Path::new("/home/sunny/Games/Civ/MODS");
+        assert_eq!(elided_path(path), "/home/sunny/Games/Civ/MODS");
+    }
+
+    /// The boundary. Seven components - the root counts as one - is the longest that is left
+    /// whole, because taking a single component out would only replace it with an ellipsis.
+    #[test]
+    fn nothing_is_taken_out_unless_two_components_go() {
+        assert_eq!(elided_path(Path::new("/a/b/c/d/e/f")), "/a/b/c/d/e/f");
+        assert_eq!(elided_path(Path::new("/a/b/c/d/e/f/g")), "/a/b/…/e/f/g");
     }
 }

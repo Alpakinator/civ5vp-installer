@@ -8,9 +8,9 @@ use crate::boundaries::{
     ToolchainRunner,
 };
 use crate::claimed::{ClaimedFile, ClaimedFolder, GameFolders};
-use crate::configuration::InstallConfiguration;
+use crate::configuration::{DllSource, InstallConfiguration};
 use crate::error::{InstallError, SourceItem};
-use crate::fingerprint::{BuildFingerprint, FINGERPRINT_FILE_NAME, fnv1a64_of_file};
+use crate::fingerprint::{BuildFingerprint, DllProvenance, FINGERPRINT_FILE_NAME, fnv1a64_of_file};
 use crate::plan::Plan;
 use crate::progress::{ProgressReporter, Stage};
 use crate::replaced::{BackupStore, EngineOutcome, ReplacedFile, Restored};
@@ -99,18 +99,25 @@ impl Core {
 
     /// What to tell the player near the Install button while the first build still costs
     /// the toolchain download - `None` once it is set up.
+    ///
+    /// About the machine, not about a configuration. Whether *this* install will compile
+    /// anything at all is
+    /// [`InstallConfiguration::needs_the_toolchain`][crate::InstallConfiguration::needs_the_toolchain];
+    /// a caller drawing the warning wants both, because a Release install taking the Shipped
+    /// DLL downloads nothing however empty the Toolchain Cache is.
     pub fn first_run_expectation(&self) -> Option<String> {
         self.toolchain_runner.first_run_expectation()
     }
 
-    /// The unofficial versions after `newest_release`, from the same boundary.
+    /// The unofficial versions spanning `releases` (newest-first tag names) and everything
+    /// after the newest of them, from the same boundary.
     pub fn unofficial_versions(
         &self,
-        newest_release: &str,
+        releases: &[String],
         progress: &ProgressReporter,
     ) -> Result<Vec<crate::UnofficialVersion>, InstallError> {
         self.source_provider
-            .unofficial_versions(newest_release, progress)
+            .unofficial_versions(releases, progress)
             .map_err(InstallError::Fetch)
     }
 
@@ -136,16 +143,29 @@ impl Core {
         progress: &ProgressReporter,
     ) -> Result<InstallOutcome, InstallError> {
         let source = self.fetch(plan, progress)?;
+        // Settled before the fingerprint is computed, because it is one of the fingerprint's
+        // inputs: a Shipped DLL and a compiled one are different files from the same
+        // sources.
+        let shipped_dll = self.usable_shipped_dll(plan, &source.root, progress);
+        let provenance = match shipped_dll {
+            Some(_) => DllProvenance::Shipped,
+            None => DllProvenance::Built,
+        };
         let fingerprint = BuildFingerprint::new(
             &source.source_identity,
             &plan.configuration.source.version_label(),
             plan.configuration.build_configuration,
             plan.configuration.forty_three_civs,
+            provenance,
             &self.toolchain_runner.toolchain_identity(),
+            self.toolchain_runner.dll_flag_override().as_deref(),
         );
         let built_dll = match self.reusable_deployed_dll(plan, &fingerprint, progress)? {
             Some(deployed) => deployed,
-            None => self.build(plan, &source.root, progress)?,
+            None => match shipped_dll {
+                Some(shipped) => self.stage_shipped_dll(&shipped, progress)?,
+                None => self.build(plan, &source.root, progress)?,
+            },
         };
         // In Modpack mode the whole pack is assembled in the App Data Store before Sync
         // runs - the game is untouched until everything that can fail has succeeded.
@@ -334,6 +354,115 @@ impl Core {
 
         progress.report(Stage::Fetch, "Mod files ready.");
         Ok(source)
+    }
+
+    /// The Shipped DLL this configuration may deploy instead of compiling one - `None` when
+    /// there is none, when it cannot be shown to be current, or when the player asked to
+    /// compile anyway.
+    ///
+    /// Every `None` says out loud why, because the difference the player feels is minutes
+    /// against a multi-gigabyte download: "it is building even though I picked a release" has
+    /// to be answerable from the log alone.
+    fn usable_shipped_dll(
+        &self,
+        plan: &Plan,
+        source_root: &Path,
+        progress: &ProgressReporter,
+    ) -> Option<PathBuf> {
+        if plan.configuration.dll_source == DllSource::AlwaysCompile {
+            progress.report(
+                Stage::Build,
+                "Compiling the DLL, as asked - not using the one this version ships.",
+            );
+            return None;
+        }
+
+        // Which DLL matters is the 43-Civs toggle: upstream ships the 43-civ build in
+        // `(3b)` and the ordinary one in `(1)`. Either way it is deployed into `(1)`, which
+        // is where `(3b)`'s modinfo hook looks for it.
+        let folder = match plan.configuration.forty_three_civs {
+            crate::FortyThreeCivs::Enabled => ClaimedFolder::FortyThreeCivsCommunityPatch,
+            crate::FortyThreeCivs::Disabled => ClaimedFolder::CommunityPatch,
+        };
+        // The folder's name is a fact about the Version in hand, exactly as it is for a
+        // Deployment - older Versions spell some of these differently.
+        let found = folder
+            .folder_names()
+            .iter()
+            .map(|name| (*name, source_root.join(name).join(BUILT_DLL_FILE_NAME)))
+            .find(|(_, path)| path.is_file());
+        let Some((folder_name, path)) = found else {
+            progress.report(
+                Stage::Build,
+                format!(
+                    "{} ships no ready-made DLL in {} - building it instead.",
+                    plan.configuration.source.version_label(),
+                    folder.folder_name()
+                ),
+            );
+            return None;
+        };
+
+        // Forward slashes and no leading `./`: this is a path in a repository, not on this
+        // machine's filesystem, and the boundary answers about a commit.
+        let repository_path = format!("{folder_name}/{BUILT_DLL_FILE_NAME}");
+        match self.source_provider.shipped_dll_is_current(
+            &plan.configuration.source,
+            &repository_path,
+            progress,
+        ) {
+            Ok(true) => Some(path),
+            Ok(false) => {
+                // Deliberately not "it is stale". Outside a Release commit nothing here
+                // *knows* the checked-in DLL is old - a Local Repo's working tree could hold
+                // one its owner compiled a minute ago. What is true in every one of those
+                // cases is that no commit vouches for it, and that is enough to build.
+                progress.report(
+                    Stage::Build,
+                    format!(
+                        "The DLL checked into {} cannot be shown to match its sources - \
+                         building it instead.",
+                        plan.configuration.source.version_label()
+                    ),
+                );
+                None
+            }
+            Err(error) => {
+                // Not a failure: it costs a build, not the install. The sentence is the
+                // boundary's own, so "why is it compiling" reads the same in the log as the
+                // thing that actually went wrong.
+                progress.report(
+                    Stage::Build,
+                    format!(
+                        "Could not check whether this version's DLL is up to date, so it is \
+                         being built instead. {}",
+                        error.message()
+                    ),
+                );
+                None
+            }
+        }
+    }
+
+    /// Copy the Shipped DLL into the Core's own build directory, so Sync is fed exactly what
+    /// a build would have fed it.
+    ///
+    /// The build directory, not the game: nothing in the game is touched until every step
+    /// that can fail has succeeded, and that rule does not bend for a copy.
+    fn stage_shipped_dll(
+        &self,
+        shipped: &Path,
+        progress: &ProgressReporter,
+    ) -> Result<PathBuf, InstallError> {
+        let build_dir = self.work_dir.join("build");
+        tree::create_dir_all(&build_dir)?;
+        let output_path = build_dir.join(BUILT_DLL_FILE_NAME);
+        tree::copy_file(shipped, &output_path)?;
+        progress.report(
+            Stage::Build,
+            "Using the DLL this release ships - nothing to build.",
+        );
+        Ok(output_path)
     }
 
     /// Build the DLL into the Core's own build directory and return its path there.

@@ -9,8 +9,10 @@ that's the whole process.
 - **Any version, one click.** The newest release is pre-picked; older releases are one
   dropdown away. An *unofficial versions* switch even lets you install any single change
   made since the newest release.
-- **Builds the real thing.** Vox Populi's engine (a DLL) has to be compiled. The installer
-  does that itself, on your machine - you don't install anything else, ever.
+- **Builds the real thing - when it has to.** An official release brings its own copy of
+  Vox Populi's engine (a DLL), so installing one is just a download. Anything else - an
+  unofficial version, a branch, your own checkout - is compiled on your machine by the
+  installer itself. Either way you never install a compiler.
 - **Modpack mode.** Instead of ordinary mods, it can bake everything into a *modpack* the
   game loads automatically - no Mods menu, works in multiplayer. Your own mods from the
   MODS folder can be baked in too, with a checkbox each.
@@ -38,11 +40,16 @@ can't load the mod's engine - the installer will tell you, not break your game.)
 
 ## The first run
 
-The first install downloads about **2.4 GB** of build tools plus the mod itself, and
-typically takes **10-25 minutes**. This happens once: everything is kept in the
-installer's own data folder (**≈5 GB** when settled) and reused forever after. The
-**Storage** panel shows where that folder is and can delete it in one click - your game
-is never touched by that.
+Installing a release downloads the mod and nothing else - no build tools, because the
+release brings its own DLL.
+
+The build tools arrive the first time something actually has to be compiled: an unofficial
+version, a branch or commit you type in, your own checkout, or the LuaJIT engine. That is
+about **1.1 GB** once, and the sentence above the Install button says so before you click.
+
+Everything is kept in the installer's own data folder (**≈5 GB** once the build tools are
+in it) and reused forever after. The **Storage** panel shows where that folder is and can
+delete it in one click - your game is never touched by that.
 
 ## Where things go
 

@@ -11,9 +11,9 @@ use std::fs;
 use std::path::PathBuf;
 
 use civ5vp_core::{
-    BoundaryError, BuildConfiguration, BuildRequest, Core, Flavor, FortyThreeCivs, GameFolders,
-    InstallConfiguration, InstallMode, InstallationSource, LuaJitEngine, ProgressReporter, Stage,
-    ToolchainRunner, Version,
+    BoundaryError, BuildConfiguration, BuildRequest, Core, DllSource, Flavor, FortyThreeCivs,
+    GameFolders, InstallConfiguration, InstallMode, InstallationSource, LuaJitEngine,
+    ProgressReporter, Stage, ToolchainRunner, Version,
 };
 use civ5vp_sources::{InstallationSources, LuaJitCache, UpstreamCache};
 use support::UpstreamFixture;
@@ -54,6 +54,11 @@ impl ToolchainRunner for MarkerToolchainRunner {
 
     fn toolchain_identity(&self) -> String {
         "fake-toolchain-0".to_owned()
+    }
+
+    /// Nothing here reads a flag file, so there is never an override to report.
+    fn dll_flag_override(&self) -> Option<String> {
+        None
     }
 }
 
@@ -104,6 +109,7 @@ fn a_release_from_the_upstream_cache_installs_end_to_end() {
         install_mode: InstallMode::Mods,
         extra_mods: Vec::new(),
         luajit: LuaJitEngine::Stock,
+        dll_source: DllSource::ShippedWhenCurrent,
     };
 
     let plan = core.plan(&configuration, &game.folders()).unwrap();
@@ -151,6 +157,7 @@ fn switching_version_between_installs_removes_what_the_new_version_dropped() {
             install_mode: InstallMode::Mods,
             extra_mods: Vec::new(),
             luajit: LuaJitEngine::Stock,
+            dll_source: DllSource::ShippedWhenCurrent,
         };
         let plan = core.plan(&configuration, &game.folders()).unwrap();
         core.execute(&plan, &ProgressReporter::silent()).unwrap();

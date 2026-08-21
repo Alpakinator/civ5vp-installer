@@ -157,9 +157,12 @@ fn visuals() -> egui::Visuals {
     visuals.selection.bg_fill = GOLD_DARK;
     visuals.selection.stroke = Stroke::new(1.0, PARCHMENT_BRIGHT);
 
-    // Native widgets take a 2 px corner radius - at widget size a small radius and a small
-    // chamfer read the same, and the frame stays crisp (visual language, "Corner treatments").
-    let corner = CornerRadius::same(2);
+    // Nothing in this skin is rounded. Deco is a language of straight lines and 45° cuts, and
+    // a radius - however small - is the one shape it does not have. Widgets the shell paints
+    // itself get the cut (`deco::button`, `deco::text_field`); everything else, including the
+    // file browser's own furniture, is square. Square is at least in the language; rounded is
+    // not (visual language, "Corner treatments").
+    let corner = CornerRadius::ZERO;
 
     // Labels, separators, and other things that only sit there.
     visuals.widgets.noninteractive.bg_fill = PANEL_NAVY;
@@ -194,6 +197,11 @@ fn visuals() -> egui::Visuals {
     visuals.widgets.open.bg_stroke = Stroke::new(1.0, GOLD);
     visuals.widgets.open.fg_stroke = Stroke::new(1.0, PARCHMENT_BRIGHT);
     visuals.widgets.open.corner_radius = corner;
+
+    // The frames egui draws for itself: windows (the file browser is one), dropdown menus,
+    // and tooltips. None of these is ours to paint, so square is as far as they go.
+    visuals.window_corner_radius = corner;
+    visuals.menu_corner_radius = corner;
 
     visuals
 }

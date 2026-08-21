@@ -21,7 +21,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use civ5vp_core::{
-    BoundaryError, BuildConfiguration, BuildRequest, Core, Eui, Flavor, FortyThreeCivs,
+    BoundaryError, BuildConfiguration, BuildRequest, Core, DllSource, Eui, Flavor, FortyThreeCivs,
     GameFolders, InstallConfiguration, InstallMode, InstallationSource, LuaJitEngine,
     ProgressReporter, Stage, ToolchainRunner, Version,
 };
@@ -225,6 +225,7 @@ fn a_real_release_installs_end_to_end() {
         install_mode: InstallMode::Mods,
         extra_mods: Vec::new(),
         luajit: LuaJitEngine::Stock,
+        dll_source: DllSource::ShippedWhenCurrent,
     };
 
     let plan = core.plan(&configuration, &folders).unwrap();
@@ -289,6 +290,11 @@ impl ToolchainRunner for MarkerToolchainRunner {
     fn toolchain_identity(&self) -> String {
         "fake-toolchain-0".to_owned()
     }
+
+    /// Nothing here reads a flag file, so there is never an override to report.
+    fn dll_flag_override(&self) -> Option<String> {
+        None
+    }
 }
 
 /// For tests that never run a Modpack Deployment: refuses if asked.
@@ -334,7 +340,7 @@ fn the_unofficial_versions_list_and_install_for_real() {
         panic!("newest_release always names a Release");
     };
     let unofficial = cache
-        .list_unofficial(tag, &ProgressReporter::silent())
+        .list_unofficial(std::slice::from_ref(tag), &ProgressReporter::silent())
         .unwrap();
     println!("{} unofficial versions since {tag}", unofficial.len());
     let base = tag.trim_start_matches("Release-");
@@ -370,4 +376,75 @@ fn the_unofficial_versions_list_and_install_for_real() {
         newest_build.label,
         &newest_build.commit[..10]
     );
+}
+
+/// Live: the Shipped-DLL check says yes at the newest Release and no one commit later.
+///
+/// The whole change rests on one claim about how upstream works - that the Release commit is
+/// the commit that refreshes the checked-in DLLs, and that nothing after it does. This is the
+/// only test that can hold that claim against the real repository, and it holds both halves,
+/// because only the second one can go stale silently: if upstream ever started refreshing the
+/// DLL on ordinary commits, every unofficial build would quietly install a DLL nobody checked.
+#[test]
+#[ignore = "talks to the real GitHub API and clones the real upstream repository"]
+fn the_shipped_dll_is_current_at_a_release_and_stale_after_it() {
+    let root = scratch("real-shipped-dll");
+    let cache = UpstreamCache::new(&root, UPSTREAM_URL);
+    let dlls = [
+        "(1) Community Patch/CvGameCore_Expansion2.dll",
+        "(3b) 43 Civs Community Patch/CvGameCore_Expansion2.dll",
+    ];
+
+    let newest = cache
+        .list_versions(&ProgressReporter::silent())
+        .unwrap()
+        .newest_release()
+        .expect("upstream always has releases");
+    let Version::Release(tag) = newest.clone() else {
+        panic!("newest_release always names a Release");
+    };
+
+    cache
+        .materialize(&newest, &ProgressReporter::silent())
+        .unwrap();
+    for dll in dlls {
+        assert!(
+            cache
+                .shipped_dll_is_current(&newest, dll, &ProgressReporter::silent())
+                .unwrap(),
+            "{tag} should ship a current {dll}"
+        );
+        assert!(
+            root.join(dll).is_file(),
+            "{dll} should be on disk after materializing {tag}"
+        );
+    }
+    println!("{tag} ships both DLLs, current");
+
+    // One commit later. Right after a release there may be none, and that is not a failure -
+    // it is the state upstream is in for a day or two every few weeks.
+    let unofficial = cache
+        .list_unofficial(std::slice::from_ref(&tag), &ProgressReporter::silent())
+        .unwrap();
+    let Some(next) = unofficial.first() else {
+        println!("upstream has no commits since {tag} right now - nothing to contrast");
+        return;
+    };
+    let after = Version::UnofficialBuild {
+        label: next.label.clone(),
+        commit: next.commit.clone(),
+    };
+    cache
+        .materialize(&after, &ProgressReporter::silent())
+        .unwrap();
+    for dll in dlls {
+        assert!(
+            !cache
+                .shipped_dll_is_current(&after, dll, &ProgressReporter::silent())
+                .unwrap(),
+            "{}'s {dll} is the one {tag} shipped, not one built from its own sources",
+            next.label
+        );
+    }
+    println!("{} carries {tag}'s DLLs - stale, as expected", next.label);
 }

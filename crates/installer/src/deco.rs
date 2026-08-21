@@ -247,18 +247,19 @@ fn crowned_portal(title_rect: Rect, rule_rect: Rect) -> Shape {
 /// Half-width (and radius) of the crest's fan medallion.
 const MEDALLION_HALF: f32 = 18.0;
 
+/// The four points of a square standing on its corner - the 45° cut taken all the way.
+fn diamond_points(centre: egui::Pos2, half: f32) -> Vec<Pos2> {
+    vec![
+        pos2(centre.x, centre.y - half),
+        pos2(centre.x + half, centre.y),
+        pos2(centre.x, centre.y + half),
+        pos2(centre.x - half, centre.y),
+    ]
+}
+
 /// A small filled diamond, the skin's punctuation mark.
 fn diamond(centre: egui::Pos2, half: f32) -> Shape {
-    Shape::convex_polygon(
-        vec![
-            pos2(centre.x, centre.y - half),
-            pos2(centre.x + half, centre.y),
-            pos2(centre.x, centre.y + half),
-            pos2(centre.x - half, centre.y),
-        ],
-        theme::GOLD,
-        Stroke::NONE,
-    )
+    Shape::convex_polygon(diamond_points(centre, half), theme::GOLD, Stroke::NONE)
 }
 
 pub fn diamond_rule(ui: &mut egui::Ui) -> Rect {
@@ -341,7 +342,8 @@ pub fn progress(ui: &mut egui::Ui, fraction: Option<f32>) {
 /// The primary action: minimum 150 × 34 px, label centred, styling from the theme's widget
 /// visuals. A plain egui button underneath, so AccessKit still sees a button with a label.
 pub fn primary_button(ui: &mut egui::Ui, enabled: bool, label: &str) -> egui::Response {
-    ui.add_enabled(
+    button(
+        ui,
         enabled,
         egui::Button::new(
             egui::RichText::new(label)
@@ -352,17 +354,190 @@ pub fn primary_button(ui: &mut egui::Ui, enabled: bool, label: &str) -> egui::Re
                     theme::PARCHMENT_DIM
                 }),
         )
-        .min_size(vec2(150.0, 30.0))
-        .stroke(Stroke::new(
-            1.0,
-            if enabled {
-                theme::GOLD
-            } else {
-                theme::GOLD_DARK
-            },
-        )),
+        .min_size(vec2(150.0, 30.0)),
     )
 }
+
+/// The 45° cut taken off each corner of a widget - a button, a path box - as against a
+/// panel's [`PANEL_CHAMFER`]. Smaller, because a widget is a fraction of a panel's height and
+/// the panel's cut would take its corners off altogether.
+const WIDGET_CHAMFER: f32 = 4.0;
+
+/// Ground reserved under a widget, painted once the widget has reported its rectangle and
+/// what state it is in.
+///
+/// egui draws every widget frame as a rounded rectangle and offers no chamfer, so the frame
+/// is drawn here instead: the widget is added with its own fill and border suppressed, and
+/// this paints the cut-cornered plate underneath. Reserved *before* the widget so it lands
+/// behind it - the same order [`stepped_frame`] is put under a panel.
+#[must_use = "a plate that is never settled leaves its widget with no frame at all"]
+pub struct Plate(egui::layers::ShapeIdx);
+
+/// Reserve the ground under the next widget added to `ui`.
+pub fn plate(ui: &egui::Ui) -> Plate {
+    Plate(ui.painter().add(Shape::Noop))
+}
+
+impl Plate {
+    /// The plate for something that reacts to the pointer: the fill and border egui would
+    /// have used for the state the widget is actually in, on a chamfered outline.
+    pub fn settle(self, ui: &egui::Ui, response: &egui::Response) {
+        let visuals = ui.style().interact(response);
+        self.paint(ui, response.rect, visuals.weak_bg_fill, visuals.bg_stroke);
+    }
+
+    /// The plate for a sunken well - a text box, whose ground stays the same whether or not
+    /// the pointer is over it. Only its border answers.
+    pub fn settle_well(self, ui: &egui::Ui, response: &egui::Response) {
+        let visuals = ui.style().interact(response);
+        self.paint(ui, response.rect, theme::WELL_NAVY, visuals.bg_stroke);
+    }
+
+    fn paint(self, ui: &egui::Ui, rect: Rect, fill: Color32, stroke: Stroke) {
+        ui.painter().set(
+            self.0,
+            Shape::convex_polygon(chamfered(rect, WIDGET_CHAMFER), fill, stroke),
+        );
+    }
+}
+
+/// Blank the fill and border egui would paint for a widget, so a chamfered [`Plate`] can be
+/// painted in their place.
+///
+/// [`button`] and [`text_field`] say this on the widget's own builder, which is tidier. This
+/// is for the ones whose builder has no such setting - `ComboBox` has neither a fill nor a
+/// stroke - and so has to be told through the style instead. Set it on a scoped `Ui`, and
+/// restore it inside anything that widget opens: a dropdown's rows need their real colours to
+/// show which one the pointer is on.
+pub fn blank_frames(ui: &mut egui::Ui) {
+    let widgets = &mut ui.visuals_mut().widgets;
+    for state in [
+        &mut widgets.inactive,
+        &mut widgets.hovered,
+        &mut widgets.active,
+        &mut widgets.open,
+    ] {
+        state.bg_fill = Color32::TRANSPARENT;
+        state.weak_bg_fill = Color32::TRANSPARENT;
+        state.bg_stroke = Stroke::NONE;
+    }
+}
+
+/// A button with its corners cut: egui's own, with the rounded frame suppressed and a
+/// chamfered one painted under it. Sizing, sense, focus and keyboard handling stay egui's.
+pub fn button(ui: &mut egui::Ui, enabled: bool, button: egui::Button<'_>) -> egui::Response {
+    let plate = plate(ui);
+    let response = ui.add_enabled(
+        enabled,
+        button.fill(Color32::TRANSPARENT).stroke(Stroke::NONE),
+    );
+    plate.settle(ui, &response);
+    response
+}
+
+/// A single-line text box with its corners cut, on the same terms as [`button`].
+///
+/// The margin is set here because a frameless `TextEdit` puts its text hard against the edge
+/// of its rectangle, and the plate needs the same room egui's own frame would have taken.
+pub fn text_field(ui: &mut egui::Ui, field: egui::TextEdit<'_>) -> egui::Response {
+    let plate = plate(ui);
+    let response = ui.add(
+        // An empty frame, not egui's: its own would paint the rounded rectangle this exists
+        // to be rid of. The room for the text goes on that frame and not through
+        // `TextEdit::margin`, which egui only consults when it is building the frame itself -
+        // hand it one and the margin is silently dropped, and the text sits on the border.
+        field.frame(egui::Frame::NONE.inner_margin(egui::Margin::symmetric(
+            TEXT_FIELD_MARGIN.0,
+            TEXT_FIELD_MARGIN.1,
+        ))),
+    );
+    plate.settle_well(ui, &response);
+    response
+}
+
+/// How far a path box's text sits inside its plate. Wider than tall: the cut corners eat into
+/// the ends of the box, and a path that started in the cut would look clipped.
+const TEXT_FIELD_MARGIN: (i8, i8) = (8, 4);
+
+/// A radio button drawn as a diamond: a square on its point, with a smaller filled diamond
+/// inside it when it is the one chosen.
+///
+/// egui's own is a circle, and a circle is the one shape this skin does not have - every
+/// corner in the window is either square or cut at 45°, and a diamond *is* that cut, taken
+/// all the way. Everything except the mark is egui's: the sizing, the click sense, and the
+/// accessibility information a screen reader and the shell tests both read.
+pub fn radio_value<T: PartialEq>(
+    ui: &mut egui::Ui,
+    current: &mut T,
+    chosen: T,
+    label: &str,
+) -> egui::Response {
+    let selected = *current == chosen;
+    let mut response = radio(ui, selected, label);
+    if response.clicked() && !selected {
+        *current = chosen;
+        response.mark_changed();
+    }
+    response
+}
+
+fn radio(ui: &mut egui::Ui, selected: bool, label: &str) -> egui::Response {
+    let mark_size = ui.spacing().icon_width;
+    let gap = ui.spacing().icon_spacing;
+    let galley = egui::WidgetText::from(label).into_galley(
+        ui,
+        Some(egui::TextWrapMode::Extend),
+        f32::INFINITY,
+        egui::TextStyle::Body,
+    );
+    let (rect, response) = ui.allocate_exact_size(
+        vec2(
+            mark_size + gap + galley.size().x,
+            galley.size().y.max(mark_size),
+        ),
+        egui::Sense::click(),
+    );
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(
+            egui::WidgetType::RadioButton,
+            ui.is_enabled(),
+            selected,
+            label,
+        )
+    });
+
+    if ui.is_rect_visible(rect) {
+        let visuals = ui.style().interact(&response);
+        let mark = Rect::from_center_size(
+            pos2(rect.left() + mark_size / 2.0, rect.center().y),
+            egui::Vec2::splat(mark_size),
+        );
+        ui.painter().add(Shape::convex_polygon(
+            diamond_points(mark.center(), mark_size / 2.0),
+            visuals.bg_fill,
+            visuals.bg_stroke,
+        ));
+        if selected {
+            ui.painter().add(Shape::convex_polygon(
+                diamond_points(mark.center(), mark_size * MARK_HALF),
+                visuals.fg_stroke.color,
+                Stroke::NONE,
+            ));
+        }
+        ui.painter().galley(
+            pos2(
+                rect.left() + mark_size + gap,
+                rect.center().y - galley.size().y / 2.0,
+            ),
+            galley,
+            visuals.text_color(),
+        );
+    }
+    response
+}
+
+/// Half-width of the filled mark, as a fraction of the outline's width.
+const MARK_HALF: f32 = 0.3;
 
 /// A separator drawn inside a panel: a single recessed hairline.
 pub fn hairline(ui: &mut egui::Ui) {

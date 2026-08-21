@@ -28,11 +28,28 @@ pub fn miniature_repo() -> PathBuf {
 /// Serves a fixture tree as-is, the way the Local Repo provider will.
 pub struct FixtureSourceProvider {
     root: PathBuf,
+    /// What this provider answers about the DLLs checked into the tree - what the real
+    /// Upstream Cache decides with one API call about the commit being installed.
+    shipped_dll_is_current: bool,
 }
 
 impl FixtureSourceProvider {
     pub fn new(root: PathBuf) -> Self {
-        Self { root }
+        Self {
+            root,
+            // The Local-Repo answer, and the one every existing test wants: a working tree
+            // has no commit that could vouch for the DLL sitting in it.
+            shipped_dll_is_current: false,
+        }
+    }
+
+    /// The same fixture tree, standing in for a Release commit: the checked-in DLLs are the
+    /// ones this Version was released with, so the Core may deploy them instead of building.
+    pub fn at_a_release_commit(root: PathBuf) -> Self {
+        Self {
+            root,
+            shipped_dll_is_current: true,
+        }
     }
 }
 
@@ -57,6 +74,22 @@ impl SourceProvider for FixtureSourceProvider {
         })
     }
 
+    fn shipped_dll_is_current(
+        &self,
+        _source: &InstallationSource,
+        dll_path: &str,
+        progress: &ProgressReporter,
+    ) -> Result<bool, BoundaryError> {
+        // Only about a file that is really there - the real provider asks about a path in a
+        // commit, and a path no commit ever held answers no.
+        let present = self.root.join(dll_path).is_file();
+        progress.report(
+            Stage::Fetch,
+            format!("Fixture: {dll_path} present={present}."),
+        );
+        Ok(self.shipped_dll_is_current && present)
+    }
+
     fn available_versions(
         &self,
         _progress: &ProgressReporter,
@@ -71,26 +104,28 @@ impl SourceProvider for FixtureSourceProvider {
 
     fn unofficial_versions(
         &self,
-        newest_release: &str,
+        releases: &[String],
         _progress: &ProgressReporter,
     ) -> Result<Vec<civ5vp_core::UnofficialVersion>, BoundaryError> {
-        // Two changes after the newest Release, the second with a summary far too long for
-        // any dropdown - the shape the shell has to cope with.
-        let base = newest_release.trim_start_matches("Release-").to_owned();
-        Ok(vec![
-            civ5vp_core::UnofficialVersion {
+        // Two changes after each Release named, oldest range first, one with a summary far
+        // too long for any dropdown - the shape the shell has to cope with.
+        let mut versions = Vec::new();
+        for (index, release) in releases.iter().enumerate().rev() {
+            let base = release.trim_start_matches("Release-").to_owned();
+            versions.push(civ5vp_core::UnofficialVersion {
                 label: format!("{base}.01"),
                 summary: "Fix a promotion".to_owned(),
-                commit: "c".repeat(40),
-            },
-            civ5vp_core::UnofficialVersion {
+                commit: char::from(b'c' + index as u8).to_string().repeat(40),
+            });
+            versions.push(civ5vp_core::UnofficialVersion {
                 label: format!("{base}.02"),
                 summary: "A very long commit message that certainly does not fit into the \
                           width of any dropdown a version picker could reasonably draw"
                     .to_owned(),
-                commit: "d".repeat(40),
-            },
-        ])
+                commit: char::from(b'A' + index as u8).to_string().repeat(40),
+            });
+        }
+        Ok(versions)
     }
 
     fn materialize_luajit(&self, progress: &ProgressReporter) -> Result<PathBuf, BoundaryError> {
@@ -138,11 +173,11 @@ impl SourceProvider for FailingSourceProvider {
 
     fn unofficial_versions(
         &self,
-        _newest_release: &str,
+        _releases: &[String],
         _progress: &ProgressReporter,
     ) -> Result<Vec<civ5vp_core::UnofficialVersion>, BoundaryError> {
         Err(BoundaryError::new(
-            "Could not look up the changes since the newest release. Check your internet \
+            "Could not look up the changes around the newest releases. Check your internet \
              connection and try again.",
             "fake provider: simulated network failure",
         ))
@@ -264,6 +299,11 @@ impl ToolchainRunner for MarkerToolchainRunner {
     fn toolchain_identity(&self) -> String {
         "fake-toolchain-0".to_owned()
     }
+
+    /// Nothing here reads a flag file, so there is never an override to report.
+    fn dll_flag_override(&self) -> Option<String> {
+        None
+    }
 }
 
 /// What [`MarkerToolchainRunner`] writes instead of a real Lua engine.
@@ -296,6 +336,11 @@ impl ToolchainRunner for FailingLuaJitToolchainRunner {
     fn toolchain_identity(&self) -> String {
         "fake-toolchain-0".to_owned()
     }
+
+    /// Nothing here reads a flag file, so there is never an override to report.
+    fn dll_flag_override(&self) -> Option<String> {
+        None
+    }
 }
 
 /// A [`MarkerToolchainRunner`] that also counts how often it is asked to build - how the
@@ -309,6 +354,8 @@ pub struct CountingToolchainRunner {
     pub identity: String,
     /// Every Build Configuration the boundary was asked for, in order.
     pub configurations: std::sync::Arc<std::sync::Mutex<Vec<civ5vp_core::BuildConfiguration>>>,
+    /// Stands in for a maintainer's `dll-flags.txt` sitting beside the installer.
+    pub flag_override: Option<String>,
 }
 
 impl CountingToolchainRunner {
@@ -319,9 +366,18 @@ impl CountingToolchainRunner {
                 builds: std::sync::Arc::clone(&builds),
                 identity: identity.to_owned(),
                 configurations: std::sync::Arc::default(),
+                flag_override: None,
             },
             builds,
         )
+    }
+
+    /// The same runner reporting an optimisation override, as the real one does when
+    /// `dll-flags.txt` is beside the installer executable.
+    #[must_use]
+    pub fn with_flag_override(mut self, flags: &str) -> Self {
+        self.flag_override = Some(flags.to_owned());
+        self
     }
 }
 
@@ -349,6 +405,10 @@ impl ToolchainRunner for CountingToolchainRunner {
 
     fn toolchain_identity(&self) -> String {
         self.identity.clone()
+    }
+
+    fn dll_flag_override(&self) -> Option<String> {
+        self.flag_override.clone()
     }
 }
 
@@ -380,6 +440,11 @@ impl ToolchainRunner for FailingToolchainRunner {
 
     fn toolchain_identity(&self) -> String {
         "fake-toolchain-0".to_owned()
+    }
+
+    /// Nothing here reads a flag file, so there is never an override to report.
+    fn dll_flag_override(&self) -> Option<String> {
+        None
     }
 }
 

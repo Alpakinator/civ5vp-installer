@@ -9,8 +9,9 @@
 mod support;
 
 use civ5vp_core::{
-    BuildConfiguration, ClaimedFolder, Core, Eui, Flavor, FortyThreeCivs, InstallConfiguration,
-    InstallError, InstallMode, InstallationSource, LuaJitEngine, ProgressReporter,
+    BuildConfiguration, ClaimedFolder, Core, DllSource, Eui, Flavor, FortyThreeCivs,
+    InstallConfiguration, InstallError, InstallMode, InstallationSource, LuaJitEngine,
+    ProgressReporter,
 };
 use support::{
     DLL_MARKER, FixtureModpackAssembler, FixtureSourceProvider, GAMEPLAY_DUMP_MARKER, GameFixture,
@@ -28,6 +29,7 @@ fn vox_populi_modpack() -> InstallConfiguration {
         install_mode: InstallMode::Modpack,
         extra_mods: Vec::new(),
         luajit: LuaJitEngine::Stock,
+        dll_source: DllSource::ShippedWhenCurrent,
     }
 }
 

@@ -30,6 +30,14 @@ eframe = "0.35"
 egui = "0.35"
 # Writing the PNGs that `--screenshot` produces. Pure Rust; `png` only, no other decoders.
 image = { version = "0.25", default-features = false, features = ["png"] }
+# The `Browse` buttons' folder picker, drawn inside the window (rule 17: every dependency
+# needs a reason). Rule 5 rules out the alternatives: every portable wrapper over the
+# platform's own dialog either shells out to `zenity` on Linux without an XDG portal, or needs
+# GTK headers to build and `libgtk-3.so` to run. This is pure Rust and adds no C toolchain -
+# `sysinfo` and `directories` for the disk and Home shortcuts, nothing more. Default features
+# off: they are `serde` and `default_fonts`, and nothing about a pick is persisted.
+# 0.15 needs egui 0.36; this workspace is on 0.35, so 0.14.1 is the pairing.
+egui-file-dialog = { version = "0.14.1", default-features = false }
 
 # Only the Windows resource compiler needs this, and only on a Windows host - see `build.rs`.
 [target.'cfg(windows)'.build-dependencies]

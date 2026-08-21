@@ -14,7 +14,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::configuration::{
-    BuildConfiguration, Eui, Flavor, FortyThreeCivs, InstallConfiguration, InstallMode,
+    BuildConfiguration, DllSource, Eui, Flavor, FortyThreeCivs, InstallConfiguration, InstallMode,
     InstallationSource, LuaJitEngine, Version,
 };
 use crate::detect::{self, Detection, FolderRejected, SearchLocations};
@@ -273,6 +273,7 @@ impl Settings {
             "luajit",
             on_off(configuration.luajit == LuaJitEngine::LuaJit),
         );
+        write_line(&mut text, "dll-source", configuration.dll_source.token());
         if !configuration.extra_mods.is_empty() {
             // `|` cannot appear in a folder name the game accepts (Windows forbids it),
             // so it is a safe separator for the one list-valued line.
@@ -498,6 +499,15 @@ fn read_configuration(values: &Values) -> Option<InstallConfiguration> {
     } else {
         LuaJitEngine::Stock
     };
+    // Anything but an explicit "always-compile" - including a file written before the line
+    // existed - reads as the default. That is the right way round: an older file records an
+    // installer that always compiled, and reading it as "compile always" would keep a
+    // multi-gigabyte download alive for someone the change was meant to spare.
+    let dll_source = if values.get("dll-source") == Some(DllSource::AlwaysCompile.token()) {
+        DllSource::AlwaysCompile
+    } else {
+        DllSource::ShippedWhenCurrent
+    };
     let extra_mods = values
         .get("extra-mods")
         .map(|line| {
@@ -516,6 +526,7 @@ fn read_configuration(values: &Values) -> Option<InstallConfiguration> {
         install_mode,
         extra_mods,
         luajit,
+        dll_source,
     })
 }
 
@@ -583,6 +594,7 @@ const KNOWN_KEYS: &[&str] = &[
     "build-configuration",
     "install-mode",
     "luajit",
+    "dll-source",
     "extra-mods",
 ];
 

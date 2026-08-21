@@ -45,6 +45,23 @@ impl SourceProvider for InstallationSources {
         .map_err(Into::into)
     }
 
+    fn shipped_dll_is_current(
+        &self,
+        source: &InstallationSource,
+        dll_path: &str,
+        progress: &ProgressReporter,
+    ) -> Result<bool, BoundaryError> {
+        match source {
+            InstallationSource::UpstreamCache { version } => self
+                .upstream
+                .shipped_dll_is_current(version, dll_path, progress)
+                .map_err(Into::into),
+            // A Local Repo is the working tree, uncommitted changes and all, so no commit
+            // can vouch for the DLL sitting in it - see the trait's default.
+            InstallationSource::LocalRepo { .. } => Ok(false),
+        }
+    }
+
     fn available_versions(
         &self,
         progress: &ProgressReporter,
@@ -54,11 +71,11 @@ impl SourceProvider for InstallationSources {
 
     fn unofficial_versions(
         &self,
-        newest_release: &str,
+        releases: &[String],
         progress: &ProgressReporter,
     ) -> Result<Vec<civ5vp_core::UnofficialVersion>, BoundaryError> {
         self.upstream
-            .list_unofficial(newest_release, progress)
+            .list_unofficial(releases, progress)
             .map_err(Into::into)
     }
 
