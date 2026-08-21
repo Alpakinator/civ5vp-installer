@@ -19,6 +19,7 @@ pub mod browse;
 pub mod cli;
 pub mod deco;
 pub mod placeholder;
+pub mod reveal;
 pub mod screenshot;
 pub mod theme;
 pub mod update;

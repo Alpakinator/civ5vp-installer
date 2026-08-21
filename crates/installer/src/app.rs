@@ -573,6 +573,16 @@ impl InstallerApp {
             if documents.browse {
                 browse = Some(BrowseField::Documents);
             }
+            // Straight to the file manager, with no round trip through the Core: this changes
+            // nothing the Core owns. The MODS folder a player is usually after is one step
+            // inside the Documents folder, which is the step the file manager is better at
+            // than the installer.
+            if game.open {
+                crate::reveal::folder(Path::new(self.game_folder.trim()));
+            }
+            if documents.open {
+                crate::reveal::folder(Path::new(self.documents_folder.trim()));
+            }
 
             ui.add_space(6.0);
             if let Ok(folders) = &self.resolved {
@@ -1009,6 +1019,9 @@ impl InstallerApp {
                     let row = folder_field(ui, CHECKOUT_CAPTION, &mut self.source_folder);
                     chosen |= row.edited;
                     browse = row.browse;
+                    if row.open {
+                        crate::reveal::folder(Path::new(self.source_folder.trim()));
+                    }
                 }
             }
         });
@@ -1660,6 +1673,8 @@ struct FolderRow {
     edited: bool,
     /// `Browse` was clicked.
     browse: bool,
+    /// `Open` was clicked - show this folder in the machine's own file manager.
+    open: bool,
 }
 
 /// The three captions the folder rows carry, and the source of truth for how wide their
@@ -1696,6 +1711,11 @@ fn caption_column(ui: &egui::Ui) -> f32 {
 /// settles at a different width on every row.
 const BROWSE_BUTTON_WIDTH: f32 = 48.0;
 
+/// `Open` is the shorter word, and is given the width that word needs rather than `Browse`'s:
+/// two buttons of equal width read as a pair of equal offers, and these are not - one corrects
+/// the box, the other is a convenience.
+const OPEN_BUTTON_WIDTH: f32 = 40.0;
+
 /// The button's own padding, tighter than the page's: it is a small control beside a box, not
 /// one of the page's own buttons, and at the page's padding it stands taller than the box it
 /// belongs to.
@@ -1729,7 +1749,11 @@ fn folder_field(ui: &mut egui::Ui, caption: &str, value: &mut String) -> FolderR
     // over it is not a small mistake - the panel grows to fit the row, which widens the
     // content area, which widens the row again, and every panel on the page ends up drawn
     // out under the page's scroll bar.
-    let width = (ui.available_width() - caption_width - BROWSE_BUTTON_WIDTH - 2.0 * gap)
+    let width = (ui.available_width()
+        - caption_width
+        - BROWSE_BUTTON_WIDTH
+        - OPEN_BUTTON_WIDTH
+        - 3.0 * gap)
         .max(MIN_PATH_WIDTH);
     let height = ui.spacing().interact_size.y;
     ui.horizontal(|ui| {
@@ -1759,13 +1783,32 @@ fn folder_field(ui: &mut egui::Ui, caption: &str, value: &mut String) -> FolderR
         ui.ctx().accesskit_node_builder(browse.id, |node| {
             node.set_label(spoken.clone());
         });
+        // Live off the box rather than off the last resolved folders: a player who has just
+        // pasted a path expects the button to work, and one who has half-typed one expects it
+        // not to. `is_dir` answers both, and an empty box is simply not a folder.
+        let openable = Path::new(value.trim()).is_dir();
+        let open = deco::button(
+            ui,
+            openable,
+            egui::Button::new(egui::RichText::new(OPEN_LABEL).small())
+                .min_size(egui::vec2(OPEN_BUTTON_WIDTH, BROWSE_BUTTON_HEIGHT)),
+        );
+        let spoken_open = format!("{OPEN_LABEL} the {caption}");
+        ui.ctx().accesskit_node_builder(open.id, |node| {
+            node.set_label(spoken_open.clone());
+        });
         row = FolderRow {
             edited: field.changed(),
             browse: browse.clicked(),
+            open: open.clicked(),
         };
     });
     row
 }
+
+/// What the second button says on screen. Like `Browse`, its accessible name adds the folder,
+/// because three `Open`s stacked read as a column rather than as three separate offers.
+const OPEN_LABEL: &str = "Open";
 
 /// What the button says on screen. The accessible name adds the folder - see [`folder_field`].
 const BROWSE_LABEL: &str = "Browse";

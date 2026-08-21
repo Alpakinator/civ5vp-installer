@@ -10,6 +10,11 @@ publishes binaries for.
 
 ### Added
 
+- **An `Open` button beside each folder box.** It opens that folder in your computer's own
+  file manager, so you can drag files in, copy something out, or step down into the MODS
+  folder - none of which the installer's own browser does, because it only picks a path. It is
+  greyed out until the box names a folder that is really there. On Linux this saves retyping a
+  path nine levels inside a Proton prefix.
 - **A maintainer's `dll-flags.txt`, beside the installer executable.** It replaces the
   optimisation flags the DLL is compiled with, and nothing else, so a run measures the flags
   rather than a different build. Whitespace separates flags, `#` starts a comment, and a line

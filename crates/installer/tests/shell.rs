@@ -1061,6 +1061,36 @@ fn clicking_uninstall_restores_an_unmodded_game() {
     );
 }
 
+/// Every folder row offers `Open` beside `Browse`, and each one says which folder it is for.
+///
+/// The click cannot be asserted from here - it hands the folder to the machine's own file
+/// manager and hears nothing back - so what this pins down is the offer: three rows, three
+/// buttons, told apart by their accessible names. On screen all three read `Open`, which is
+/// why the name is what a screen reader and this test both go by.
+///
+/// That a folder which is not there is never opened is covered where the decision is made,
+/// in `reveal`'s own tests.
+#[test]
+fn every_folder_row_offers_open_beside_browse() {
+    let game = TempGame::new();
+    let mut harness = harness_over(game.launch(&game.locations()));
+    harness.step();
+
+    for caption in [
+        "Civilization V game folder",
+        "Civilization 5 Documents folder",
+    ] {
+        for verb in ["Browse for the", "Open the"] {
+            let label = format!("{verb} {caption}");
+            assert!(
+                harness.query_by_label(&label).is_some(),
+                "{label} should be on the page; visible: {:?}",
+                visible_labels(&mut harness),
+            );
+        }
+    }
+}
+
 /// The `Browse` button beside the game folder puts a file browser on screen.
 ///
 /// Found by its accessible name, not by the `Browse` on its face: three rows carry the same
