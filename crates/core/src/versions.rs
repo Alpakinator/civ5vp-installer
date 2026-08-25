@@ -96,3 +96,73 @@ pub struct UnofficialVersion {
     /// The full commit hash, which is what actually gets installed.
     pub commit: String,
 }
+
+/// What changing Version does to the saves a player already has.
+///
+/// Vox Populi breaks save compatibility whenever the first or second number moves:
+/// `5.4.4` to `5.4.5` is safe, `5.4.5` to `5.5.0` is not. The third number and anything after
+/// it are fixes within a line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SaveCompatibility {
+    /// Same line, or nothing installed to compare against. Say nothing.
+    Unaffected,
+    /// Both sides carry version numbers and the line changed.
+    Broken { installed: String, chosen: String },
+    /// At least one side is `master`, an arbitrary ref, or a Local Repo, so there is no
+    /// number to compare. Distinct from [`Self::Unaffected`] on purpose: silence reads as
+    /// "you are fine", and that is the one thing this cannot promise.
+    Unknown { installed: String, chosen: String },
+}
+
+impl SaveCompatibility {
+    /// Compare what is installed against what is about to be.
+    pub fn between(installed: &str, chosen: &str) -> Self {
+        if installed == chosen {
+            return Self::Unaffected;
+        }
+        match (line_of(installed), line_of(chosen)) {
+            (Some(was), Some(now)) if was == now => Self::Unaffected,
+            (Some(_), Some(_)) => Self::Broken {
+                installed: installed.to_owned(),
+                chosen: chosen.to_owned(),
+            },
+            // One side is a branch, a commit, or a developer's own checkout. `master` is the
+            // case that matters: it sits ahead of the newest Release, so moving off it is a
+            // downgrade across a boundary no number can describe.
+            _ => Self::Unknown {
+                installed: installed.to_owned(),
+                chosen: chosen.to_owned(),
+            },
+        }
+    }
+
+    /// The sentence to show, or `None` when there is nothing to say.
+    ///
+    /// States the fact and stops. What to do about it - finish the current game, keep the old
+    /// install - is the player's business, and a banner that gave instructions would be
+    /// telling people who already know.
+    pub fn message(&self) -> Option<String> {
+        match self {
+            Self::Unaffected => None,
+            Self::Broken { installed, chosen } => Some(format!(
+                "Save games are not compatible between {installed} and {chosen}."
+            )),
+            Self::Unknown { installed, chosen } => Some(format!(
+                "Save compatibility between {installed} and {chosen} is not known."
+            )),
+        }
+    }
+}
+
+/// The `major.minor` of a Version label, when it has one.
+///
+/// Handles every shape upstream actually publishes: `Release-5.4.5`, `Release-5.2` with no
+/// third component at all, and unofficial builds labelled `5.4.3.07`. Returns `None` for
+/// `master`, `Local`, and arbitrary refs - they carry no version to compare.
+fn line_of(label: &str) -> Option<(u32, u32)> {
+    let digits = label.strip_prefix(RELEASE_PREFIX).unwrap_or(label);
+    let mut parts = digits.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    Some((major, minor))
+}

@@ -139,6 +139,22 @@ impl BuildFingerprint {
     }
 }
 
+/// The Version label a sidecar records, whatever else it says.
+///
+/// Deliberately independent of [`BuildFingerprint::matches_sidecar`], which answers "must I
+/// rebuild" and says no to a sidecar from any older installer, because the `installer` line is
+/// one of its inputs. That is right for rebuilding and fatal for this question: everyone
+/// upgrading carries a sidecar that no longer matches, and they are exactly the people about
+/// to change Version. The `label` line predates both format bumps, so it is present and true
+/// in v2 and v3 alike.
+pub fn label_in_sidecar(sidecar: &str) -> Option<&str> {
+    sidecar
+        .lines()
+        .find_map(|line| line.strip_prefix("label "))
+        .map(str::trim)
+        .filter(|label| !label.is_empty())
+}
+
 /// FNV-1a, 64-bit, incremental - the one hash everything here uses.
 struct Fnv1a(u64);
 

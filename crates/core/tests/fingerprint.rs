@@ -52,6 +52,7 @@ fn configuration(repo: &Path, forty_three_civs: FortyThreeCivs) -> InstallConfig
         install_mode: InstallMode::Mods,
         extra_mods: Vec::new(),
         luajit: LuaJitEngine::Stock,
+        menu_theme: civ5vp_core::MenuTheme::Stock,
         dll_source: DllSource::ShippedWhenCurrent,
     }
 }
@@ -290,6 +291,7 @@ fn a_debug_build_outside_dev_mode_is_refused() {
         install_mode: InstallMode::Mods,
         extra_mods: Vec::new(),
         luajit: LuaJitEngine::Stock,
+        menu_theme: civ5vp_core::MenuTheme::Stock,
         dll_source: DllSource::ShippedWhenCurrent,
     };
 
