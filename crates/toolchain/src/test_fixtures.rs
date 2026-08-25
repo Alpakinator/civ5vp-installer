@@ -548,12 +548,28 @@ pub mod cabinet {
     use std::io::{Cursor, Write};
 
     /// Pack `files` - `(name inside the cabinet, contents)` - into an MSZIP cabinet.
+    ///
+    /// Byte-for-byte reproducible: the same inputs give the same cabinet, always. That is not
+    /// the `cab` crate's default - `FileBuilder::new` stamps every entry with
+    /// `OffsetDateTime::now_utc()`, at the CAB format's two-second resolution - and a fixture
+    /// that changes on its own is a fixture that cannot be hashed. The bootstrap tests build
+    /// the disc image twice and expect the second build to describe the same members as the
+    /// first; with the clock in there, two builds either side of a two-second tick produced
+    /// different cabinets, so every member's sha256 moved and a cache that was meant to be
+    /// reused was refetched instead. That failed roughly one run in a hundred, which is
+    /// exactly often enough to block a release and never often enough to reproduce on demand.
+    ///
+    /// The date is arbitrary and means nothing; it only has to be fixed.
     pub fn build(files: &[(&str, &[u8])]) -> Vec<u8> {
+        let stamp = time::PrimitiveDateTime::new(
+            time::Date::from_calendar_date(2008, time::Month::January, 1).expect("a real date"),
+            time::Time::from_hms(0, 0, 0).expect("a real time"),
+        );
         let mut builder = cab::CabinetBuilder::new();
         {
             let folder = builder.add_folder(cab::CompressionType::MsZip);
             for (name, _) in files {
-                folder.add_file(*name);
+                folder.add_file(*name).set_datetime(stamp);
             }
         }
         let mut writer = builder
@@ -565,6 +581,35 @@ pub mod cabinet {
             index += 1;
         }
         writer.finish().expect("cab writer finishes").into_inner()
+    }
+
+    #[cfg(test)]
+    mod tests {
+        /// The fixture cabinets must not carry the wall clock.
+        ///
+        /// Comparing two builds would not catch this: the CAB format's date/time has a
+        /// two-second resolution, so two builds in a row nearly always agree and the test
+        /// would pass roughly ninety-nine times in a hundred - which is precisely the failure
+        /// this guards against, and precisely why it went unfound for so long. Reading the
+        /// stamp back and naming it fails the moment `set_datetime` stops being called.
+        #[test]
+        fn a_cabinet_carries_a_fixed_date_rather_than_the_clock() {
+            let bytes = super::build(&[("a.h", b"hello"), ("b.h", b"world")]);
+            let cabinet =
+                cab::Cabinet::new(std::io::Cursor::new(bytes)).expect("the fixture is a cabinet");
+            let stamps: Vec<String> = cabinet
+                .folder_entries()
+                .flat_map(|folder| folder.file_entries())
+                .map(|file| format!("{}: {:?}", file.name(), file.datetime()))
+                .collect();
+            assert_eq!(
+                stamps,
+                vec![
+                    "a.h: Some(2008-01-01 0:00:00.0)".to_string(),
+                    "b.h: Some(2008-01-01 0:00:00.0)".to_string(),
+                ],
+            );
+        }
     }
 }
 

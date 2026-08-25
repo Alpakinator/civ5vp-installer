@@ -55,3 +55,9 @@ tempfile = "3.27"
 # compare its reader's output against ours member for member. A dev-dependency only: the
 # shipped installer does not contain it.
 cab = "0.6"
+
+# Only to hand `cab` a fixed date. It stamps every entry with the current time otherwise, and
+# a fixture whose bytes depend on when it was built cannot be hashed - see
+# `test_fixtures::cabinet::build`. Already in the tree as `cab`'s own dependency, so this
+# names it rather than adding it.
+time = "0.3"
