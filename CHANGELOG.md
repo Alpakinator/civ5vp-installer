@@ -56,6 +56,11 @@ publishes binaries for.
   changes, so 5.4.4 to 5.4.5 is safe and 5.4.5 to 5.5.0 is not. It says so and nothing else -
   no dialog, no click.
 
+- **The MODS folder is re-listed while the modpack's mod list is on screen**, every three
+  seconds. Before, it was read at startup and when a folder path changed, and nowhere else: a
+  mod added while the installer was open never appeared, and one deleted stayed on screen and
+  stayed ticked - which then failed the modpack build on a folder that was no longer there.
+
 - **Dev mode shows which branch your checkout is on.**
 
 - **An `[after-predefs]` heading in `dll-flags.txt`**, the only place a `/U` can switch a

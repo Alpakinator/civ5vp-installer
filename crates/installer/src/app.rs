@@ -36,6 +36,11 @@ use crate::{deco, placeholder, theme};
 /// read a second, of a file the operating system already has in memory.
 const CHECKOUT_REF_POLL: Duration = Duration::from_secs(1);
 
+/// How often the MODS folder is re-listed while the modpack's mod list is on screen. Three
+/// times the branch line's interval because the work is larger - every `.modinfo` in the
+/// folder, not one file - and the answer changes far less often.
+const EXTRA_MODS_POLL: Duration = Duration::from_secs(3);
+
 const MIN_ACTIVITY_LINES: f32 = 5.0;
 
 /// Presentation state, not domain state - deliberately not public.
@@ -200,6 +205,9 @@ pub struct InstallerApp {
     /// answer only moves when the folders, the mode, or an install does.
     installed_version: Option<String>,
     installed_version_for: Option<InstallMode>,
+    /// When the MODS folder was last listed. The player adds and removes mods in a file
+    /// manager, so the list has to be re-read rather than remembered.
+    extra_mods_listed: Option<Instant>,
     /// Which ref the Dev-mode checkout is on, the folder it was read for, and when it was last
     /// looked at. Polled rather than cached outright: the developer switches branch in their
     /// own git, which this has no way of being told about.
@@ -380,6 +388,7 @@ impl InstallerApp {
             first_run_note,
             installed_version: None,
             installed_version_for: None,
+            extra_mods_listed: None,
             checkout_ref: None,
             checkout_ref_for: String::new(),
             checkout_ref_read: None,
@@ -445,6 +454,7 @@ impl InstallerApp {
             first_run_note: None,
             installed_version: None,
             installed_version_for: None,
+            extra_mods_listed: None,
             checkout_ref: None,
             checkout_ref_for: String::new(),
             checkout_ref_read: None,
@@ -753,6 +763,7 @@ impl InstallerApp {
                     .small()
                     .color(theme::PARCHMENT_DIM),
                 );
+                self.poll_extra_mods(ui);
                 if !self.extra_mods_available.is_empty() {
                     ui.add_space(4.0);
                     ui.label("Also bake in your own mods from the MODS folder:");
@@ -1012,6 +1023,31 @@ impl InstallerApp {
         self.installed_version_for = None;
         if self.resolved.is_ok() {
             self.remember();
+        }
+    }
+
+    /// Re-list the MODS folder while the list is on screen, so mods added or removed in a
+    /// file manager show up without restarting the installer.
+    ///
+    /// Until 0.1.5 the list was read at startup and when a folder path changed, and nowhere
+    /// else. A mod added while the window was open never appeared, and one deleted stayed on
+    /// screen *and stayed ticked* - which failed the Modpack build later, on a folder that was
+    /// no longer there.
+    ///
+    /// Slower than the branch line's timer, because listing means reading every `.modinfo` in
+    /// the folder rather than one short file. Only while this window is in front: the player
+    /// is in a file manager when they change this, and egui repaints on regaining focus, which
+    /// re-lists before the eye reaches the list.
+    fn poll_extra_mods(&mut self, ui: &mut egui::Ui) {
+        let due = self
+            .extra_mods_listed
+            .is_none_or(|listed| listed.elapsed() >= EXTRA_MODS_POLL);
+        if due {
+            self.refresh_extra_mods();
+            self.extra_mods_listed = Some(Instant::now());
+        }
+        if ui.ctx().input(|input| input.focused) {
+            ui.ctx().request_repaint_after(EXTRA_MODS_POLL);
         }
     }
 
