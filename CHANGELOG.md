@@ -46,6 +46,9 @@ publishes binaries for.
 - **The Activity log keeps the mouse wheel.** Reaching either end no longer scrolls the page
   behind it.
 
+- **The wheel works over the page's left margin.** That strip sat outside the scrolling area,
+  so scrolling there did nothing and the page only responded over its content or the bar.
+
 ### Added
 
 - **Replace the main menu music with silence.** A checkbox; your file is restored when you

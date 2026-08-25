@@ -27,9 +27,19 @@ const FRAME_INSET: f32 = 3.0;
 /// line. The scrolling area is given the whole width and puts the margin back inside itself,
 /// so the panels end where they always did and the bar rides in the space beyond them.
 pub fn page(style: &egui::Style) -> egui::Frame {
+    // No margin on either side: both are held *inside* the scrolling area instead, as its
+    // content margin. egui hands a wheel event to a scroll area only while the pointer is
+    // within that area's own rectangle, so a side margin left out here is a strip of the
+    // window where the wheel does nothing - which is how the left edge behaved until 0.1.5.
+    // The right was already inside, which is why that edge and the scroll bar always worked.
+    //
+    // Top and bottom stay here on purpose. Moving them in makes the scrolling viewport 40px
+    // taller, which shifts every screen; the wheel is not dead there in the same way, because
+    // the content reaches those edges once the page has scrolled at all.
     egui::Frame::central_panel(style)
         .fill(theme::PAGE_NAVY)
         .inner_margin(egui::Margin {
+            left: 0,
             right: 0,
             ..egui::Margin::same(PAGE_MARGIN)
         })

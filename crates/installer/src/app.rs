@@ -553,9 +553,11 @@ impl InstallerApp {
             // log can outgrow any window, and on small screens even the base layout does.
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
-                // The right page margin, held inside the scrolling area rather than outside
-                // it: see [`deco::page`]. The bar is centred in it by [`theme`].
+                // Both side margins, held inside the scrolling area rather than outside it:
+                // see [`deco::page`]. The bar is centred in the right one by [`theme`], and
+                // holding them here is what lets the wheel work over either edge.
                 .content_margin(egui::Margin {
+                    left: deco::PAGE_MARGIN,
                     right: deco::PAGE_MARGIN,
                     ..egui::Margin::ZERO
                 })
