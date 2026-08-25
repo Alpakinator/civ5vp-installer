@@ -48,6 +48,8 @@ fn the_store_reports_its_size_and_clears_to_nothing() {
         0,
         "the store is emptied, the directory itself stays"
     );
+    // With no Backup Store to keep, clearing really does empty the directory - see
+    // `clearing_the_store_keeps_the_backed_up_game_engine` for the one exception.
     // A cleared store reads back as a first run, not an error.
     assert_eq!(store.load().unwrap(), Settings::default());
     // Clearing twice, or clearing a store that never existed, is fine.
@@ -55,6 +57,50 @@ fn the_store_reports_its_size_and_clears_to_nothing() {
     AppDataStore::at(temp.path().join("never-created"))
         .clear()
         .unwrap();
+}
+
+/// Clearing the cache must not throw away the player's own game file.
+///
+/// The Backup Store holds the stock `lua51_Win32.dll` that LuaJIT was installed over. Nothing
+/// else in the store is irreplaceable - caches re-download, objects rebuild, settings are
+/// remembered again. Deleting this one makes an overwrite the installer already performed
+/// permanent, and leaves the next install saving LuaJIT as "the original".
+#[test]
+fn clearing_the_store_keeps_the_backed_up_game_engine() {
+    let temp = temp();
+    let store = store(&temp);
+    store.save(&Settings::default()).unwrap();
+
+    let cache = store.root().join("toolchain-cache");
+    std::fs::create_dir_all(&cache).unwrap();
+    std::fs::write(cache.join("blob"), vec![7u8; 4096]).unwrap();
+
+    let backups = store.root().join("backups");
+    std::fs::create_dir_all(&backups).unwrap();
+    let engine = backups.join("lua51_Win32.dll");
+    std::fs::write(&engine, b"the game's own Lua 5.1").unwrap();
+
+    store.clear().unwrap();
+
+    assert!(
+        engine.is_file(),
+        "the backed-up game engine must survive a cache clear"
+    );
+    assert_eq!(
+        std::fs::read(&engine).unwrap(),
+        b"the game's own Lua 5.1",
+        "and survive unchanged"
+    );
+    assert!(!cache.exists(), "everything replaceable still goes");
+    assert!(
+        !store.settings_file().exists(),
+        "including the remembered settings"
+    );
+    assert_eq!(
+        std::fs::read_dir(store.root()).unwrap().count(),
+        1,
+        "the backups directory is the only thing kept"
+    );
 }
 
 #[test]
@@ -83,6 +129,7 @@ fn the_remembered_state_survives_the_round_trip() {
             install_mode: InstallMode::Mods,
             extra_mods: Vec::new(),
             luajit: LuaJitEngine::Stock,
+            menu_theme: civ5vp_core::MenuTheme::Stock,
             dll_source: DllSource::ShippedWhenCurrent,
         },
         InstallConfiguration {
@@ -97,6 +144,7 @@ fn the_remembered_state_survives_the_round_trip() {
             // LuaJIT in the round-trip: a choice that replaces a file belonging to the game
             // must survive a relaunch, or the next Deployment would quietly revert it.
             luajit: LuaJitEngine::LuaJit,
+            menu_theme: civ5vp_core::MenuTheme::Stock,
             dll_source: DllSource::ShippedWhenCurrent,
         },
         InstallConfiguration {
@@ -109,6 +157,7 @@ fn the_remembered_state_survives_the_round_trip() {
             install_mode: InstallMode::Mods,
             extra_mods: Vec::new(),
             luajit: LuaJitEngine::Stock,
+            menu_theme: civ5vp_core::MenuTheme::Stock,
             dll_source: DllSource::ShippedWhenCurrent,
         },
         InstallConfiguration {
@@ -121,6 +170,7 @@ fn the_remembered_state_survives_the_round_trip() {
             install_mode: InstallMode::Mods,
             extra_mods: Vec::new(),
             luajit: LuaJitEngine::Stock,
+            menu_theme: civ5vp_core::MenuTheme::Stock,
             dll_source: DllSource::ShippedWhenCurrent,
         },
         // An unofficial build: the label and the commit both survive.
@@ -137,6 +187,7 @@ fn the_remembered_state_survives_the_round_trip() {
             install_mode: InstallMode::Mods,
             extra_mods: Vec::new(),
             luajit: LuaJitEngine::Stock,
+            menu_theme: civ5vp_core::MenuTheme::Stock,
             dll_source: DllSource::ShippedWhenCurrent,
         },
         // Compiling a release by choice: the one setting that costs a multi-gigabyte
@@ -152,6 +203,7 @@ fn the_remembered_state_survives_the_round_trip() {
             install_mode: InstallMode::Mods,
             extra_mods: Vec::new(),
             luajit: LuaJitEngine::Stock,
+            menu_theme: civ5vp_core::MenuTheme::Stock,
             dll_source: DllSource::AlwaysCompile,
         },
         // Modpack mode with extra picks - names with spaces and parentheses, like real
@@ -166,6 +218,7 @@ fn the_remembered_state_survives_the_round_trip() {
             install_mode: InstallMode::Modpack,
             extra_mods: vec!["Even More Bonuses (v 3)".to_owned(), "My Modmod".to_owned()],
             luajit: LuaJitEngine::Stock,
+            menu_theme: civ5vp_core::MenuTheme::Stock,
             dll_source: DllSource::ShippedWhenCurrent,
         },
     ];
@@ -244,6 +297,7 @@ fn remembered_folders_pre_fill_the_next_launch() {
         install_mode: InstallMode::Mods,
         extra_mods: Vec::new(),
         luajit: LuaJitEngine::Stock,
+        menu_theme: civ5vp_core::MenuTheme::Stock,
         dll_source: DllSource::ShippedWhenCurrent,
     };
 
@@ -402,6 +456,7 @@ fn a_configuration_with_no_installation_source_still_remembers_its_flavor() {
                 install_mode: InstallMode::Mods,
                 extra_mods: Vec::new(),
                 luajit: LuaJitEngine::Stock,
+                menu_theme: civ5vp_core::MenuTheme::Stock,
                 dll_source: DllSource::ShippedWhenCurrent,
             }),
             dev_checkout: None,
@@ -439,6 +494,7 @@ fn a_remembered_upstream_version_survives_a_round_trip() {
                 install_mode: InstallMode::Mods,
                 extra_mods: Vec::new(),
                 luajit: LuaJitEngine::Stock,
+                menu_theme: civ5vp_core::MenuTheme::Stock,
                 dll_source: DllSource::ShippedWhenCurrent,
             }),
             dev_checkout: None,
@@ -472,6 +528,7 @@ fn the_dev_checkout_outlives_a_switch_back_to_github() {
                 install_mode: InstallMode::Mods,
                 extra_mods: Vec::new(),
                 luajit: LuaJitEngine::Stock,
+                menu_theme: civ5vp_core::MenuTheme::Stock,
                 dll_source: DllSource::ShippedWhenCurrent,
             }),
             dev_checkout: Some(PathBuf::from("/home/player/src/Community-Patch-DLL")),
@@ -547,6 +604,7 @@ fn a_known_key_left_out_this_time_is_not_resurrected() {
                 install_mode: InstallMode::Mods,
                 extra_mods: Vec::new(),
                 luajit: LuaJitEngine::Stock,
+                menu_theme: civ5vp_core::MenuTheme::Stock,
                 dll_source: DllSource::ShippedWhenCurrent,
             }),
             ..Settings::default()

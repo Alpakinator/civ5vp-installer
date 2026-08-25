@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 
 use crate::configuration::{
     BuildConfiguration, DllSource, Eui, Flavor, FortyThreeCivs, InstallConfiguration, InstallMode,
-    InstallationSource, LuaJitEngine, Version,
+    InstallationSource, LuaJitEngine, MenuTheme, Version,
 };
 use crate::detect::{self, Detection, FolderRejected, SearchLocations};
 
@@ -146,8 +146,25 @@ impl AppDataStore {
         directory_size(&self.root)
     }
 
+    /// The one thing in the store that is not the installer's to throw away.
+    ///
+    /// Everything else here can be fetched or rebuilt: the Upstream Cache, the Toolchain
+    /// Cache, built objects, logs, settings. The Backup Store holds a *game* file that the
+    /// installer overwrote, and there is no second copy of it anywhere.
+    pub const KEPT_ON_CLEAR: &'static str = "backups";
+
     /// Empty the App Data Store - and only the store; the game is never touched from here.
     /// The directory itself stays. The next install re-bootstraps from nothing.
+    ///
+    /// # The Backup Store is kept
+    ///
+    /// Deleting it does touch the game, in the only way that matters: it makes an overwrite
+    /// the installer already performed permanent. A player who clears while LuaJIT is
+    /// installed would lose their stock `lua51_Win32.dll` outright, and the next install would
+    /// then save *LuaJIT* as "the original" - so clearing the cache quietly cost them a game
+    /// file and left an uninstall that restores the wrong thing.
+    ///
+    /// The saving in keeping it is nothing: one DLL against the gigabytes this is for.
     pub fn clear(&self) -> Result<(), SettingsError> {
         let entries = match fs::read_dir(&self.root) {
             Ok(entries) => entries,
@@ -163,6 +180,9 @@ impl AppDataStore {
         };
         for entry in entries.filter_map(Result::ok) {
             let path = entry.path();
+            if entry.file_name() == Self::KEPT_ON_CLEAR {
+                continue;
+            }
             let removed = if path.is_dir() && !path.is_symlink() {
                 fs::remove_dir_all(&path)
             } else {
@@ -272,6 +292,11 @@ impl Settings {
             &mut text,
             "luajit",
             on_off(configuration.luajit == LuaJitEngine::LuaJit),
+        );
+        write_line(
+            &mut text,
+            "menu-theme-silent",
+            on_off(configuration.menu_theme == MenuTheme::Silent),
         );
         write_line(&mut text, "dll-source", configuration.dll_source.token());
         if !configuration.extra_mods.is_empty() {
@@ -499,6 +524,13 @@ fn read_configuration(values: &Values) -> Option<InstallConfiguration> {
     } else {
         LuaJitEngine::Stock
     };
+    // Absent means Stock, so a settings file written before this choice existed reads as
+    // "leave the game's theme alone" rather than as a silence nobody asked for.
+    let menu_theme = if values.get("menu-theme-silent") == Some("on") {
+        MenuTheme::Silent
+    } else {
+        MenuTheme::Stock
+    };
     // Anything but an explicit "always-compile" - including a file written before the line
     // existed - reads as the default. That is the right way round: an older file records an
     // installer that always compiled, and reading it as "compile always" would keep a
@@ -526,6 +558,7 @@ fn read_configuration(values: &Values) -> Option<InstallConfiguration> {
         install_mode,
         extra_mods,
         luajit,
+        menu_theme,
         dll_source,
     })
 }
@@ -594,6 +627,7 @@ const KNOWN_KEYS: &[&str] = &[
     "build-configuration",
     "install-mode",
     "luajit",
+    "menu-theme-silent",
     "dll-source",
     "extra-mods",
 ];
