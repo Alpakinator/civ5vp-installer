@@ -109,6 +109,7 @@ fn a_release_from_the_upstream_cache_installs_end_to_end() {
         install_mode: InstallMode::Mods,
         extra_mods: Vec::new(),
         luajit: LuaJitEngine::Stock,
+        menu_theme: civ5vp_core::MenuTheme::Stock,
         dll_source: DllSource::ShippedWhenCurrent,
     };
 
@@ -157,6 +158,7 @@ fn switching_version_between_installs_removes_what_the_new_version_dropped() {
             install_mode: InstallMode::Mods,
             extra_mods: Vec::new(),
             luajit: LuaJitEngine::Stock,
+            menu_theme: civ5vp_core::MenuTheme::Stock,
             dll_source: DllSource::ShippedWhenCurrent,
         };
         let plan = core.plan(&configuration, &game.folders()).unwrap();

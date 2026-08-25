@@ -52,6 +52,7 @@ fn local_repo(checkout: &Path) -> InstallConfiguration {
         install_mode: InstallMode::Mods,
         extra_mods: Vec::new(),
         luajit: LuaJitEngine::Stock,
+        menu_theme: civ5vp_core::MenuTheme::Stock,
         dll_source: DllSource::ShippedWhenCurrent,
     }
 }

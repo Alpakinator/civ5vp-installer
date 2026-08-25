@@ -29,6 +29,7 @@ fn vox_populi_modpack() -> InstallConfiguration {
         install_mode: InstallMode::Modpack,
         extra_mods: Vec::new(),
         luajit: LuaJitEngine::Stock,
+        menu_theme: civ5vp_core::MenuTheme::Stock,
         dll_source: DllSource::ShippedWhenCurrent,
     }
 }

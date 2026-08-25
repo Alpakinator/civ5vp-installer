@@ -107,6 +107,7 @@ fn configuration(flavor: Flavor, forty_three_civs: FortyThreeCivs) -> InstallCon
         install_mode: InstallMode::Mods,
         extra_mods: Vec::new(),
         luajit: LuaJitEngine::Stock,
+        menu_theme: civ5vp_core::MenuTheme::Stock,
         dll_source: DllSource::ShippedWhenCurrent,
     }
 }

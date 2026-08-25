@@ -40,6 +40,7 @@ fn a_release(forty_three_civs: FortyThreeCivs, dll_source: DllSource) -> Install
         install_mode: InstallMode::Mods,
         extra_mods: Vec::new(),
         luajit: LuaJitEngine::Stock,
+        menu_theme: civ5vp_core::MenuTheme::Stock,
         dll_source,
     }
 }

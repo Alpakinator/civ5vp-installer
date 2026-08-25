@@ -181,6 +181,21 @@ pub enum LuaJitEngine {
     LuaJit,
 }
 
+/// Whether the game's main menu plays its theme.
+///
+/// `Silent` replaces Brave New World's `OpeningMenu_Exp2.wav` with a WAV in the same format
+/// carrying only silence - the second Replaced File of ADR-0006. Only Expansion2's copy is
+/// touched: Vox Populi requires Brave New World, so that is the theme the menu reaches.
+///
+/// The default leaves the game alone, on the same reasoning as [`LuaJitEngine`]: overwriting
+/// a file the game owns is always something a player asked for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MenuTheme {
+    #[default]
+    Stock,
+    Silent,
+}
+
 /// The complete user selection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstallConfiguration {
@@ -200,6 +215,11 @@ pub struct InstallConfiguration {
     pub extra_mods: Vec<String>,
     /// Whether to replace the game's Lua engine with LuaJIT. Opt-in; see ADR-0006.
     pub luajit: LuaJitEngine,
+    /// Whether to silence the main menu theme. Opt-in; see ADR-0006.
+    ///
+    /// Unlike [`Self::luajit`] this needs nothing built: the replacement is a few constants
+    /// and a run of zeros, so it never pulls in the Toolchain.
+    pub menu_theme: MenuTheme,
     /// Whether a current Shipped DLL may be deployed instead of compiling one.
     pub dll_source: DllSource,
 }

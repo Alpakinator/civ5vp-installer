@@ -24,6 +24,7 @@ fn community_patch_only() -> InstallConfiguration {
         install_mode: InstallMode::Mods,
         extra_mods: Vec::new(),
         luajit: LuaJitEngine::Stock,
+        menu_theme: civ5vp_core::MenuTheme::Stock,
         dll_source: DllSource::ShippedWhenCurrent,
     }
 }
@@ -415,6 +416,107 @@ fn vox_populi_is_a_legal_configuration() {
 
 // ── The Replaced File (ADR-0006) ─────────────────────────────────────────────
 
+/// Brave New World's theme, as a real Game Installation has it. Fake music: bytes that are not
+/// all zero, which is the whole difference between the game's file and the installer's.
+fn with_a_stock_menu_theme(game: &GameFixture) -> PathBuf {
+    let music = game
+        .folders()
+        .game_root
+        .join("Assets/DLC/Expansion2/Sounds/Streamed/Music");
+    std::fs::create_dir_all(&music).expect("the music folder");
+    let theme = music.join("OpeningMenu_Exp2.wav");
+    let mut wav = b"RIFF____WAVEfmt ".to_vec();
+    wav.resize(44, 0);
+    wav.extend_from_slice(&[0x11, 0x22, 0x33, 0x44]); // actual audio
+    std::fs::write(&theme, &wav).expect("the stock theme");
+    theme
+}
+
+fn with_a_silent_menu() -> InstallConfiguration {
+    InstallConfiguration {
+        menu_theme: civ5vp_core::MenuTheme::Silent,
+        ..community_patch_only()
+    }
+}
+
+/// The default leaves the theme alone, for the same reason the engine is left alone.
+#[test]
+fn the_menu_theme_is_untouched_when_silence_is_not_chosen() {
+    let game = GameFixture::new();
+    let theme = with_a_stock_menu_theme(&game);
+    let before = std::fs::read(&theme).expect("the theme");
+    let core = core_over(&game);
+
+    let plan = core
+        .plan(&community_patch_only(), &game.folders())
+        .expect("a plan");
+    core.execute(&plan, &ProgressReporter::silent())
+        .expect("a Deployment");
+
+    assert_eq!(std::fs::read(&theme).expect("the theme"), before);
+}
+
+/// Opting in replaces the theme with silence, and Uninstall gives the original back byte for
+/// byte - the same round trip the engine makes.
+#[test]
+fn silencing_the_menu_replaces_the_theme_and_uninstall_puts_it_back() {
+    let game = GameFixture::new();
+    let theme = with_a_stock_menu_theme(&game);
+    let before = std::fs::read(&theme).expect("the theme");
+    let core = core_over(&game);
+
+    let plan = core
+        .plan(&with_a_silent_menu(), &game.folders())
+        .expect("a plan");
+    core.execute(&plan, &ProgressReporter::silent())
+        .expect("a Deployment");
+
+    let after = std::fs::read(&theme).expect("the theme");
+    assert_ne!(after, before, "the theme was replaced");
+    assert_eq!(&after[0..4], b"RIFF", "and the replacement is still a WAV");
+    assert!(
+        after[44..].iter().all(|byte| *byte == 0),
+        "carrying only silence"
+    );
+
+    core.uninstall(&game.folders(), &ProgressReporter::silent())
+        .expect("an Uninstall");
+    assert_eq!(
+        std::fs::read(&theme).expect("the theme"),
+        before,
+        "Uninstall restores the game's own theme byte for byte"
+    );
+}
+
+/// Clearing the box is the other half of the promise: it must put the theme back without
+/// needing an Uninstall, exactly as clearing the LuaJIT box restores the engine.
+#[test]
+fn clearing_the_silence_box_puts_the_menu_theme_back() {
+    let game = GameFixture::new();
+    let theme = with_a_stock_menu_theme(&game);
+    let before = std::fs::read(&theme).expect("the theme");
+    let core = core_over(&game);
+
+    let silenced = core
+        .plan(&with_a_silent_menu(), &game.folders())
+        .expect("a plan");
+    core.execute(&silenced, &ProgressReporter::silent())
+        .expect("silencing");
+    assert_ne!(std::fs::read(&theme).expect("the theme"), before);
+
+    let stock = core
+        .plan(&community_patch_only(), &game.folders())
+        .expect("a plan");
+    core.execute(&stock, &ProgressReporter::silent())
+        .expect("restoring");
+
+    assert_eq!(
+        std::fs::read(&theme).expect("the theme"),
+        before,
+        "clearing the box restores the theme"
+    );
+}
+
 /// The stock engine, as a real Game Installation has it before anything is installed.
 fn with_a_stock_engine(game: &GameFixture) -> PathBuf {
     let engine = game.folders().game_root.join("lua51_Win32.dll");
@@ -425,6 +527,7 @@ fn with_a_stock_engine(game: &GameFixture) -> PathBuf {
 fn with_luajit() -> InstallConfiguration {
     InstallConfiguration {
         luajit: LuaJitEngine::LuaJit,
+        menu_theme: civ5vp_core::MenuTheme::Stock,
         ..community_patch_only()
     }
 }

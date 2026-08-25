@@ -105,6 +105,26 @@ impl Core {
     /// [`InstallConfiguration::needs_the_toolchain`][crate::InstallConfiguration::needs_the_toolchain];
     /// a caller drawing the warning wants both, because a Release install taking the Shipped
     /// DLL downloads nothing however empty the Toolchain Cache is.
+    /// The Version label of what is installed right now, read from the Build Fingerprint
+    /// sidecar beside the deployed DLL.
+    ///
+    /// `None` when nothing is installed, when the sidecar is unreadable, or when it is old
+    /// enough not to carry a `label` line - all of which mean the same thing here: there is
+    /// nothing to compare against, so say nothing.
+    ///
+    /// The sidecar rather than Settings, because Settings records what was last *chosen* and
+    /// this has to be what was last *installed*. A run that was cancelled, or failed, or
+    /// installed somewhere else must not make the banner lie.
+    pub fn installed_version_label(
+        &self,
+        folders: &GameFolders,
+        mode: crate::InstallMode,
+    ) -> Option<String> {
+        let sidecar = deployed_dll_home(folders, mode).join(FINGERPRINT_FILE_NAME);
+        let contents = std::fs::read_to_string(sidecar).ok()?;
+        crate::fingerprint::label_in_sidecar(&contents).map(str::to_owned)
+    }
+
     pub fn first_run_expectation(&self) -> Option<String> {
         self.toolchain_runner.first_run_expectation()
     }
@@ -240,8 +260,8 @@ impl Core {
         // inputs), so either record can prove a rebuild unnecessary - which is what makes
         // switching mode cheap.
         for folder in [
-            deployed_dll_home(plan, crate::InstallMode::Mods),
-            deployed_dll_home(plan, crate::InstallMode::Modpack),
+            deployed_dll_home(&plan.folders, crate::InstallMode::Mods),
+            deployed_dll_home(&plan.folders, crate::InstallMode::Modpack),
         ] {
             let Ok(sidecar) = std::fs::read_to_string(folder.join(FINGERPRINT_FILE_NAME)) else {
                 continue;
@@ -622,7 +642,7 @@ impl Core {
         // deployed. In Mods mode it goes at the root of `(1) Community Patch`; in Modpack
         // mode the assembly already placed it inside the pack, so it is deployed by now
         // either way and only the sidecar's home differs.
-        let dll_home = deployed_dll_home(plan, plan.configuration.install_mode);
+        let dll_home = deployed_dll_home(&plan.folders, plan.configuration.install_mode);
         let dll_destination = dll_home.join(BUILT_DLL_FILE_NAME);
         if staged_modpack.is_none() {
             tree::copy_file(built_dll, &dll_destination)?;
@@ -654,6 +674,7 @@ impl Core {
         // The Replaced File, last of all: it is the one write outside the Claimed set
         // (ADR-0006), so it happens only once everything the installer owns is already right.
         let engine = self.settle_engine(plan, built_luajit, progress)?;
+        self.settle_menu_theme(plan, progress)?;
 
         clear_game_cache(&plan.folders, progress)?;
 
@@ -664,6 +685,65 @@ impl Core {
             built_dll: dll_destination,
             engine,
         })
+    }
+
+    /// Bring the game's main menu theme into line with the configuration.
+    ///
+    /// The same shape as [`Self::settle_engine`] and for the same reason - a choice that only
+    /// works one way is not a checkbox - but with nothing to build. The replacement is
+    /// generated here and now: a WAV in the game's own format carrying a minute of zeros.
+    ///
+    /// Only Brave New World's copy is touched. Vox Populi requires Brave New World, so that is
+    /// the theme the menu plays; the base game's and Gods & Kings' copies stay as they are.
+    fn settle_menu_theme(
+        &self,
+        plan: &Plan,
+        progress: &ProgressReporter,
+    ) -> Result<(), InstallError> {
+        let file = ReplacedFile::MenuTheme;
+        let destination = file.path_in(&plan.folders);
+        let backups = self.backups();
+
+        if plan.configuration.menu_theme != crate::MenuTheme::Silent {
+            if backups.holds_a_replacement(file) {
+                progress.report(
+                    Stage::Sync,
+                    "The saved main menu theme is the silent one, not the game's own, so it \
+                     was not put back. Verify the game's files in Steam to restore it.",
+                );
+            }
+            if backups.restore(file, &destination)? == Restored::FromBackup {
+                progress.report(Stage::Sync, "Put the game's main menu theme back.");
+            }
+            return Ok(());
+        }
+
+        // Nothing to replace. A player without Brave New World cannot be running Vox Populi,
+        // so this is a broken installation rather than a choice to act on - and writing a file
+        // into a folder the game does not have would be worse than doing nothing.
+        if !destination.is_file() && !backups.holds(file) {
+            progress.report(
+                Stage::Sync,
+                "Skipped silencing the main menu: Brave New World's theme is not where it \
+                 should be.",
+            );
+            return Ok(());
+        }
+
+        if backups.discard_replacement(file)? {
+            progress.report(
+                Stage::Sync,
+                "Discarded a saved main menu theme that was really the silent one. Verify \
+                 the game's files in Steam and install again to save the real one.",
+            );
+        }
+        backups.back_up_once(file, &destination)?;
+        tree::write_file(&destination, &crate::replaced::silent_theme())?;
+        progress.report(
+            Stage::Sync,
+            "Silenced the main menu theme. Your original was saved.",
+        );
+        Ok(())
     }
 
     /// Bring the game's Lua engine into line with the configuration.
@@ -683,6 +763,16 @@ impl Core {
         let backups = self.backups();
 
         let Some(built) = built else {
+            // A held backup that is really a LuaJIT cannot put anything back, and the player
+            // needs telling rather than a silent "nothing to restore" - their game is still
+            // running the replacement.
+            if backups.holds_a_replacement(ReplacedFile::LuaEngine) {
+                progress.report(
+                    Stage::Sync,
+                    "The saved Lua engine is a LuaJIT, not the game's own, so it was not put \
+                     back. Verify the game's files in Steam to restore the original.",
+                );
+            }
             // Driven by what the Backup Store holds rather than by what the configuration
             // said last time: the remembered settings can be rewritten by an older build
             // that has never heard of this choice, but a held backup is proof that an engine
@@ -697,6 +787,19 @@ impl Core {
                 },
             );
         };
+
+        // A store written before `back_up_once` learned to recognise a LuaJIT may be holding
+        // one. Throwing it away here is what lets the player recover: verify the game's files
+        // so the stock engine is back, run the installer again, and the line below banks the
+        // real one. Left in place it would never be replaced, because the "once" guard treats
+        // any held file as the original.
+        if backups.discard_replacement(ReplacedFile::LuaEngine)? {
+            progress.report(
+                Stage::Sync,
+                "Discarded a saved Lua engine that was really a LuaJIT, not the game's own. \
+                 Verify the game's files in Steam and install again to save the real one.",
+            );
+        }
 
         // Only from the game's own copy, and only the first time. By the second Deployment
         // the file sitting there is the installer's own engine, and saving that would
@@ -758,6 +861,16 @@ impl Core {
         if engine_restored == Restored::FromBackup {
             progress.report(Stage::Sync, "Restored the game's original Lua engine.");
         }
+        // Unconditional for the same reason, and reported separately: a player who silenced
+        // the menu and then uninstalled should hear the theme again without being told to go
+        // and find it themselves.
+        if self
+            .backups()
+            .restore(ReplacedFile::MenuTheme, &ReplacedFile::MenuTheme.path_in(folders))?
+            == Restored::FromBackup
+        {
+            progress.report(Stage::Sync, "Restored the game's original main menu theme.");
+        }
 
         clear_game_cache(folders, progress)?;
         progress.report(Stage::Sync, "Your game is back to how it was.");
@@ -772,11 +885,11 @@ impl Core {
 
 /// Where the deployed DLL (and its fingerprint sidecar) lives for a given install mode:
 /// the root of `(1) Community Patch` - in MODS, or inside the Modpack.
-fn deployed_dll_home(plan: &Plan, mode: crate::InstallMode) -> PathBuf {
+fn deployed_dll_home(folders: &GameFolders, mode: crate::InstallMode) -> PathBuf {
     match mode {
-        crate::InstallMode::Mods => ClaimedFolder::CommunityPatch.path_in(&plan.folders),
+        crate::InstallMode::Mods => ClaimedFolder::CommunityPatch.path_in(folders),
         crate::InstallMode::Modpack => ClaimedFolder::Modpack
-            .path_in(&plan.folders)
+            .path_in(folders)
             .join("Mods")
             .join(ClaimedFolder::CommunityPatch.folder_name()),
     }
