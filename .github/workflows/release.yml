@@ -129,7 +129,19 @@ jobs:
           mv artifacts/civ5vp-installer-windows-x86_64/civ5vp-installer.exe \
              civ5vp-installer-windows-x86_64.exe
           # `--verify-tag` refuses to invent a tag that is not really there.
+          #
+          # The `||` is for the second time a tag is published. Deleting a tag does not delete
+          # its Release - GitHub turns it into a draft, and re-pushing the tag brings it back.
+          # So a re-tagged version arrives here with the Release already existing, `create`
+          # fails, and under `set -e` the job dies one line before the upload that would have
+          # replaced the stale binaries. That is how 0.1.5 came to sit at Latest advertising a
+          # build from the commit before the one it was tagged on. Falling back to `edit`
+          # makes re-tagging work, and leaves the notes alone rather than regenerating them
+          # over anything that was edited by hand.
           gh release create "${GITHUB_REF_NAME}" --verify-tag \
-            --title "${GITHUB_REF_NAME}" --generate-notes
+            --title "${GITHUB_REF_NAME}" --generate-notes \
+            || gh release edit "${GITHUB_REF_NAME}" --draft=false
+          # `--clobber`: the binaries of a superseded build are not kept alongside the new
+          # ones, they are replaced by them.
           gh release upload "${GITHUB_REF_NAME}" \
             civ5vp-installer-linux-x86_64 civ5vp-installer-windows-x86_64.exe --clobber
