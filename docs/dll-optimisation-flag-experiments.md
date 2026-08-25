@@ -1,3 +1,29 @@
+> **Read this box first, 2026-08-25.**
+>
+> **Section 2, "Traps found in clang-cl 18.1.8", is still accurate and still worth reading
+> before writing any flag file.** So is section 4. The rest has been overtaken.
+>
+> Every run in section 3 was made under a constraint that no longer exists: inlining crashed
+> the game, so everything was measured at `/Ob0`. That crash was this installer's own doing -
+> the VC9 headers were passed with `-external:I`, ahead of clang's resource directory, which
+> bypassed the `vadefs.h` correction clang ships. One flag fixed it (`/imsvc`, in `flags.rs`),
+> and `/Ob2` now works against unmodified upstream source.
+>
+> What changed as a result:
+>
+> * **Inlining is worth 27%** - far more than everything this campaign found combined.
+> * **The twelve-flag set it produced is worth nothing measurable at `/Ob2`** and has been
+>   dropped for upstream's `/Ox /Ob2`.
+> * **`-O3`'s headline win does not survive.** At `/Ob0` its raised inlining threshold had
+>   nothing to act on, so only its loop work showed.
+> * **Link-time optimisation, dismissed here, is worth about 9%** and is now the default. It
+>   was ruled out because Run A crashed - but `/Ob2` alone crashed then too, so LTO was never
+>   implicated, merely present.
+> * **Run L is obsolete.** `STRONG_ASSUMPTIONS` was innocent; do not spend a build on it.
+>
+> Current numbers and method: `.scratch/turn-timing.md`. Current flags and why:
+> `DEFAULT_RELEASE_OPTIMISATION` in `flags.rs`.
+
 # Finding a faster DLL that still loads
 
 A test campaign for the `dll-flags.txt` override (`crates/toolchain/src/build/flags.rs`). The goal: the most speed-optimised `CvGameCore_Expansion2.dll` that Civ 5 still loads.
@@ -50,6 +76,17 @@ Read this section before writing a flag file. Three of these produce a build tha
 **Vectorisation is already on in the current default.** Both `-Os` and `/O2` pass `-vectorize-loops -vectorize-slp`. Whatever distinguishes a loading DLL from a crashing one, it is not "the vectoriser got switched on".
 
 **The linker is reachable through a heading.** A line reading `[linker]` sends everything after it to `lld-link` in place of `/OPT:REF /OPT:ICF`; `[compiler]` sends it back to clang-cl. A file with no heading is entirely compiler flags, so every file written before the heading existed still means what it meant. An empty half keeps that tool's proven default, so naming only linker flags still compiles the reference way.
+
+**A `/U` only works from `[after-predefs]`.** clang-cl settles `/D` and `/U` for the same name by whichever comes *last* on the command line. The `[compiler]` flags are emitted where the reference script puts optimisation flags - **before** the `/D` predefs - so a `/USTRONG_ASSUMPTIONS` written there is undone by the `/DSTRONG_ASSUMPTIONS` that follows it, silently and with no warning. A third heading, `[after-predefs]`, appends to the very end of the command line instead. It adds rather than replaces, so it can be used on its own or alongside the other two.
+
+Verified against the pinned clang 18.1.8, on a translation unit whose `#ifdef FOO` raises `#error`:
+
+| command line | result |
+| --- | --- |
+| `/DFOO /UFOO` | `FOO` undefined - compiles |
+| `/UFOO /DFOO` | `FOO` defined - `#error` fires |
+
+Like the optimisation halves, `[after-predefs]` is Release-only: Debug never carries the Release predefs, so there is nothing there for it to switch off.
 
 Unlike clang-cl, `lld-link` cannot ignore a flag silently: an argument it does not recognise is treated as an input file and the link fails with `could not open '/BOGUSFLAG'`. That is why only the compiler half gets the `unknown argument` probe.
 
@@ -174,6 +211,61 @@ Same as F without `/Oy-`. Only worth running once F is known to load. Omitting f
 ```
 
 Last, because it is the largest change and the hardest to reason about: it defers optimisation to the linker, and this build links against pre-built VC9-era COFF libraries and uses `/FORCE:MULTIPLE`, which lets duplicate symbols resolve arbitrarily. Untested here beyond confirming the flag is accepted and that `lld-link` handles bitcode. `/LTCG` can now be written under `[linker]` for fidelity with `master`, though `lld-link` treats it as a no-op and does LTO from the bitcode regardless.
+
+### Run L - OBSOLETE. `STRONG_ASSUMPTIONS` was innocent; the cause was include order.
+
+**Do not run this.** Kept only so the reasoning is not repeated from scratch. See the box at
+the top of this file.
+
+#### Original text: `STRONG_ASSUMPTIONS`, the standing suspect for the inlining crash
+
+Every earlier run agrees that *any* inlining crashes the game on mod load - `/Ob1` is already
+enough, so the level is not the variable. `STRONG_ASSUMPTIONS` is Release-only and maps the
+mod's own `ASSUME(x)` to `__builtin_assume(x)` and `UNREACHABLE_UNCHECKED()` to
+`__builtin_unreachable()` (`CvGameCoreDLLPCH.h:73`). Both are promises rather than checks:
+they license clang to delete code on the strength of something the source asserts, and MSVC
+largely ignores them where clang acts on them. A promise that is wrong somewhere stays
+harmless until inlining lets clang see across the call boundary and act on it - which is
+exactly the shape of a fault that appears only with inlining on.
+
+Run the control first. If it does not crash, the procedure is not detecting what it used to
+and the rest of the sequence measures nothing.
+
+```
+# L1 - control: today's flags with inlining up, promises left on. Expect a crash.
+/clang:-O3 /Ob2 /GS- /clang:-fno-math-errno /clang:-ffp-contract=off
+-march=x86-64-v2
+-mllvm -unroll-threshold=300
+-mllvm -extra-vectorizer-passes
+-mllvm -enable-loopinterchange
+```
+
+```
+# L2 - the experiment: same flags, promises off.
+/clang:-O3 /Ob2 /GS- /clang:-fno-math-errno /clang:-ffp-contract=off
+-march=x86-64-v2
+-mllvm -unroll-threshold=300
+-mllvm -extra-vectorizer-passes
+-mllvm -enable-loopinterchange
+
+[after-predefs]
+/USTRONG_ASSUMPTIONS
+```
+
+L2 loading is the result that matters: it would be the first build with inlining the game
+accepts, and inlining is worth more than every flag measured so far put together, because
+`/Ob0` costs every non-`__forceinline` call in the DLL.
+
+If L2 still crashes, narrow before widening. `/Ob1` with promises off (L3) separates "clang
+inlined something on its own" from "the authors asked for it"; `-Os /Ob2 /Oy-` with promises
+off (L4) strips our added flags out of the picture entirely, and a crash there means inlining
+is broken for a reason unrelated to both `STRONG_ASSUMPTIONS` and anything in section 3.
+
+If L2 loads, re-run it at `/Ob0` (L5) so the speed of inlining alone can be separated from the
+speed of dropping the promises - the two are independent and only one of them is free.
+
+The next suspect after this one is `NDEBUG`, the other Release-only predef, which strips the
+mod's assertions.
 
 ## 4. Recording a result
 

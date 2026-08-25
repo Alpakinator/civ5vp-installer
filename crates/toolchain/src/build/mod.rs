@@ -109,21 +109,19 @@ impl<'a> DllBuild<'a> {
         let include_dirs = crt_first(self.toolchain.include_dirs()?);
         let lib_dirs = crt_first(self.toolchain.lib_dirs()?);
 
-        // Announced before it is used, and named with its file, because a maintainer running
-        // a dozen builds has to be able to tell from the Activity panel alone which one this
-        // was - a flag set that was silently not picked up looks exactly like a flag set that
-        // made no difference.
+        // Announced before it is used, on every build and not only when a file overrides
+        // something, because a maintainer running a dozen builds has to be able to tell from
+        // the Activity panel alone which one this was - a flag set that was silently not
+        // picked up looks exactly like a flag set that made no difference, and printing
+        // nothing at all for the default made that indistinguishable from the default too.
         let optimisation_override = flags::read_optimisation_override();
-        if let Some(override_flags) = &optimisation_override {
-            progress.report(
-                Stage::Build,
-                format!(
-                    "Building with optimisation flags from {}: {}",
-                    override_flags.source.display(),
-                    override_flags.flags.summary()
-                ),
-            );
-        }
+        progress.report(
+            Stage::Build,
+            flags::optimisation_summary(
+                request.build_configuration,
+                optimisation_override.as_ref(),
+            ),
+        );
 
         let cl_args = flags::compiler_args(
             request.build_configuration,
@@ -134,6 +132,9 @@ impl<'a> DllBuild<'a> {
             optimisation_override
                 .as_ref()
                 .and_then(|o| o.flags.compiler_override()),
+            optimisation_override
+                .as_ref()
+                .map_or(&[][..], |o| o.flags.after_predefs()),
         );
         let link_args = flags::linker_args(
             request.build_configuration,
@@ -169,10 +170,9 @@ impl<'a> DllBuild<'a> {
         // Only the compiler half can be probed this way: lld-link treats an argument it does
         // not know as an input file and fails loudly on its own, so a typo there cannot pass
         // silently the way a clang-cl one can.
-        if optimisation_override
-            .as_ref()
-            .is_some_and(|o| o.flags.compiler_override().is_some())
-        {
+        if optimisation_override.as_ref().is_some_and(|o| {
+            o.flags.compiler_override().is_some() || !o.flags.after_predefs().is_empty()
+        }) {
             self.reject_ignored_flags(&cl_args, &variant_dir)?;
         }
         let commit_id = generated_dir.join("commit_id.inc");
@@ -1188,7 +1188,7 @@ mod tests {
         let externals: Vec<&String> = compile
             .args
             .iter()
-            .filter(|arg| arg.starts_with("-external:I"))
+            .filter(|arg| arg.starts_with("/imsvc"))
             .collect();
         assert_eq!(externals.len(), 2);
         assert!(externals[0].contains("Visual Studio"));

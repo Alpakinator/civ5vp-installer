@@ -18,69 +18,102 @@
 //! The one knowing deviation: the reference merges the VC9 CRT headers into a single SDK
 //! `Include` directory at extraction time, so its flag builder takes one include root. Our
 //! extraction honours the MSIs' real layout, which keeps the CRT and the SDK
-//! apart, so `-external:I` appears once per directory - same directories, same compiler
+//! apart, so `/imsvc` appears once per directory - same directories, same compiler
 //! search list, just not physically merged.
+//!
+//! The second knowing deviation, added in 0.1.5: those directories are passed with `/imsvc`
+//! rather than `-external:I`. See [`compiler_args`] - it is the difference between a DLL
+//! that survives inlining and one that does not.
 
 use std::path::{Path, PathBuf};
 
 use civ5vp_core::{BuildConfiguration, FortyThreeCivs};
 
-/// The Release optimisation flags, measured against the game rather than transcribed.
+/// The Release optimisation flags: upstream's, after measurement failed to beat them.
 ///
-/// The reference build settled on `-Os /Ob0 /Oy-`, recording only "clang inlining crashes
-/// Civ V". A campaign run against the real game (see `docs/dll-optimisation-flag-experiments.md`)
-/// confirmed the crash and then found roughly 30% faster AI turns without touching its cause:
+/// These are exactly what `build_vp_clang.py` compiles Release with. That is a reversal - 0.1.4
+/// shipped a measured set of twelve flags instead - and the reasoning is worth keeping, because
+/// the obvious reading of the campaign in `docs/dll-optimisation-flag-experiments.md` is now
+/// wrong.
 ///
-/// * `/Ob0` stays, and is the one flag that may never move. Every build with inlining crashes
-///   the game while loading the mod - including `/Ob1`, which inlines only what the source
-///   itself marked `inline` or `__forceinline`. The optimisation *level* is innocent.
-/// * `/clang:-O3` is the single largest win, about 20% on AI turns. It has to be spelled
-///   through the pass-through: `clang-cl` silently discards a bare `-O3` and builds at `-O0`,
-///   with no warning. `-O3`'s gain here is its loop work, which needs no inlining.
-/// * `/GS-` drops the stack-cookie check; `/clang:-fno-math-errno` lets dead math calls be
-///   deleted without changing any result.
-/// * `-march=x86-64-v2` replaces the reference's 2004-era SSE3 floor with SSE4.2 (2008).
-///   Steam's July 2026 survey puts SSE3 at 98.02% and SSE4.2 at 97.88%, so this costs 0.14
-///   points of compatibility. `x86-64-v3` measured no faster than `v2` and would have cost
-///   nearly 3 points, so it is not taken.
-/// * `/clang:-ffp-contract=off` is a correctness guard, not a speed flag, and must not be
-///   removed while any `-march` above the baseline is in force. `clang-cl` defaults to
-///   `-ffp-contract=on` at every level; on a CPU with FMA that fuses a multiply and an add
-///   into one instruction, which rounds once instead of twice. Different float results mean
-///   desynchronised multiplayer and diverging saves.
-/// * The three `-mllvm` passes push loop unrolling and vectorisation past `-O3`'s defaults.
+/// That campaign ran entirely at `/Ob0`, because every build with inlining crashed the game on
+/// mod load. Under that constraint it found roughly 30% in `-O3`, `-march=x86-64-v2`, `/GS-`
+/// and three `-mllvm` passes. The constraint turned out to be self-inflicted: the installer
+/// passed the VC9 headers with `-external:I`, which placed them ahead of clang's own and so
+/// bypassed the `vadefs.h` correction clang ships - see [`compiler_args`]. With `/imsvc` the
+/// crash is gone and `/Ob2` works against unmodified upstream source.
 ///
-/// Frame pointers are deliberately absent: `/Oy-` is gone, which frees `EBP` as a general
-/// register on 32-bit x86, where there are only eight.
-pub const DEFAULT_RELEASE_OPTIMISATION: [&str; 12] = [
-    "/clang:-O3",
-    "/Ob0",
-    "/GS-",
-    "/clang:-fno-math-errno",
-    "/clang:-ffp-contract=off",
-    "-march=x86-64-v2",
-    "-mllvm",
-    "-unroll-threshold=300",
-    "-mllvm",
-    "-extra-vectorizer-passes",
-    "-mllvm",
-    "-enable-loopinterchange",
-];
+/// Re-measured at `/Ob2` against a 43-civ save (`.scratch/turn-timing.md`):
+///
+/// * **Inlining is worth 27%** - 194 s of AI turns down to about 140 s. That dwarfs everything
+///   the campaign found, and it is the only result in the table that clears the noise.
+/// * **The twelve flags are worth nothing measurable on top of it.** `/Ox /Ob2` alone, this
+///   set, and Axatin's shipped DLL all landed between 137 s and 142 s - and a single
+///   configuration measured twice spanned that whole range on its own. The instrument cannot
+///   tell them apart, and more runs of the same kind would not change that.
+/// * `-O3`'s campaign win does not survive the change. At `/Ob0` its raised inlining threshold
+///   had nothing to act on, so only its loop work showed. At `/Ob2` both halves apply, on a
+///   workload that is branchy and cache-bound.
+///
+/// So the tie is broken on everything except speed, and upstream's set wins on all of it:
+/// `-msse3` keeps the SSE3 floor (98.02% of Steam hardware against SSE4.2's 97.88%), there are
+/// ten fewer flags to justify, three of which reached into LLVM internals that a compiler bump
+/// could reinterpret - and every future Vox Populi change is tested against these, not ours.
+///
+/// Note how little is left here. The reference's other Release flags - `-msse3`, `/GS`,
+/// `/fp:precise` - are already in the fixed base at [`compiler_args`], so this half only has to
+/// carry what the base does not. `/Ox` is clang-cl's deprecated spelling of `/O2`; verified
+/// with `-###`, both lower to plain `-O2`, and `-O3` is reachable only as `/clang:-O3` because
+/// clang-cl discards a bare `-O3` and silently builds at `-O0`.
+///
+/// `/Ob2` is the flag that matters, and the one that must not go back to `/Ob0` while
+/// `compiler_args` passes the headers with `/imsvc`.
+///
+/// `-flto=thin` is the second thing that matters, and the only measured win left after
+/// inlining. `/Ob2` inlines within one `.cpp` file; this DLL has 157 of them, and an AI turn
+/// runs in `CvTacticalAI` and `CvHomelandAI` while calling into `CvUnit`, `CvPlot`, `CvCity`
+/// and `CvPlayer` - four separate units, the largest 51,000 lines. Every one of those calls
+/// crossed a wall until LTO moved optimisation into the linker, where the whole DLL is visible
+/// at once. Measured: AI turns 90 s to 81.5 s, and the two sets of passes do not overlap -
+/// every non-LTO measurement was at or above 137 s total, every LTO one at or below 134 s.
+///
+/// It was ruled out once, wrongly. The campaign's Run A was upstream master's exact
+/// configuration, `-flto` and `/LTCG` included, and it crashed on load - but `/Ob2` alone
+/// crashed then too, for the `vadefs.h` reason [`compiler_args`] now fixes. LTO was never
+/// implicated; it was merely present in a build that was doomed anyway.
+///
+/// `thin`, not full: full LTO across 157 units this size costs minutes and gigabytes at link
+/// time for no measured gain over ThinLTO. Deliberately absent is `-fwhole-program-vtables`,
+/// LTO's usual companion: the game's own executable calls into this DLL through vtables, so
+/// the program is not whole, and that assumption breaking is the exact shape of the bug that
+/// cost this project its inlining in the first place.
+///
+/// The cost is link time - a full build went from about 1:40-2:00 to 2:23, and it falls on
+/// every rebuild, not just the first install, because the link runs even when one file
+/// changed. Thirty seconds a build against 9% of every AI turn, forever.
+pub const DEFAULT_RELEASE_OPTIMISATION: [&str; 3] = ["/Ox", "/Ob2", "-flto=thin"];
 
 /// The Release link-time optimisation flags the reference build proved, and today's default.
 ///
 /// `/OPT:REF` drops unreferenced code; `/OPT:ICF` folds functions with identical bodies into
 /// one address - which is also why it is worth an experiment: folding breaks any code that
 /// compares function pointers for identity.
-pub const DEFAULT_RELEASE_LINK_OPTIMISATION: [&str; 2] = ["/OPT:REF", "/OPT:ICF"];
+///
+/// `/LTCG` is upstream's spelling of "link-time code generation" and pairs with
+/// `-flto=thin` in [`DEFAULT_RELEASE_OPTIMISATION`]. `lld-link` reads the bitcode and does
+/// LTO whether or not it is written, so this flag changes nothing on its own. It is kept for
+/// two reasons that are not about behaviour: it is what upstream's `build_vp_clang.py` links
+/// with, and it is what the measured configuration contained. Shipping something other than
+/// what was measured, however inert, is not worth the saving of one word.
+pub const DEFAULT_RELEASE_LINK_OPTIMISATION: [&str; 3] = ["/OPT:REF", "/OPT:ICF", "/LTCG"];
 
 /// A maintainer's file, beside the installer executable, that replaces
 /// [`DEFAULT_RELEASE_OPTIMISATION`] and [`DEFAULT_RELEASE_LINK_OPTIMISATION`] for one build.
 ///
-/// This exists to answer a question the reference build left open: it settled on `-Os /Ob0`
-/// because "clang inlining crashes Civ V", recording the symptom and not the cause, and
-/// `/Ob0` costs every non-`__forceinline` call in the DLL. Finding a faster set that still
-/// loads means building the same sources a dozen times with different flags, and the person
+/// It exists because the only way to answer a question about compiler flags here is to build
+/// the same sources a dozen times and play the game after each one. That is how "clang
+/// inlining crashes Civ V" was traced to an include-order mistake in this file rather than to
+/// inlining, and how the flag set that finding made possible was then measured. The person
 /// doing that runs the installer by double-clicking it. So the knob is a text file rather
 /// than a command line, and it is deliberately not surfaced in the interface: players get one
 /// default, chosen once it is proven.
@@ -98,12 +131,28 @@ pub struct OptimisationFlags {
     pub compiler: Vec<String>,
     /// Replaces [`DEFAULT_RELEASE_LINK_OPTIMISATION`] in the lld-link command line.
     pub linker: Vec<String>,
+    /// Appended to the clang-cl command line *after* the `/D` predefs, replacing nothing.
+    ///
+    /// The other two halves land where the reference script puts optimisation flags, which is
+    /// before [`SHARED_PREDEFS`] and [`RELEASE_ONLY_PREDEFS`]. clang-cl resolves `/D` and `/U`
+    /// last-wins, so an override written there cannot switch a predef off - the `/D` that
+    /// follows it wins. Measured on the pinned clang 18.1.8: `/DFOO /UFOO` leaves `FOO`
+    /// undefined, `/UFOO /DFOO` leaves it defined.
+    ///
+    /// Without this half the file silently lied: a `/U` written under `[compiler]` was
+    /// accepted, echoed back in the build summary, and then undone by the `/D` that followed
+    /// it. It was built to test `STRONG_ASSUMPTIONS` - Release-only, mapping `ASSUME(x)` to
+    /// `__builtin_assume(x)` and `UNREACHABLE_UNCHECKED()` to `__builtin_unreachable()` -
+    /// which was the standing suspect for the inlining crash. It was innocent; the cause was
+    /// the include order in [`compiler_args`]. The gap in the override file was real, and
+    /// this closes it.
+    pub after_predefs: Vec<String>,
 }
 
 impl OptimisationFlags {
     /// Nothing to override on either side - the file said nothing at all.
     pub fn is_empty(&self) -> bool {
-        self.compiler.is_empty() && self.linker.is_empty()
+        self.compiler.is_empty() && self.linker.is_empty() && self.after_predefs.is_empty()
     }
 
     /// The compiler half in the shape [`compiler_args`] takes: `None` keeps the default.
@@ -116,6 +165,12 @@ impl OptimisationFlags {
         (!self.linker.is_empty()).then_some(self.linker.as_slice())
     }
 
+    /// The after-the-predefs half. Empty is the ordinary case: this half adds, so there is no
+    /// default for it to replace.
+    pub fn after_predefs(&self) -> &[String] {
+        &self.after_predefs
+    }
+
     /// The whole set on one line, for the Activity panel - each half named, because
     /// "which tool did this flag reach" is the first thing a surprising result raises.
     pub fn summary(&self) -> String {
@@ -126,8 +181,61 @@ impl OptimisationFlags {
         if !self.linker.is_empty() {
             parts.push(format!("linker {}", self.linker.join(" ")));
         }
+        if !self.after_predefs.is_empty() {
+            parts.push(format!("after predefs {}", self.after_predefs.join(" ")));
+        }
         parts.join("; ")
     }
+}
+
+/// One sentence naming the optimisation flags this build will actually use, and where each
+/// half came from.
+///
+/// Reported on every build, not only when an override is present. Silence used to mean "the
+/// defaults", which is only legible to someone who already knows that - and the one question
+/// a maintainer asks the Activity panel is *what did it just compile with*. Stating it
+/// always also makes a file that was not picked up obvious: the line says `installer
+/// default` where the maintainer expected their own flags.
+///
+/// The origins are tracked per half because an override may replace one and leave the other,
+/// and a summary that blurred the two would be worse than none.
+pub fn optimisation_summary(
+    configuration: BuildConfiguration,
+    over: Option<&OptimisationOverride>,
+) -> String {
+    if configuration == BuildConfiguration::Debug {
+        return "Optimisation: none - this is a Debug build (compiler /Od /Oy-, no \
+                link-time optimisation). dll-flags.txt does not apply to Debug builds."
+            .to_owned();
+    }
+    const DEFAULT: &str = "installer default";
+    let file = over.map(|o| o.source.display().to_string());
+    let from_file = || file.clone().unwrap_or_else(|| DEFAULT.to_owned());
+
+    let (compiler, compiler_from) = match over.and_then(|o| o.flags.compiler_override()) {
+        Some(flags) => (flags.join(" "), from_file()),
+        None => (DEFAULT_RELEASE_OPTIMISATION.join(" "), DEFAULT.to_owned()),
+    };
+    let (linker, linker_from) = match over.and_then(|o| o.flags.linker_override()) {
+        Some(flags) => (flags.join(" "), from_file()),
+        None => (
+            DEFAULT_RELEASE_LINK_OPTIMISATION.join(" "),
+            DEFAULT.to_owned(),
+        ),
+    };
+    let mut summary = format!(
+        "Optimisation: compiler {compiler} (from {compiler_from}); \
+         linker {linker} (from {linker_from})"
+    );
+    // Only ever present when a file says so, so it needs no origin of its own - and it is
+    // left out entirely when empty rather than shown as "none", which would read as a flag.
+    if let Some(after) = over
+        .map(|o| o.flags.after_predefs())
+        .filter(|a| !a.is_empty())
+    {
+        summary.push_str(&format!("; after predefs {}", after.join(" ")));
+    }
+    summary
 }
 
 /// Release optimisation flags read from [`OPTIMISATION_OVERRIDE_FILE`], and where from.
@@ -166,34 +274,48 @@ pub fn read_optimisation_override_beside(directory: &Path) -> Option<Optimisatio
 /// written everywhere else - in the reference script, in this file, and in the advice a
 /// maintainer is copying from - and retyping them down a column invites transcription slips.
 ///
-/// A line reading `[linker]` sends everything after it to lld-link, and `[compiler]` sends
-/// it back to clang-cl. A file with no heading at all is entirely compiler flags, which is
-/// what every file written before the linker half existed already meant.
+/// A line reading `[linker]` sends everything after it to lld-link, `[compiler]` sends it
+/// back to clang-cl, and `[after-predefs]` sends it to clang-cl at the end of the command
+/// line - see [`OptimisationFlags::after_predefs`] for why that position is its own section.
+/// A file with no heading at all is entirely compiler flags, which is what every file written
+/// before the other halves existed already meant.
 pub fn parse_optimisation_override(contents: &str) -> OptimisationFlags {
     let mut flags = OptimisationFlags::default();
-    let mut linker_section = false;
+    let mut section = Section::Compiler;
     for line in contents.lines() {
         let line = line.split('#').next().unwrap_or("").trim();
         match line.to_ascii_lowercase().as_str() {
             "" => continue,
             "[linker]" => {
-                linker_section = true;
+                section = Section::Linker;
                 continue;
             }
             "[compiler]" => {
-                linker_section = false;
+                section = Section::Compiler;
+                continue;
+            }
+            "[after-predefs]" => {
+                section = Section::AfterPredefs;
                 continue;
             }
             _ => {}
         }
-        let half = if linker_section {
-            &mut flags.linker
-        } else {
-            &mut flags.compiler
+        let half = match section {
+            Section::Compiler => &mut flags.compiler,
+            Section::Linker => &mut flags.linker,
+            Section::AfterPredefs => &mut flags.after_predefs,
         };
         half.extend(line.split_whitespace().map(str::to_owned));
     }
     flags
+}
+
+/// Which half of [`OptimisationFlags`] the flags being read belong to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Section {
+    Compiler,
+    Linker,
+    AfterPredefs,
 }
 
 /// The DLL's base name. `civ5vp_core::BUILT_DLL_FILE_NAME` is this plus `.dll`.
@@ -299,6 +421,10 @@ const CL_SUPPRESS: [&str; 5] = [
 /// [`OPTIMISATION_OVERRIDE_FILE`]. It is ignored for Debug, which is not what anyone is
 /// measuring, and taking a slice rather than reading the file here keeps this function a pure
 /// transcription that a reviewer can diff against the Python.
+///
+/// `after_predefs` is appended last, after the `/D` predefs and the include directories, and
+/// replaces nothing. It is the only place from which a `/U` can switch a predef off, because
+/// clang-cl resolves the two last-wins. Also Release-only, on the same reasoning.
 pub fn compiler_args(
     configuration: BuildConfiguration,
     forty_three_civs: FortyThreeCivs,
@@ -306,6 +432,7 @@ pub fn compiler_args(
     source_root: &Path,
     sdk_include_dirs: &[std::path::PathBuf],
     optimisation_override: Option<&[String]>,
+    after_predefs: &[String],
 ) -> Vec<String> {
     let mut args: Vec<String> = [
         "-m32",
@@ -316,6 +443,17 @@ pub fn compiler_args(
         "/EHsc",
         "/fp:precise",
         "/Zc:wchar_t",
+        // Required, not preferred. `/Zc:threadSafeInit` makes clang emit calls to
+        // `_Init_thread_header`, `_Init_thread_footer` and `_Init_thread_abort` around every
+        // function-local static. Those three arrived with the VS2015 runtime; not one of them
+        // exists in any library VC9 ships, and the game loads `msvcr90.dll`, so there is
+        // nowhere else for them to come from. Turning this on fails at link with three
+        // undefined symbols and twenty-odd references each - verified, 2026-08-25.
+        //
+        // It is also the one flag here that upstream's `build_vp_clang.py` does not pass,
+        // which is unexplained: their build links against the same runtime. The likeliest
+        // reading is that their clang emulates an older MSVC, for which clang-cl defaults
+        // thread-safe statics off, but that has not been confirmed.
         "/Zc:threadSafeInit-",
         "/Zi",
     ]
@@ -355,11 +493,43 @@ pub fn compiler_args(
     for dir in PROJECT_INCLUDE_DIRS {
         args.push(format!("/I{}", source_root.join(dir).display()));
     }
+    // `/imsvc`, not `-external:I`, and the difference is the whole reason inlining works.
+    //
+    // Both flags mean "these are Microsoft's headers". They differ in where the directories
+    // land in the search list: `-external:I` puts them *ahead* of clang's own resource
+    // include directory, `/imsvc` puts them *behind* it.
+    //
+    // That matters because of one header. VC9's `vadefs.h` defines `_crt_va_start` on x86 as
+    // address arithmetic on the last named parameter:
+    //
+    //     #define _crt_va_start(ap,v)  ( ap = (va_list)_ADDRESSOF(v) + _INTSIZEOF(v) )
+    //
+    // which is only true while the function still has a stack frame of its own - that is,
+    // while it is *not* inlined. Clang ships its own `vadefs.h` precisely to override this:
+    // it `#include_next`s VC9's, then redefines `_crt_va_start` to `__builtin_va_start`.
+    // With the builtin, LLVM understands the construct and declines to inline the function,
+    // and that refusal is the protection.
+    //
+    // Under `-external:I`, clang's copy is never reached, so every inlined variadic function
+    // - the CRT's `sprintf_s` family and the mod's own `CvString::format` alike - reads its
+    // arguments from the wrong address. Verified on clang 18.1.8 and 22.1.8 at `/Ob2`:
+    // `-external:I` compiles the call with the `va_list` and the destination buffer at the
+    // same address and the argument discarded; `/imsvc` emits a real out-of-line call. That
+    // miscompile is what crashed the game inside `DllMain` on every build with inlining on.
+    //
+    // The cost: clang's copies of 18 headers now win over VC9's, `intrin.h` and the SSE
+    // intrinsics family among them. That is the ordinary clang-cl arrangement, and clang's
+    // intrinsics are the ones you want when clang is the compiler - but it is a real change
+    // in surface, which is why this landed with a full DLL build and an in-game test rather
+    // than on the strength of the unit suite.
     for dir in sdk_include_dirs {
-        args.push(format!("-external:I{}", dir.display()));
+        args.push(format!("/imsvc{}", dir.display()));
     }
     for suppress in CL_SUPPRESS {
         args.push(format!("-Wno-{suppress}"));
+    }
+    if configuration == BuildConfiguration::Release {
+        args.extend(after_predefs.iter().cloned());
     }
     args
 }
@@ -435,6 +605,7 @@ mod tests {
             Path::new("/src"),
             &sdk_dirs(),
             None,
+            &[],
         );
 
         let expected: Vec<String> = [
@@ -448,18 +619,9 @@ mod tests {
             "/Zc:wchar_t",
             "/Zc:threadSafeInit-",
             "/Zi",
-            "/clang:-O3",
-            "/Ob0",
-            "/GS-",
-            "/clang:-fno-math-errno",
-            "/clang:-ffp-contract=off",
-            "-march=x86-64-v2",
-            "-mllvm",
-            "-unroll-threshold=300",
-            "-mllvm",
-            "-extra-vectorizer-passes",
-            "-mllvm",
-            "-enable-loopinterchange",
+            "/Ox",
+            "/Ob2",
+            "-flto=thin",
             "/DFXS_IS_DLL",
             "/DWIN32",
             "/D_WINDOWS",
@@ -480,8 +642,8 @@ mod tests {
             "/I/src/FirePlace/include",
             "/I/src/FirePlace/include/FireWorks",
             "/I/src/ThirdPartyLibs/Lua51/include",
-            "-external:I/sdk/VC/include",
-            "-external:I/sdk/Include",
+            "/imsvc/sdk/VC/include",
+            "/imsvc/sdk/Include",
             "-Wno-invalid-offsetof",
             "-Wno-tautological-constant-out-of-range-compare",
             "-Wno-comment",
@@ -506,6 +668,7 @@ mod tests {
             Path::new("/src"),
             &sdk_dirs(),
             Some(&overridden),
+            &[],
         );
         let default = compiler_args(
             BuildConfiguration::Release,
@@ -514,6 +677,7 @@ mod tests {
             Path::new("/src"),
             &sdk_dirs(),
             None,
+            &[],
         );
 
         assert!(args.contains(&"-O2".to_owned()));
@@ -634,6 +798,7 @@ mod tests {
             Path::new("/src"),
             &sdk_dirs(),
             None,
+            &[],
         );
         let debug = compiler_args(
             BuildConfiguration::Debug,
@@ -642,13 +807,13 @@ mod tests {
             Path::new("/src"),
             &sdk_dirs(),
             None,
+            &[],
         );
 
         assert!(debug.contains(&"/Od".to_owned()));
         assert!(debug.contains(&"/DVPDEBUG".to_owned()));
-        assert!(!debug.contains(&"/clang:-O3".to_owned()));
-        assert!(!debug.contains(&"/Ob0".to_owned()));
-        assert!(!debug.contains(&"-march=x86-64-v2".to_owned()));
+        assert!(!debug.contains(&"/Ox".to_owned()));
+        assert!(!debug.contains(&"/Ob2".to_owned()));
         assert!(!debug.contains(&"/DNDEBUG".to_owned()));
         assert!(!debug.contains(&"/DSTRONG_ASSUMPTIONS".to_owned()));
         assert!(!debug.contains(&"/DVPRELEASE_ERRORMSG".to_owned()));
@@ -666,6 +831,7 @@ mod tests {
             Path::new("/src"),
             &sdk_dirs(),
             None,
+            &[],
         );
 
         let d = args.iter().position(|a| a == "/D").unwrap();
@@ -680,6 +846,7 @@ mod tests {
             Path::new("/src"),
             &sdk_dirs(),
             None,
+            &[],
         );
         assert!(
             !without
@@ -699,6 +866,7 @@ mod tests {
             Path::new("/src"),
             &sdk_dirs(),
             None,
+            &[],
         );
         let without = compiler_args(
             BuildConfiguration::Release,
@@ -707,12 +875,97 @@ mod tests {
             Path::new("/src"),
             &sdk_dirs(),
             None,
+            &[],
         );
 
         let position = with.iter().position(|a| a == "/DSTACKWALKER").unwrap();
         assert_eq!(with[position - 1], "/DEXTERNAL_PAUSING");
         assert_eq!(with[position + 1], "/DCVGAMECOREDLL_EXPORTS");
         assert!(!without.contains(&"/DSTACKWALKER".to_owned()));
+    }
+
+    /// The whole point of the third section: a `/U` written there must come *after* the
+    /// matching `/D`, because clang-cl resolves the pair last-wins. Before this section
+    /// existed the override landed among the optimisation flags, where the predefs that
+    /// follow win and `STRONG_ASSUMPTIONS` could not be switched off at all.
+    #[test]
+    fn after_predefs_flags_land_after_every_predef() {
+        let args = compiler_args(
+            BuildConfiguration::Release,
+            FortyThreeCivs::Enabled,
+            true,
+            Path::new("/src"),
+            &sdk_dirs(),
+            None,
+            &["/USTRONG_ASSUMPTIONS".to_owned()],
+        );
+
+        let undefine = args
+            .iter()
+            .position(|a| a == "/USTRONG_ASSUMPTIONS")
+            .expect("the flag reached the command line");
+        let define = args
+            .iter()
+            .position(|a| a == "/DSTRONG_ASSUMPTIONS")
+            .expect("the predef is still emitted");
+        assert!(
+            undefine > define,
+            "the /U must win: /D at {define}, /U at {undefine}"
+        );
+        // Last of all, so nothing the build appends later can be shadowed by it either.
+        assert_eq!(undefine, args.len() - 1);
+    }
+
+    /// Debug never carries the Release predefs, so a section aimed at switching one off has
+    /// nothing to act on there - and silently reaching Debug would make a maintainer's
+    /// comparison build differ from the one upstream ships.
+    #[test]
+    fn after_predefs_flags_are_release_only() {
+        let debug = compiler_args(
+            BuildConfiguration::Debug,
+            FortyThreeCivs::Disabled,
+            false,
+            Path::new("/src"),
+            &sdk_dirs(),
+            None,
+            &["/USTRONG_ASSUMPTIONS".to_owned()],
+        );
+        assert!(!debug.contains(&"/USTRONG_ASSUMPTIONS".to_owned()));
+    }
+
+    /// Three headings, each sending the rest of its lines to a different half.
+    #[test]
+    fn the_override_file_splits_into_three_halves() {
+        let flags = parse_optimisation_override(
+            "/clang:-O3 /Ob0\n\
+             [linker]\n\
+             /OPT:REF\n\
+             [after-predefs]\n\
+             /USTRONG_ASSUMPTIONS   # the experiment\n\
+             [compiler]\n\
+             /GS-\n",
+        );
+
+        assert_eq!(flags.compiler, ["/clang:-O3", "/Ob0", "/GS-"]);
+        assert_eq!(flags.linker, ["/OPT:REF"]);
+        assert_eq!(flags.after_predefs, ["/USTRONG_ASSUMPTIONS"]);
+        assert_eq!(
+            flags.summary(),
+            "compiler /clang:-O3 /Ob0 /GS-; linker /OPT:REF; after predefs /USTRONG_ASSUMPTIONS"
+        );
+    }
+
+    /// A file holding nothing but an `[after-predefs]` section is a real override - it must
+    /// not read as "no file", or the build would skip the announcement and the fingerprint
+    /// would record `flags none` while the build used them.
+    #[test]
+    fn an_after_predefs_only_file_is_not_empty() {
+        let flags = parse_optimisation_override("[after-predefs]\n/USTRONG_ASSUMPTIONS\n");
+
+        assert!(!flags.is_empty());
+        assert!(flags.compiler_override().is_none());
+        assert!(flags.linker_override().is_none());
+        assert_eq!(flags.after_predefs(), ["/USTRONG_ASSUMPTIONS"]);
     }
 
     #[test]
@@ -734,6 +987,7 @@ mod tests {
             "/DEF:/src/CvGameCoreDLL_Expansion2/CvGameCoreDLL.def",
             "/OPT:REF",
             "/OPT:ICF",
+            "/LTCG",
         ]
         .map(str::to_owned)
         .to_vec();
@@ -787,9 +1041,13 @@ mod tests {
             Path::new("/src"),
             &sdk_dirs(),
             parsed.compiler_override(),
+            &[],
         );
         for default in DEFAULT_RELEASE_OPTIMISATION {
-            assert!(args.contains(&default.to_owned()), "{default} should remain");
+            assert!(
+                args.contains(&default.to_owned()),
+                "{default} should remain"
+            );
         }
     }
 
@@ -834,6 +1092,84 @@ mod tests {
 
     /// The Activity panel line has to say which tool each flag reached, because that is the
     /// first question a surprising result raises.
+    /// The reported flags are what the build will really use, per half, with the origin of
+    /// each - so a file that was not picked up reads as `installer default` where the
+    /// maintainer expected their own flags.
+    #[test]
+    fn the_reported_optimisation_names_the_defaults_when_no_file_overrides() {
+        let summary = optimisation_summary(BuildConfiguration::Release, None);
+
+        assert!(
+            summary.contains("compiler /Ox /Ob2 -flto=thin"),
+            "{summary}"
+        );
+        assert!(
+            summary.contains("linker /OPT:REF /OPT:ICF /LTCG"),
+            "{summary}"
+        );
+        assert_eq!(
+            summary.matches("from installer default").count(),
+            2,
+            "{summary}"
+        );
+        assert!(!summary.contains("after predefs"), "{summary}");
+    }
+
+    #[test]
+    fn an_overridden_half_is_reported_against_its_file_and_the_other_against_the_default() {
+        let over = OptimisationOverride {
+            flags: parse_optimisation_override("/clang:-O3 /Ob2"),
+            source: PathBuf::from("/beside/dll-flags.txt"),
+        };
+
+        let summary = optimisation_summary(BuildConfiguration::Release, Some(&over));
+
+        assert!(
+            summary.contains("compiler /clang:-O3 /Ob2 (from /beside/dll-flags.txt)"),
+            "{summary}"
+        );
+        assert!(
+            summary.contains("linker /OPT:REF /OPT:ICF /LTCG (from installer default)"),
+            "{summary}"
+        );
+    }
+
+    #[test]
+    fn the_reported_optimisation_carries_the_after_predefs_half() {
+        let over = OptimisationOverride {
+            flags: parse_optimisation_override("[after-predefs]\n/USTRONG_ASSUMPTIONS"),
+            source: PathBuf::from("/beside/dll-flags.txt"),
+        };
+
+        let summary = optimisation_summary(BuildConfiguration::Release, Some(&over));
+
+        assert!(
+            summary.ends_with("after predefs /USTRONG_ASSUMPTIONS"),
+            "{summary}"
+        );
+        // The halves it did not speak for are still the installer's.
+        assert!(
+            summary.contains("compiler /Ox /Ob2 -flto=thin"),
+            "{summary}"
+        );
+    }
+
+    /// A Debug build takes no optimisation flags and ignores the file entirely, so the line
+    /// must say that rather than name Release flags Debug will never use.
+    #[test]
+    fn a_debug_build_reports_that_the_override_does_not_reach_it() {
+        let over = OptimisationOverride {
+            flags: parse_optimisation_override("/clang:-O3 /Ob2"),
+            source: PathBuf::from("/beside/dll-flags.txt"),
+        };
+
+        let summary = optimisation_summary(BuildConfiguration::Debug, Some(&over));
+
+        assert!(summary.contains("Debug build"), "{summary}");
+        assert!(summary.contains("does not apply"), "{summary}");
+        assert!(!summary.contains("/Ob2"), "{summary}");
+    }
+
     #[test]
     fn the_summary_names_each_half() {
         let parsed = parse_optimisation_override("/O2 /Ob2\n[linker]\n/OPT:REF\n");
