@@ -4,7 +4,63 @@ Notable changes, newest first. Versions follow [semantic versioning](https://sem
 and each one is the tag the [releases page](https://github.com/Alpakinator/civ5vp-installer/releases)
 publishes binaries for.
 
-## Unreleased
+## 0.1.5 - 2026-08-25
+
+### Fixed
+
+- **Your original Lua engine could be overwritten in the backup by LuaJIT itself**, so
+  restoring would have handed back the wrong file. The installer now refuses to save a
+  replacement as an original, and throws away a bad backup if it finds one.
+
+- **"Clear stored data" deleted the backups folder**, which held the only copy of your
+  original engine. It is kept now.
+
+- **The DLL is built with inlining for the first time.** A mistake in how the installer passed
+  the compiler its headers had made every inlined build crash while loading the mod. It passed
+  Microsoft's include directories with `-external:I`, which put them ahead of clang's own and
+  hid the `vadefs.h` correction clang ships to make `va_start` survive inlining. `/imsvc` puts
+  them where they belong. See `compiler_args` in `flags.rs` for the full account.
+
+### Changed
+
+- **AI turns are about 40% faster.** On a 43-civ save the AI phase went from 138 s to 81 s,
+  and the whole load-and-turn cycle from 194 s to 133 s. That comes from inlining and
+  link-time optimisation - both of which upstream already used and this installer did not.
+
+  Against the official 5.4.5 release DLL, on the same save and the same 43-civ variant, the AI
+  phase is roughly 10% faster. One machine, one save; the source differs only by four
+  accessors off the hot path, so it is a compilation difference rather than a code one, but it
+  is not attributed to a particular flag.
+
+  The twelve optimisation flags 0.1.4 measured are gone. Re-measured with inlining on, they
+  were worth nothing beyond upstream's own `/Ox /Ob2`, and `-msse3` restores the SSE3 floor
+  0.1.4 had raised - 98.02% of Steam hardware against 97.88%.
+
+- **The build always says which compiler flags it used**, instead of only speaking up when
+  `dll-flags.txt` overrides something. Silence used to mean "the defaults", which only helped
+  people who already knew that.
+
+- **`Browse` is now `Choose`.** It sat beside `Open` and the two read as the same offer;
+  `Choose` says what happens to the box.
+
+- **The Activity log keeps the mouse wheel.** Reaching either end no longer scrolls the page
+  behind it.
+
+### Added
+
+- **Replace the main menu music with silence.** A checkbox; your file is restored when you
+  untick it or uninstall.
+
+- **A note beside the version picker** when the version you are switching to will not load
+  your saves. Vox Populi breaks save compatibility whenever the first or second number
+  changes, so 5.4.4 to 5.4.5 is safe and 5.4.5 to 5.5.0 is not. It says so and nothing else -
+  no dialog, no click.
+
+- **Dev mode shows which branch your checkout is on.**
+
+- **An `[after-predefs]` heading in `dll-flags.txt`**, the only place a `/U` can switch a
+  predef off. Written anywhere else it was accepted, echoed back, and silently undone by the
+  `/D` that followed.
 
 ## 0.1.4 - 2026-08-21
 
