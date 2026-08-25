@@ -1207,15 +1207,36 @@ fn browsing_from_a_path_that_is_gone_fills_in_what_detection_found() {
     );
 }
 
+/// How many pixels may differ before a screen counts as changed.
+///
+/// Not a fudge factor - a measured gap. The baselines are rendered on whatever GPU the
+/// machine has; CI renders on Mesa's software Vulkan. The two rasterise glyph edges slightly
+/// differently, and `egui_kittest`'s colour threshold (0.6 by default, and already tuned for
+/// crossing wgpu backends) does not absorb it, because an edge pixel that lands on the other
+/// side of a stroke differs by a lot rather than a little.
+///
+/// The three sizes measured on this project on 2026-08-25:
+///
+///     renderer disagreement      1-2 px      GPU here against CI's lavapipe
+///     a one-word label change    266 px      `Browse` to `Choose`
+///     a layout change         21,000+ px     one checkbox added to a panel
+///
+/// 32 is sixteen times the noise and an eighth of the smallest real change ever seen here, so
+/// a genuine edit still fails loudly. Colour sensitivity is left alone: everywhere except
+/// those few edge pixels, the comparison is as strict as it was.
+const SNAPSHOT_PIXEL_SLACK: usize = 32;
+
 /// Every screen has a baseline. Reviewed before committing - an updated baseline nobody
 /// looked at proves nothing.
 #[test]
 fn every_screen_matches_its_baseline() {
+    let options = egui_kittest::SnapshotOptions::new()
+        .failed_pixel_count_threshold(SNAPSHOT_PIXEL_SLACK);
     let mut results = SnapshotResults::new();
     for screen in Screen::ALL {
         let mut harness = harness_over(InstallerApp::preview(screen));
         harness.run();
-        results.add(harness.try_snapshot(screen.file_stem()));
+        results.add(harness.try_snapshot_options(screen.file_stem(), &options));
     }
     results.unwrap();
 }
