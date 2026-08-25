@@ -227,6 +227,18 @@ fn sorted_entries(dir: &Path) -> Result<Vec<std::path::PathBuf>, InstallError> {
     Ok(entries)
 }
 
+/// Write `bytes` to `to`, replacing whatever is there.
+///
+/// For a Replaced File the installer generates rather than copies - the silent menu theme is
+/// a run of zeros, so there is no source file to copy from.
+pub(crate) fn write_file(to: &Path, bytes: &[u8]) -> Result<(), InstallError> {
+    fs::write(to, bytes).map_err(|cause| InstallError::Deployment {
+        action: "write",
+        path: to.to_path_buf(),
+        cause,
+    })
+}
+
 pub(crate) fn copy_file(from: &Path, to: &Path) -> Result<(), InstallError> {
     fs::copy(from, to).map_err(|cause| InstallError::Deployment {
         action: "copy into",

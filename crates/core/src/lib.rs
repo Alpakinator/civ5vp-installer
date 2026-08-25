@@ -22,6 +22,7 @@
     clippy::unimplemented
 )]
 
+mod checkout;
 mod boundaries;
 mod claimed;
 mod configuration;
@@ -45,7 +46,7 @@ pub use boundaries::{
 pub use claimed::{ClaimedFile, ClaimedFolder, DeploymentTarget, GameFolders};
 pub use configuration::{
     BuildConfiguration, DllSource, Eui, Flavor, FortyThreeCivs, InstallConfiguration, InstallMode,
-    InstallationSource, LuaJitEngine, Version,
+    InstallationSource, LuaJitEngine, MenuTheme, Version,
 };
 pub use detect::{
     BrowseField, BrowseRequest, BrowseStart, DetectedGame, Detection, DocumentsFolder, FolderKind,
@@ -54,14 +55,15 @@ pub use detect::{
     validate_game_installation,
 };
 pub use error::{GameFolderProblem, InstallError, SourceItem};
-pub use fingerprint::{DllProvenance, dll_source_identity};
+pub use checkout::{CheckoutRef, current_ref};
+pub use fingerprint::{DllProvenance, dll_source_identity, label_in_sidecar};
 pub use install::{Core, InstallOutcome, UninstallOutcome};
 pub use modpack::available_extra_mods;
 pub use plan::Plan;
 pub use progress::{ProgressEvent, ProgressReporter, Stage};
 pub use replaced::{BackupStore, EngineOutcome, ReplacedFile, Restored};
 pub use settings::{AppDataStore, Settings, SettingsError, Startup, start_up};
-pub use versions::{UnofficialVersion, VersionCatalog};
+pub use versions::{SaveCompatibility, UnofficialVersion, VersionCatalog};
 
 /// The file name of the Built DLL, in the game's MODS Folder and in the build directory.
 pub const BUILT_DLL_FILE_NAME: &str = "CvGameCore_Expansion2.dll";
