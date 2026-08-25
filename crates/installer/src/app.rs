@@ -10,12 +10,14 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
+use std::time::{Duration, Instant};
 
 use civ5vp_core::{
-    AppDataStore, BrowseField, BrowseRequest, BuildConfiguration, Core, DllSource, Eui, Flavor,
-    FolderRejected, FortyThreeCivs, GameFolders, InstallConfiguration, InstallError, InstallMode,
-    InstallationSource, LuaJitEngine, ProgressEvent, ProgressReporter, SearchLocations, Settings,
-    Version, VersionCatalog, browse_start, home_directory, resolve_game_folders, start_up,
+    AppDataStore, BrowseField, BrowseRequest, BuildConfiguration, CheckoutRef, Core, DllSource,
+    Eui, Flavor, FolderRejected, FortyThreeCivs, GameFolders, InstallConfiguration, InstallError,
+    InstallMode, InstallationSource, LuaJitEngine, MenuTheme, ProgressEvent, ProgressReporter,
+    SaveCompatibility, SearchLocations, Settings, Version, VersionCatalog, browse_start,
+    home_directory, resolve_game_folders, start_up,
 };
 
 use crate::browse::{Browsing, FileSystemChoice};
@@ -29,6 +31,11 @@ use crate::{deco, placeholder, theme};
 /// the most to report. Pinning it to the window bottom instead was tried and rejected: at the
 /// design size it leaves too little for the configuration panels, which then clip mid-border.
 /// The page scrolls, so a fixed height here is always honoured, if sometimes below the fold.
+/// How often the Dev-mode branch line re-reads `HEAD`. Short enough that switching branch in
+/// another window and looking back here feels immediate; long enough that the cost is a file
+/// read a second, of a file the operating system already has in memory.
+const CHECKOUT_REF_POLL: Duration = Duration::from_secs(1);
+
 const MIN_ACTIVITY_LINES: f32 = 5.0;
 
 /// Presentation state, not domain state - deliberately not public.
@@ -154,6 +161,7 @@ pub struct InstallerApp {
     /// owns, so a player has to reach for it rather than inherit it. Public so the choice can
     /// be set without a click - the tests prefer clicking, but nothing here needs hiding.
     pub luajit: bool,
+    pub silent_menu: bool,
     build_configuration: BuildConfiguration,
     /// Whether the player asked for the DLL to be compiled even where a Release ships a
     /// ready-made one. Off by default: the shipped DLL is the same file, minutes sooner, and
@@ -187,6 +195,17 @@ pub struct InstallerApp {
     locations: SearchLocations,
     /// The file browser, while one is open. Presentation state: which window is up.
     browsing: Option<Browsing>,
+    /// The Version label the Build Fingerprint sidecar says is installed, and the Install Mode
+    /// it was read for. Cached rather than read per frame - it is a file on disk, and the
+    /// answer only moves when the folders, the mode, or an install does.
+    installed_version: Option<String>,
+    installed_version_for: Option<InstallMode>,
+    /// Which ref the Dev-mode checkout is on, the folder it was read for, and when it was last
+    /// looked at. Polled rather than cached outright: the developer switches branch in their
+    /// own git, which this has no way of being told about.
+    checkout_ref: Option<CheckoutRef>,
+    checkout_ref_for: String,
+    checkout_ref_read: Option<Instant>,
 }
 
 /// The first `max` characters of a commit summary, with an ellipsis when it was cut -
@@ -288,6 +307,7 @@ impl InstallerApp {
             flavor,
             forty_three_civs,
             luajit,
+            silent_menu,
             build_configuration,
             compile_dll,
             install_mode,
@@ -297,6 +317,7 @@ impl InstallerApp {
                 configuration.flavor.clone(),
                 configuration.forty_three_civs,
                 configuration.luajit == LuaJitEngine::LuaJit,
+                configuration.menu_theme == MenuTheme::Silent,
                 configuration.build_configuration,
                 configuration.dll_source == DllSource::AlwaysCompile,
                 configuration.install_mode,
@@ -305,6 +326,7 @@ impl InstallerApp {
             None => (
                 Flavor::suggested(),
                 FortyThreeCivs::Disabled,
+                false,
                 false,
                 BuildConfiguration::Release,
                 false,
@@ -344,6 +366,7 @@ impl InstallerApp {
             flavor,
             forty_three_civs,
             luajit,
+            silent_menu,
             build_configuration,
             compile_dll,
             install_mode,
@@ -355,6 +378,11 @@ impl InstallerApp {
             skinned: false,
             store_size: None,
             first_run_note,
+            installed_version: None,
+            installed_version_for: None,
+            checkout_ref: None,
+            checkout_ref_for: String::new(),
+            checkout_ref_read: None,
             update_check: None,
             newer_installer: None,
             locations: locations.clone(),
@@ -402,6 +430,7 @@ impl InstallerApp {
             forty_three_civs: FortyThreeCivs::Disabled,
             // A picture of a first run, and a first run never replaces the game's engine.
             luajit: false,
+            silent_menu: false,
             build_configuration: BuildConfiguration::Release,
             // A picture of the ordinary case: a Release install takes the DLL it ships.
             compile_dll: false,
@@ -414,6 +443,11 @@ impl InstallerApp {
             skinned: false,
             store_size: None,
             first_run_note: None,
+            installed_version: None,
+            installed_version_for: None,
+            checkout_ref: None,
+            checkout_ref_for: String::new(),
+            checkout_ref_read: None,
             update_check: None,
             newer_installer: None,
             // A preview never detects anything: the paths above are stated, not found.
@@ -679,6 +713,20 @@ impl InstallerApp {
             if engine.changed() {
                 chosen = true;
             }
+            // The second file the game owns. Same promise as the engine above - saved, and put
+            // back when the box is cleared - and the hover text names the one theme it touches,
+            // because "the main menu music" is four different files in this game and silencing
+            // the wrong one would look like the option did nothing.
+            let theme = ui
+                .checkbox(&mut self.silent_menu, "Silence the main menu music")
+                .on_hover_text(
+                    "Replaces Brave New World's main menu theme with silence. Only that one \
+                     theme, which is the one Vox Populi reaches. Your original file is saved, \
+                     and put back if you clear this box or uninstall.",
+                );
+            if theme.changed() {
+                chosen = true;
+            }
             ui.add_space(4.0);
             // How the selection reaches the game. Two radios, not a checkbox:
             // "as mods" and "as a modpack" are both real things a player asks for by name.
@@ -834,6 +882,30 @@ impl InstallerApp {
         }
     }
 
+    /// Show a [`egui::ScrollArea`] whose wheel events stop at its own edge.
+    ///
+    /// egui hands a wheel event to the nearest scroll area under the pointer, but only *consumes*
+    /// it when that area can actually move - `scroll_area.rs` clears the delta inside
+    /// `if scrolling_up || scrolling_down`. At either end of a nested area nothing is consumed,
+    /// the leftover falls through to the page behind, and the whole window lurches. Zeroing the
+    /// delta here makes the boundary a wall: which area scrolls is decided by where the pointer
+    /// is, not by how much room this one happened to have left.
+    ///
+    /// Only while the area has something to scroll. An area whose content fits is not a scrolling
+    /// space at all, and swallowing the wheel over it would turn it into a dead patch of the page.
+    fn keeping_the_wheel_inside<R>(
+        ui: &mut egui::Ui,
+        area: egui::ScrollArea,
+        add_contents: impl FnOnce(&mut egui::Ui) -> R,
+    ) -> R {
+        let output = area.show(ui, add_contents);
+        let has_room_to_scroll = output.content_size.y > output.inner_rect.height();
+        if has_room_to_scroll && ui.rect_contains_pointer(output.inner_rect) {
+            ui.input_mut(|input| input.smooth_scroll_delta = egui::Vec2::ZERO);
+        }
+        output.inner
+    }
+
     /// The Activity log, at the foot of the page.
     ///
     /// Its height is [`MIN_ACTIVITY_LINES`] lines of the style it actually renders in - not a
@@ -844,13 +916,15 @@ impl InstallerApp {
         let line = ui.text_style_height(&egui::TextStyle::Small) + ui.spacing().item_spacing.y;
         let room = line * MIN_ACTIVITY_LINES;
         deco::panel(ui, Some("Activity"), |ui| {
-            egui::ScrollArea::vertical()
-                .max_height(room)
-                // The default minimum (64) would override `room` and make the panel taller
-                // than the height it promises.
-                .min_scrolled_height(room)
-                .stick_to_bottom(true)
-                .show(ui, |ui| {
+            Self::keeping_the_wheel_inside(
+                ui,
+                egui::ScrollArea::vertical()
+                    .max_height(room)
+                    // The default minimum (64) would override `room` and make the panel taller
+                    // than the height it promises.
+                    .min_scrolled_height(room)
+                    .stick_to_bottom(true),
+                |ui| {
                     ui.set_min_width(ui.available_width());
                     for line in &self.activity {
                         ui.label(
@@ -859,7 +933,8 @@ impl InstallerApp {
                                 .color(theme::PARCHMENT_DIM),
                         );
                     }
-                });
+                },
+            );
         });
         ui.add_space(6.0);
     }
@@ -934,6 +1009,7 @@ impl InstallerApp {
         self.resolved =
             resolve(&self.game_folder, &self.documents_folder).map_err(|r| r.user_message());
         self.refresh_extra_mods();
+        self.installed_version_for = None;
         if self.resolved.is_ok() {
             self.remember();
         }
@@ -1022,8 +1098,10 @@ impl InstallerApp {
                     if row.open {
                         crate::reveal::folder(Path::new(self.source_folder.trim()));
                     }
+                    self.checkout_ref_line(ui);
                 }
             }
+            self.save_compatibility_banner(ui);
         });
         if chosen && self.resolved.is_ok() {
             self.remember();
@@ -1031,6 +1109,85 @@ impl InstallerApp {
         if browse {
             self.open_browser(BrowseField::DevCheckout);
         }
+    }
+
+    /// Which branch the Dev-mode checkout is on, under the folder field.
+    ///
+    /// The folder path does not say, and a developer with several checkouts - or one that has
+    /// been left on a branch they forgot about - has no other way to see it before pressing
+    /// Install.
+    ///
+    /// Re-read on a timer rather than remembered, because the branch changes in the
+    /// developer's own git and nothing tells this program about it. `HEAD` is a few dozen
+    /// bytes and warm in the page cache, so once a second costs nothing worth counting.
+    ///
+    /// It names the branch rather than claiming to install it, and the difference is the
+    /// point: Dev mode
+    /// builds the working tree, so uncommitted changes go in too and the branch name is
+    /// context rather than a complete description. The installer never checks anything out
+    /// here; switching branches stays the developer's own business, in their own git.
+    fn checkout_ref_line(&mut self, ui: &mut egui::Ui) {
+        let folder = self.source_folder.trim();
+        let folder_changed = self.checkout_ref_for != folder;
+        let gone_stale = self
+            .checkout_ref_read
+            .is_none_or(|read| read.elapsed() >= CHECKOUT_REF_POLL);
+        if folder_changed || gone_stale {
+            self.checkout_ref = (!folder.is_empty())
+                .then(|| civ5vp_core::current_ref(Path::new(folder)))
+                .flatten();
+            self.checkout_ref_for = folder.to_owned();
+            self.checkout_ref_read = Some(Instant::now());
+        }
+        // Only while this window is in front. Switching branch happens in another program, so
+        // the moment that matters is coming back to this one - and egui repaints on regaining
+        // focus anyway, which re-reads before the eye lands on the line. Polling on into the
+        // background would spend wake-ups on a question nobody is looking at the answer to.
+        if ui.ctx().input(|input| input.focused) {
+            ui.ctx().request_repaint_after(CHECKOUT_REF_POLL);
+        }
+        let Some(reference) = &self.checkout_ref else {
+            return;
+        };
+        ui.add_space(2.0);
+        ui.label(
+            egui::RichText::new(reference.describe())
+                .small()
+                .color(theme::PARCHMENT_DIM),
+        );
+    }
+
+    /// Say so when installing the chosen Version would leave the player's saves behind.
+    ///
+    /// Passive: it states the fact and does not block, gate, or ask for a click. Nothing here
+    /// can protect those saves - they live in the player's Documents and the installer never
+    /// touches them - so the only honest thing to do is say what is true and let them decide.
+    ///
+    /// Drawn beside the picker rather than on the results screen, so it arrives while it can
+    /// still change a mind, not after a twenty-minute build.
+    fn save_compatibility_banner(&mut self, ui: &mut egui::Ui) {
+        if self.installed_version_for != Some(self.install_mode) {
+            self.installed_version = match &self.resolved {
+                Ok(folders) => self
+                    .core
+                    .installed_version_label(folders, self.install_mode),
+                Err(_) => None,
+            };
+            self.installed_version_for = Some(self.install_mode);
+        }
+        let Some(installed) = &self.installed_version else {
+            return;
+        };
+        let chosen = self.configuration().source.version_label();
+        let Some(message) = SaveCompatibility::between(installed, &chosen).message() else {
+            return;
+        };
+        ui.add_space(6.0);
+        // Gold, not ember: ember is this page's colour for something being wrong, and nothing
+        // here is wrong. Changing version is a normal thing to do that happens to cost saves.
+        deco::notice(ui, theme::GOLD, |ui| {
+            ui.label(&message);
+        });
     }
 
     /// The Version combo and the states around it. Returns whether the pick changed.
@@ -1380,7 +1537,9 @@ impl InstallerApp {
                                 self.store_size = None;
                                 self.activity.push(
                                     "Storage: Cleared the installer's stored data. The next \
-                                     install will download and set up everything again."
+                                     install will download and set up everything again. Your \
+                                     saved copy of the game's Lua engine was kept - it is the \
+                                     only one there is."
                                         .to_owned(),
                                 );
                             }
@@ -1485,6 +1644,11 @@ impl InstallerApp {
                 LuaJitEngine::LuaJit
             } else {
                 LuaJitEngine::Stock
+            },
+            menu_theme: if self.silent_menu {
+                MenuTheme::Silent
+            } else {
+                MenuTheme::Stock
             },
             // Sent as chosen, even when Dev mode is off and the checkbox is not drawn:
             // which Build Configurations are legal with which sources is the Core's ruling,
@@ -1619,6 +1783,8 @@ impl InstallerApp {
                 // A finished Deployment is the moment the first-run warning can stop
                 // being true - ask again rather than guess.
                 self.first_run_note = self.core.first_run_expectation();
+                // An install has just changed what is deployed, so the cached label is stale.
+                self.installed_version_for = None;
                 // The configuration that worked is the one worth starting from next time.
                 self.remember();
                 true
@@ -1776,10 +1942,10 @@ fn folder_field(ui: &mut egui::Ui, caption: &str, value: &mut String) -> FolderR
         let browse = deco::button(
             ui,
             true,
-            egui::Button::new(egui::RichText::new(BROWSE_LABEL).small())
+            egui::Button::new(egui::RichText::new(CHOOSE_LABEL).small())
                 .min_size(egui::vec2(BROWSE_BUTTON_WIDTH, BROWSE_BUTTON_HEIGHT)),
         );
-        let spoken = format!("{BROWSE_LABEL} for the {caption}");
+        let spoken = format!("{CHOOSE_LABEL} the {caption}");
         ui.ctx().accesskit_node_builder(browse.id, |node| {
             node.set_label(spoken.clone());
         });
@@ -1811,7 +1977,12 @@ fn folder_field(ui: &mut egui::Ui, caption: &str, value: &mut String) -> FolderR
 const OPEN_LABEL: &str = "Open";
 
 /// What the button says on screen. The accessible name adds the folder - see [`folder_field`].
-const BROWSE_LABEL: &str = "Browse";
+///
+/// `Choose` rather than `Browse`, because it sits beside `Open` and the two were reading as
+/// the same offer: both are small buttons next to a path that make a window full of folders
+/// appear. `Browse` names the activity; `Choose` names the outcome, which is the half that
+/// differs - this one replaces the path in the box, `Open` only shows what is already at it.
+const CHOOSE_LABEL: &str = "Choose";
 
 /// Ask the Core what a pair of typed-in folders means, logging the detail either way.
 ///

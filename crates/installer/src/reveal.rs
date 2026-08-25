@@ -19,10 +19,7 @@ use std::process::{Command, Stdio};
 /// which nothing here can know.
 pub fn folder(folder: &Path) -> bool {
     if !folder.is_dir() {
-        crate::log_detail(&format!(
-            "not opening {}: no such folder",
-            folder.display()
-        ));
+        crate::log_detail(&format!("not opening {}: no such folder", folder.display()));
         return false;
     }
     let (program, args) = opener();

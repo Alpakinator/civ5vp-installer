@@ -825,6 +825,7 @@ fn a_remembered_development_version_opens_on_the_newest_release() {
         install_mode: civ5vp_core::InstallMode::Mods,
         extra_mods: Vec::new(),
         luajit: LuaJitEngine::Stock,
+        menu_theme: civ5vp_core::MenuTheme::Stock,
         dll_source: civ5vp_core::DllSource::ShippedWhenCurrent,
     });
     store.save(&settings).unwrap();
@@ -863,6 +864,7 @@ fn the_newest_release_is_always_shown_as_the_latest_one() {
         install_mode: civ5vp_core::InstallMode::Mods,
         extra_mods: Vec::new(),
         luajit: LuaJitEngine::Stock,
+        menu_theme: civ5vp_core::MenuTheme::Stock,
         dll_source: civ5vp_core::DllSource::ShippedWhenCurrent,
     });
     store.save(&settings).unwrap();
@@ -1070,6 +1072,24 @@ fn clicking_uninstall_restores_an_unmodded_game() {
 ///
 /// That a folder which is not there is never opened is covered where the decision is made,
 /// in `reveal`'s own tests.
+/// Both choices that overwrite a file the game owns are offered, and named so a player can
+/// tell what each one touches. They sit together because they carry the same promise: your
+/// original is saved and put back when the box is cleared.
+#[test]
+fn the_two_game_file_choices_are_both_offered() {
+    let game = TempGame::new();
+    let mut harness = harness_over(game.launch(&game.locations()));
+    harness.step();
+
+    for label in ["Use the LuaJIT engine", "Silence the main menu music"] {
+        assert!(
+            harness.query_by_label(label).is_some(),
+            "{label} should be on the page; visible: {:?}",
+            visible_labels(&mut harness),
+        );
+    }
+}
+
 #[test]
 fn every_folder_row_offers_open_beside_browse() {
     let game = TempGame::new();
@@ -1080,7 +1100,7 @@ fn every_folder_row_offers_open_beside_browse() {
         "Civilization V game folder",
         "Civilization 5 Documents folder",
     ] {
-        for verb in ["Browse for the", "Open the"] {
+        for verb in ["Choose the", "Open the"] {
             let label = format!("{verb} {caption}");
             assert!(
                 harness.query_by_label(&label).is_some(),
@@ -1109,7 +1129,7 @@ fn browsing_for_the_game_folder_opens_a_file_browser() {
     );
 
     harness
-        .get_by_label("Browse for the Civilization V game folder")
+        .get_by_label("Choose the Civilization V game folder")
         .click();
     harness.step();
     harness.step();
@@ -1135,7 +1155,7 @@ fn cancelling_the_browser_leaves_the_folder_as_it_was() {
     harness.step();
 
     harness
-        .get_by_label("Browse for the Civilization 5 Documents folder")
+        .get_by_label("Choose the Civilization 5 Documents folder")
         .click();
     harness.step();
     harness.step();
@@ -1176,7 +1196,7 @@ fn browsing_from_a_path_that_is_gone_fills_in_what_detection_found() {
     harness.step();
 
     harness
-        .get_by_label("Browse for the Civilization 5 Documents folder")
+        .get_by_label("Choose the Civilization 5 Documents folder")
         .click();
     harness.step();
     harness.step();
