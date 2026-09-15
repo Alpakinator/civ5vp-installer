@@ -147,14 +147,21 @@ fn a_modpack_deployment_builds_the_pack_and_leaves_mods_alone() {
         game.read("DLC/VP_MODPACK/Override/CIV5Units_Mongol.xml"),
         TEXT_DUMP_MARKER,
     );
-    // What crossed the seam: the two update files, in activation order.
+    // What crossed the seam: the Text Folder input, then mod updates in activation order.
     let jobs = jobs.lock().unwrap();
     let updates: Vec<String> = jobs[0]
         .updates
         .iter()
         .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
         .collect();
-    assert_eq!(updates, ["DefinesChanges.sql", "BalanceChanges.sql"]);
+    assert_eq!(
+        updates,
+        [
+            "VPUI_tips_en_us.xml",
+            "DefinesChanges.sql",
+            "BalanceChanges.sql"
+        ]
+    );
     // The user's rule: MODS untouched, and not reported as removed.
     assert_eq!(game.read("MODS/(2) Vox Populi/existing.txt"), "left alone");
     assert_eq!(outcome.removed, Vec::new());
@@ -334,6 +341,7 @@ fn a_picked_extra_mod_is_baked_in_after_the_managed_set() {
     assert_eq!(
         updates,
         [
+            "VPUI_tips_en_us.xml",
             "DefinesChanges.sql",
             "BalanceChanges.sql",
             "MoreBonuses.sql"

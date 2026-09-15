@@ -193,6 +193,7 @@ impl Core {
             let resolved = self.resolve_sources(plan, &source.root)?;
             Some(crate::modpack::assemble(
                 plan,
+                &source.root,
                 &resolved,
                 &built_dll,
                 &self.work_dir,

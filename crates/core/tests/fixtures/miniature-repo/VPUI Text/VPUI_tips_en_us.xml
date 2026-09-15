@@ -1,1 +1,7 @@
-<GameData><Tips/></GameData>
+<GameData>
+  <Language_en_US>
+    <Replace Tag="TXT_KEY_VPUI_TITLE_TIP"><Text>Tip</Text></Replace>
+    <Replace Tag="TXT_KEY_VPUI_TIP_26"><Text>A fixture loading tip.</Text></Replace>
+    <Replace Tag="TXT_KEY_EUI_PROMOTION_FLAGS_DISPLAY"><Text>Promotion Flags</Text></Replace>
+  </Language_en_US>
+</GameData>

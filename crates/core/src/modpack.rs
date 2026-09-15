@@ -136,6 +136,7 @@ const TEXT_BASE_FILE_NAME: &str = "Localization-Merged.db";
 /// exactly what a Mods-mode Deployment would have put in MODS.
 pub(crate) fn assemble(
     plan: &Plan,
+    source_root: &Path,
     resolved: &[(usize, PathBuf)],
     built_dll: &Path,
     work_dir: &Path,
@@ -208,9 +209,16 @@ pub(crate) fn assemble(
     stage_ui(&stage, &staged_mods, &plan.folders, progress)?;
     stage_overrides(&stage, &plan.folders)?;
 
-    // The databases: the mods' update files in activation order, applied to copies of the
-    // snapshot and dumped into the Override folder.
-    let mut updates = Vec::new();
+    // The in-game Maker sees Documents/Text in its merged localization database. Our
+    // saved base predates this Deployment, so it may lack VPUI's tips and EUI option
+    // labels (or hold an older Version's). Bake the selected source's Claimed Files into
+    // the dump too: distributing the DLC must not depend on the creator's Text folder.
+    // Apply these before mod actions, as the game does, so modmods can override them.
+    let mut updates: Vec<PathBuf> = plan
+        .files
+        .iter()
+        .map(|file| source_root.join(file.source_path()))
+        .collect();
     for staged in &staged_mods {
         collect_database_updates(staged, &mut updates, progress)?;
     }

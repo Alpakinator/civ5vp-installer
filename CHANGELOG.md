@@ -4,6 +4,16 @@ Notable changes, newest first. Versions follow [semantic versioning](https://sem
 and each one is the tag the [releases page](https://github.com/Alpakinator/civ5vp-installer/releases)
 publishes binaries for.
 
+## 0.1.6 - 2026-09-15
+
+### Fixed
+
+- **Distributed Modpacks could show raw text keys for loading tips and EUI options.**
+  Modpack builds now merge the selected Version's `VPUI_tips_en_us.xml` into their
+  localization dump, including when reusing a saved base from an older install.
+  Rebuild and redistribute affected packs to include the missing text.
+  See [upstream issue #13364](https://github.com/LoneGazebo/Community-Patch-DLL/issues/13364).
+
 ## 0.1.5 - 2026-08-25
 
 ### Fixed
