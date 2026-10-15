@@ -31,6 +31,7 @@ pub(crate) fn find(mod_root: &Path) -> Result<Option<PathBuf>, InstallError> {
 
 /// The `id="…"` of the root `<Mod>` element.
 pub(crate) fn mod_id(modinfo: &str) -> Option<String> {
+    let modinfo = without_comments(modinfo);
     let start = modinfo.find("<Mod")?;
     let rest = &modinfo[start + "<Mod".len()..];
     let end = rest.find('>')?;
@@ -45,39 +46,73 @@ pub(crate) struct EntryPoint {
 
 /// Every `<EntryPoint type="..." file="...">` in document order.
 pub(crate) fn entry_points(modinfo: &str) -> Vec<EntryPoint> {
+    let modinfo = without_comments(modinfo);
     let mut points = Vec::new();
-    let mut rest = modinfo;
-    while let Some(start) = rest.find("<EntryPoint") {
-        rest = &rest[start + "<EntryPoint".len()..];
-        let Some(end) = rest.find('>') else {
-            break;
-        };
-        let attributes = &rest[..end];
-        if let (Some(addin_type), Some(file)) = (
-            attribute_value(attributes, "type"),
-            attribute_value(attributes, "file"),
-        ) {
-            points.push(EntryPoint { addin_type, file });
+    for section in element_payloads_raw(&modinfo, "EntryPoints") {
+        let mut rest = section;
+        while let Some(start) = rest.find("<EntryPoint") {
+            rest = &rest[start + "<EntryPoint".len()..];
+            let Some(end) = rest.find('>') else {
+                break;
+            };
+            let attributes = &rest[..end];
+            if let (Some(addin_type), Some(file)) = (
+                attribute_value(attributes, "type"),
+                attribute_value(attributes, "file"),
+            ) {
+                points.push(EntryPoint { addin_type, file });
+            }
+            rest = &rest[end + 1..];
         }
-        rest = &rest[end + 1..];
     }
     points
 }
 
-/// Every `<UpdateDatabase>…</UpdateDatabase>` payload in document order.
+/// Active database actions only, in document order. Comments and other lifecycle
+/// actions (such as OnModDeactivated) must not change the baked database.
 pub(crate) fn update_database_entries(modinfo: &str) -> Vec<String> {
-    element_payloads(modinfo, "UpdateDatabase")
+    let modinfo = without_comments(modinfo);
+    element_payloads_raw(&modinfo, "Actions")
+        .into_iter()
+        .flat_map(|actions| element_payloads_raw(actions, "OnModActivated"))
+        .flat_map(|active| element_payloads_raw(active, "UpdateDatabase"))
+        .map(unescape_xml)
+        .collect()
 }
 
 /// Every `<File …>…</File>` payload - the manifest of what the game will load. The game
 /// ignores anything in the mod folder that is not listed here, which is exactly what the
 /// Dev-mode validation warns about.
 pub(crate) fn listed_files(modinfo: &str) -> Vec<String> {
-    element_payloads(modinfo, "File")
+    let modinfo = without_comments(modinfo);
+    element_payloads_raw(&modinfo, "Files")
+        .into_iter()
+        .flat_map(|files| element_payloads_raw(files, "File"))
+        .map(unescape_xml)
+        .collect()
+}
+
+/// Comments often contain disabled actions or examples. They are not manifest data.
+fn without_comments(xml: &str) -> std::borrow::Cow<'_, str> {
+    if !xml.contains("<!--") {
+        return std::borrow::Cow::Borrowed(xml);
+    }
+    let mut result = String::with_capacity(xml.len());
+    let mut rest = xml;
+    while let Some(start) = rest.find("<!--") {
+        result.push_str(&rest[..start]);
+        let comment = &rest[start + 4..];
+        let Some(end) = comment.find("-->") else {
+            return std::borrow::Cow::Owned(result);
+        };
+        rest = &comment[end + 3..];
+    }
+    result.push_str(rest);
+    std::borrow::Cow::Owned(result)
 }
 
 /// The text payloads of every `<name …>payload</name>` element, in document order.
-fn element_payloads(modinfo: &str, name: &str) -> Vec<String> {
+fn element_payloads_raw<'a>(modinfo: &'a str, name: &str) -> Vec<&'a str> {
     let open = format!("<{name}");
     let close = format!("</{name}>");
     let mut entries = Vec::new();
@@ -104,7 +139,9 @@ fn element_payloads(modinfo: &str, name: &str) -> Vec<String> {
         let Some(end) = rest.find(&close) else {
             break;
         };
-        let payload = unescape_xml(rest[..end].trim());
+        // Decode only the final text payload, never an enclosing XML section: decoding
+        // early could turn an escaped example into a real action tag.
+        let payload = rest[..end].trim();
         if !payload.is_empty() {
             entries.push(payload);
         }

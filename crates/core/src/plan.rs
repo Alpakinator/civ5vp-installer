@@ -93,6 +93,38 @@ impl Plan {
     ) -> Result<Self, InstallError> {
         folders.check()?;
 
+        // These are folder names, never paths. Settings and callers of the headless Core
+        // can bypass the picker; a traversal would escape staging, and duplicates would
+        // run a mod's SQL twice. Apply Windows name rules on Linux too.
+        if configuration.install_mode == InstallMode::Modpack {
+            for (index, name) in configuration.extra_mods.iter().enumerate() {
+                if name.is_empty()
+                    || name.ends_with(['.', ' '])
+                    || name
+                        .chars()
+                        .any(|c| c.is_control() || "<>:\"/\\|?*".contains(c))
+                {
+                    return Err(InstallError::UnsupportedConfiguration {
+                        message: format!(
+                            "The extra mod \"{name}\" must be a folder directly inside MODS. Select it again from the mod list."
+                        ),
+                        detail: format!("extra mod is not a portable folder name: {name:?}"),
+                    });
+                }
+                if configuration.extra_mods[..index]
+                    .iter()
+                    .any(|other| other.eq_ignore_ascii_case(name))
+                {
+                    return Err(InstallError::UnsupportedConfiguration {
+                        message: format!(
+                            "The extra mod \"{name}\" is selected more than once. Select each mod only once."
+                        ),
+                        detail: format!("duplicate extra mod folder: {name:?}"),
+                    });
+                }
+            }
+        }
+
         // A Debug DLL is a mod developer's tool. Outside Dev mode there is no way to choose
         // it, and a remembered or hand-edited configuration that says otherwise is refused
         // here rather than quietly built.

@@ -393,3 +393,126 @@ fn uninstall_removes_the_modpack() {
     assert!(!game.game_root().join("DLC/VP_MODPACK").exists());
     assert!(outcome.removed.contains(&ClaimedFolder::Modpack));
 }
+
+#[test]
+fn commented_and_inactive_manifest_actions_do_not_enter_the_modpack() {
+    let game = modpack_game();
+    game.plant(
+        "MODS/An extra mod/Extra.modinfo",
+        "<Mod id=\"extra\" version=\"1\">
+         <!-- <Actions><OnModActivated><UpdateDatabase>Disabled.sql</UpdateDatabase></OnModActivated></Actions> -->
+         <Actions>
+           <OnModActivated><UpdateDatabase>Active.sql</UpdateDatabase></OnModActivated>
+           <OnModDeactivated><UpdateDatabase>Cleanup.sql</UpdateDatabase></OnModDeactivated>
+         </Actions>
+         <EntryPoints>
+           <!-- <EntryPoint type=\"InGameUIAddin\" file=\"DisabledPanel.lua\"/> -->
+           <EntryPoint type=\"InGameUIAddin\" file=\"ActivePanel.lua\"/>
+         </EntryPoints></Mod>",
+    );
+    for file in [
+        "Active.sql",
+        "Disabled.sql",
+        "Cleanup.sql",
+        "ActivePanel.lua",
+        "DisabledPanel.lua",
+    ] {
+        game.plant(&format!("MODS/An extra mod/{file}"), "-- fixture");
+    }
+    let (assembler, jobs) = FixtureModpackAssembler::new();
+    let core = core_over(&game, assembler);
+    let mut configuration = vox_populi_modpack();
+    configuration.extra_mods = vec!["An extra mod".to_owned()];
+    let plan = core.plan(&configuration, &game.folders()).unwrap();
+    core.execute(&plan, &ProgressReporter::silent()).unwrap();
+    let jobs = jobs.lock().unwrap();
+    let names: Vec<_> = jobs[0]
+        .updates
+        .iter()
+        .map(|p| p.file_name().unwrap().to_string_lossy())
+        .collect();
+    assert!(names.iter().any(|n| n == "Active.sql"));
+    assert!(
+        !names
+            .iter()
+            .any(|n| n == "Disabled.sql" || n == "Cleanup.sql"),
+        "{names:?}"
+    );
+    let ui = game.read("DLC/VP_MODPACK/UI/InGame.lua");
+    assert!(ui.contains("\"ActivePanel\""));
+    assert!(!ui.contains("DisabledPanel"));
+}
+
+#[test]
+fn a_differently_cased_ui_override_is_the_one_that_receives_addin_hooks() {
+    let game = modpack_game();
+    game.plant(
+        "MODS/An extra mod/Extra.modinfo",
+        "<Mod id=\"extra\" version=\"1\"/>",
+    );
+    game.plant(
+        "MODS/An extra mod/ingame.lua",
+        "-- extra mod InGame override\n",
+    );
+    let core = core_over(&game, FixtureModpackAssembler::ignored());
+    let mut configuration = vox_populi_modpack();
+    configuration.extra_mods = vec!["An extra mod".to_owned()];
+    let plan = core.plan(&configuration, &game.folders()).unwrap();
+    core.execute(&plan, &ProgressReporter::silent()).unwrap();
+    let ui = game.read("DLC/VP_MODPACK/UI/InGame.lua");
+    assert!(ui.starts_with("-- extra mod InGame override"));
+    assert!(ui.contains("\"PlotHelpManager\""));
+    let ui_files = std::fs::read_dir(game.folders().dlc.join("VP_MODPACK/UI")).unwrap();
+    assert_eq!(
+        ui_files
+            .filter(|e| e
+                .as_ref()
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .eq_ignore_ascii_case("InGame.lua"))
+            .count(),
+        1
+    );
+    assert!(
+        !game
+            .folders()
+            .dlc
+            .join("VP_MODPACK/Mods/An extra mod/ingame.lua")
+            .exists()
+    );
+}
+
+#[test]
+fn extra_mods_are_distinct_folder_names_not_paths() {
+    let game = modpack_game();
+    let core = core_over(&game, FixtureModpackAssembler::ignored());
+    for names in [
+        vec!["../outside"],
+        vec!["..\\outside"],
+        vec!["/tmp/outside"],
+        vec!["C:\\outside"],
+        vec!["."],
+        vec![".."],
+        vec![""],
+        vec!["An extra mod", "An extra mod"],
+        vec!["Extra", "extra"],
+    ] {
+        let mut configuration = vox_populi_modpack();
+        configuration.extra_mods = names.iter().map(|s| (*s).to_owned()).collect();
+        assert!(
+            core.plan(&configuration, &game.folders()).is_err(),
+            "accepted {names:?}"
+        );
+    }
+}
+
+#[test]
+fn non_xml_unicode_asset_names_do_not_crash_modpack_assembly() {
+    let game = modpack_game();
+    game.plant("DLC/Expansion2/图图", "not GameData");
+    let core = core_over(&game, FixtureModpackAssembler::ignored());
+    let plan = core.plan(&vox_populi_modpack(), &game.folders()).unwrap();
+    core.execute(&plan, &ProgressReporter::silent()).unwrap();
+    assert_eq!(game.read("DLC/Expansion2/图图"), "not GameData");
+}

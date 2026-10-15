@@ -298,7 +298,7 @@ fn table_exists(conn: &Connection, table: &str) -> Result<bool, String> {
     // languages are plain - and empty - tables.
     let count: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type IN ('table', 'view') AND name = ?1",
+            "SELECT COUNT(*) FROM sqlite_master WHERE type IN ('table', 'view') AND name = ?1 COLLATE NOCASE",
             [table],
             |row| row.get(0),
         )

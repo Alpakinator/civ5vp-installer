@@ -332,10 +332,19 @@ fn stage_ui(
         let mut found = Vec::new();
         find_files_named(staged, &UI_ENTRY_FILES.map(|(name, _)| name), &mut found)?;
         for file in found {
-            let Some(name) = file.file_name() else {
+            let Some(name) = file.file_name().and_then(|name| name.to_str()) else {
                 continue;
             };
-            tree::copy_file(&file, &ui.join(name))?;
+            let Some((canonical_name, _)) = UI_ENTRY_FILES
+                .iter()
+                .find(|(canonical, _)| canonical.eq_ignore_ascii_case(name))
+            else {
+                continue;
+            };
+            // Windows and the game's VFS ignore case; Linux's filesystem does not.
+            // Replace the canonical base copy so the hooks go onto this override,
+            // rather than leaving both InGame.lua and ingame.lua in the pack.
+            tree::copy_file(&file, &ui.join(canonical_name))?;
             tree::remove_file_if_present(&file)?;
         }
     }
@@ -400,8 +409,9 @@ fn empty_gamedata_files_under(dir: &Path, overrides: &Path) -> Result<(), Instal
                 continue;
             }
             empty_gamedata_files_under(&entry, overrides)?;
-        } else if name.len() >= 4
-            && name[name.len() - 4..].eq_ignore_ascii_case(".xml")
+        } else if entry
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("xml"))
             && holds_gamedata(&entry)
         {
             write_file(&overrides.join(name), "")?;

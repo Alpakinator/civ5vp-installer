@@ -63,4 +63,3 @@ passes with the fix; the full fast suite passes (431 tests, 24 ignored), and
 the real Release-5.4.6 Text File into a copy of the real game localization database
 also restored the reported keys through its `Language_en_US` view and triggers.
 That probe used a fixture gameplay database; it was not a full real VP merge.
-`cargo build --release` also passed, and the resulting installer's `--help` runs.

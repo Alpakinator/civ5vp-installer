@@ -391,6 +391,20 @@ fn language_tables_route_to_the_localization_database() {
 }
 
 #[test]
+fn language_table_spelling_does_not_silently_drop_translations_from_the_dump() {
+    let merged = run_merge(
+        "",
+        "CREATE TABLE language_fr_FR (Tag text PRIMARY KEY, Text text);",
+        &[("French.xml", "<GameData><Language_FR_FR><Replace Tag=\"TXT_KEY_TEST\"><Text>Bonjour</Text></Replace></Language_FR_FR></GameData>")],
+    ).unwrap();
+    assert!(
+        merged.text.contains("TXT_KEY_TEST"),
+        "translation was applied but lost from the dump"
+    );
+    assert!(merged.text.contains("Bonjour"));
+}
+
+#[test]
 fn a_duplicate_row_is_skipped_with_a_progress_line() {
     let merged = run_merge(
         "CREATE TABLE Defines (Name text PRIMARY KEY, Value integer); \

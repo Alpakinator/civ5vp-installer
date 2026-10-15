@@ -32,6 +32,14 @@ publishes binaries for.
   at a time, as the game's API tables are - measured against the game's own engine. Tables
   written out whole in a constructor still often differ. Install again with LuaJIT ticked to
   get the fixed engine.
+- Modpack assembly ignores commented-out manifest actions and actions outside
+  `OnModActivated`, and excludes commented-out UI entry points.
+- UI overrides use consistent filenames on Linux so differently cased source names
+  receive the correct addin hooks without leaving duplicate files in the Modpack.
+- Localization dumps find language tables regardless of ASCII capitalization.
+- Invalid or duplicate extra-mod folder names are rejected before assembly, avoiding
+  paths outside staging and repeated database updates.
+- Non-XML asset names containing multibyte characters no longer crash Modpack assembly.
 
 ## 0.1.6 - 2026-09-15
 
