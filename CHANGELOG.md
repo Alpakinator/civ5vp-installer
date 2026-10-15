@@ -4,6 +4,20 @@ Notable changes, newest first. Versions follow [semantic versioning](https://sem
 and each one is the tag the [releases page](https://github.com/Alpakinator/civ5vp-installer/releases)
 publishes binaries for.
 
+## Unreleased
+
+### Fixed
+
+- **With LuaJIT on, a new game could start with no civilizations and end at once in defeat.**
+  The map script died part-way on a missing `Map`, `YieldTypes` or `DirectionTypes`. Vox
+  Populi's Lua setup code drops the first game API field it is handed, and which field comes
+  first depends on table order, which Lua leaves unspecified. The game's own Lua always hands
+  over the same harmless field, but LuaJIT 2.1 shuffles that order on every launch. The LuaJIT
+  the installer builds now orders string keys as the game's Lua does in tables filled one key
+  at a time, as the game's API tables are - measured against the game's own engine. Tables
+  written out whole in a constructor still often differ. Install again with LuaJIT ticked to
+  get the fixed engine.
+
 ## 0.1.6 - 2026-09-15
 
 ### Fixed

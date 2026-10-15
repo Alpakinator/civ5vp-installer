@@ -287,3 +287,48 @@ smallest valid border and equals `#t` exactly for any table without holes.
 Measured against PUC-Lua 5.1.5 and stock LuaJIT across every shape of insert (append, at 1, in
 the middle, at `#t+1`, past the end, into a hole), the only case whose resulting array differs
 is the broken one, and there the patched engine matches PUC byte for byte.
+
+**String keys iterate in the order PUC-Lua 5.1 visits them.** Two edits, `PUC_STRING_SLOTS` in
+`lj_str.c` and `PUC_REHASH_ORDER` in `lj_tab.c`. The order `next` visits keys in is undefined,
+and for string keys stock LuaJIT 2.1's is also *random*: a string's slot comes from an ID drawn
+from a counter that is reseeded from the OS random source every fewer than 256 strings, so the
+order changes every time the game starts. PUC's is a fixed function of the keys. Vox Populi's
+Lua registration framework, embedded in `CvLuaSupport.cpp`, depends on PUC's: it watches the
+game copy its API into each new Lua context with `lua_next`, and one of its listeners
+(`registrationListenerPotentiallyMatchmakingLib`) drops the field that arrives first. PUC always
+hands it the same harmless field. Stock LuaJIT hands it a random one of about seventy, and when
+that is `Map`, `YieldTypes` or `DirectionTypes` the map script fails, no civilization is given a
+starting plot, and the game opens on a defeat. The game's logs from three such failures in one
+session show each dying on a different one of those three. The first edit gives `sid` PUC's string
+hash, so a string's main position is PUC's. The second re-inserts a growing table's keys last
+slot first, as PUC's `resize` does, so collisions settle where PUC settles them. Neither is
+enough alone, and LuaJIT's other insertion rules are already PUC's.
+
+Measured by building the same tables in both engines and comparing the full `next` order: the
+game's own `lua51_Win32.dll`, and the engine built by `real_luajit.rs`, both run under wine, with
+1000 tables of each shape. "Assignment" covers seven shapes: keys added one at a time (the way
+the game's API table is built), `rawset`, a copy made with `pairs`, deletions mixed with
+insertions, deleted keys set again, `nil` assigned to absent keys, and keys whose PUC hashes
+collide on purpose:
+
+| Tables built by | Stock LuaJIT | Patched | Note |
+| --- | --- | --- | --- |
+| assignment, all seven shapes | 0.5-2.4% | **100%** | |
+| the game's API names, first key over 10 launches | 4 different | same as stock | |
+| table constructors (`{a = 1, b = 2}`) | 3.8% | 34% | not covered |
+| string keys mixed with integer keys | 2.0% | 7.5% | not covered |
+
+The two rows marked "not covered" are deliberately left alone. Constructors are built from a
+template sized while parsing, where PUC sizes the table first, and integer keys hash differently
+inside the JIT as well as in C. Both are *deterministic*, though, as they were in every LuaJIT
+build before 2.1's random seeding, so a mod hurt by either would fail every time and be found,
+not fail now and then. Neither has been seen to break anything. The one limit on the patched
+rows is PUC's own: 5.1 marks a deleted key dead when the GC passes it, so its order for a table
+with deletions can depend on when the GC ran. A 32-bit PUC 5.1.4 built from source disagrees
+with the game's engine on 2 of 1000 such tables for that reason alone, so no engine can promise
+to match those.
+
+Cost, timed natively against the unpatched engine on the same machine: string interning, field
+access and table-heavy loops are unchanged within noise. Tables keyed by long strings that differ
+only in characters PUC's hash skips are about twice as slow, as they are in PUC, and still about
+nine times faster than PUC itself.

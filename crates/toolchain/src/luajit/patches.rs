@@ -79,8 +79,98 @@ const PREFIX_RELATIVE_INSERT: SourcePatch = SourcePatch {
     marker: "Civ 5 VP Installer: measure the contiguous prefix",
 };
 
+/// A string key lands in the hash slot PUC-Lua 5.1 gives it.
+///
+/// Lua 5.1 does not say in what order `next` - and so `pairs`, and the C API's `lua_next` -
+/// visits a table's keys. PUC-Lua's answer for string keys is a function of the keys alone: a
+/// string's slot is a hash of its characters. LuaJIT 2.1's answer is not even that. It slots a
+/// string by `sid`, an ID taken from a counter that is reseeded from the operating system's
+/// random source every fewer than 256 strings, so the same table built the same way iterates
+/// in a different order every time the game runs.
+///
+/// Vox Populi depends on PUC's answer without meaning to. The game copies its API into each
+/// new Lua context with `lua_next`, and the registration framework VP embeds in
+/// `CvLuaSupport.cpp` watches that copy through a chain of `__newindex` listeners. The one
+/// waiting after `UI` (`registrationListenerPotentiallyMatchmakingLib`) swaps itself out and
+/// never stores the field that woke it, so whichever API field `lua_next` returns first is
+/// lost. Under PUC-Lua that is always the same field, and not one a map script reads. Under
+/// stock LuaJIT it is a draw among some seventy, and when it draws `Map`, `YieldTypes` or
+/// `DirectionTypes` the map script dies part-way, no civilization gets a starting plot, and
+/// the game opens on a defeat.
+///
+/// The fix gives `sid` the hash PUC-Lua 5.1's `luaS_newlstr` computes, so `sid & hmask` is
+/// PUC's main position. Nothing needs `sid` to be unique, only immutable: every reader uses it
+/// as a hash - table lookups in C, in the interpreter and in JIT-compiled code, `ir_khash`
+/// (which must agree with them, and does by reading the same field), and the parser's variable
+/// buckets, which compare names by pointer. The string interning table keeps LuaJIT's own
+/// hash, so interning is untouched.
+///
+/// This alone makes the order fixed but not PUC's, because collisions still settle
+/// differently. [`PUC_REHASH_ORDER`] is the other half.
+const PUC_STRING_SLOTS: SourcePatch = SourcePatch {
+    file: "lj_str.c",
+    what: "string keys take the table slots Lua 5.1 gives them",
+    anchor: "#ifndef STRID_RESEED_INTERVAL
+  s->sid = g->str.id++;
+#elif STRID_RESEED_INTERVAL
+  if (!g->str.idreseed--) {
+    uint64_t r = lj_prng_u64(&g->prng);
+    g->str.id = (StrID)r;
+    g->str.idreseed = (uint8_t)(r >> (64 - STRID_RESEED_INTERVAL));
+  }
+  s->sid = g->str.id++;
+#else
+  s->sid = (StrID)lj_prng_u64(&g->prng);
+#endif
+",
+    replacement:
+        "  /* Civ 5 VP Installer: hash the contents the way PUC-Lua 5.1's luaS_newlstr does, so a
+  ** string lands in the table slot the shipped engine puts it in. See patches.rs. */
+  {
+    StrID h = (StrID)len;
+    MSize step = (len >> 5) + 1, l1;
+    for (l1 = len; l1 >= step; l1 -= step)
+      h = h ^ ((h << 5) + (h >> 2) + (uint8_t)str[l1-1]);
+    s->sid = h;
+  }
+",
+    marker: "Civ 5 VP Installer: hash the contents the way PUC-Lua 5.1's luaS_newlstr does",
+};
+
+/// A growing table re-inserts its keys last slot first, as PUC-Lua 5.1 does.
+///
+/// Two keys that want the same slot cannot both have it: the second goes to the highest free
+/// slot, so where keys settle depends on the order they arrive in. Growing a table re-inserts
+/// every key it holds, and PUC-Lua's `resize` walks the old slots from last to first where
+/// LuaJIT's `lj_tab_resize` walks them first to last. With [`PUC_STRING_SLOTS`] in but not
+/// this, a table's order is the same on every run and still PUC's in only 2-10% of tables
+/// (`docs/pinned-artifacts.md` §7 has the measurement), so which field the game's API copy
+/// hands over first would be right by luck rather than by construction.
+///
+/// The rest of the insertion path - Brent's variation, the free pointer walking down, when a
+/// table grows and to what size - already agrees with PUC's wherever it decides the order of
+/// string keys, which is how the two edits together are enough. The one size that differs, two
+/// slots where PUC makes one for a single key, holds no collision for the order to depend on.
+const PUC_REHASH_ORDER: SourcePatch = SourcePatch {
+    file: "lj_tab.c",
+    what: "a growing table re-inserts its keys in Lua 5.1's order",
+    anchor: "  if (oldhmask > 0) {  /* Reinsert pairs from old hash part. */
+    global_State *g;
+    uint32_t i;
+    for (i = 0; i <= oldhmask; i++) {
+",
+    replacement: "  if (oldhmask > 0) {  /* Reinsert pairs from old hash part. */
+    global_State *g;
+    uint32_t i;
+    /* Civ 5 VP Installer: last node first, as PUC-Lua 5.1's resize() does, so collisions
+    ** settle where the shipped engine settles them. See patches.rs. */
+    for (i = oldhmask+1; i-- > 0; ) {
+",
+    marker: "Civ 5 VP Installer: last node first, as PUC-Lua 5.1's resize() does",
+};
+
 /// Every patch, in the order they are applied.
-const PATCHES: [SourcePatch; 1] = [PREFIX_RELATIVE_INSERT];
+const PATCHES: [SourcePatch; 3] = [PREFIX_RELATIVE_INSERT, PUC_STRING_SLOTS, PUC_REHASH_ORDER];
 
 /// What one run of [`apply`] did, for the log.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -139,12 +229,21 @@ pub fn apply(src: &Path) -> Result<PatchReport, ToolchainError> {
 mod tests {
     use super::*;
 
-    /// A stand-in `lib_table.c` holding the real anchor.
+    /// A stand-in checkout: every file a patch edits, holding the real anchors between lines
+    /// the patches must leave alone.
     fn checkout_with_stock_source() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
-        let text = format!("before\n{}\nafter\n", PREFIX_RELATIVE_INSERT.anchor);
-        std::fs::write(dir.path().join(PREFIX_RELATIVE_INSERT.file), text).unwrap();
+        for patch in &PATCHES {
+            let path = dir.path().join(patch.file);
+            let mut text = std::fs::read_to_string(&path).unwrap_or_default();
+            text.push_str(&format!("before\n{}\nafter\n", patch.anchor));
+            std::fs::write(path, text).unwrap();
+        }
         dir
+    }
+
+    fn read(dir: &tempfile::TempDir, patch: &SourcePatch) -> String {
+        std::fs::read_to_string(dir.path().join(patch.file)).unwrap()
     }
 
     #[test]
@@ -153,12 +252,18 @@ mod tests {
 
         let report = apply(dir.path()).unwrap();
 
-        assert_eq!(report.applied.len(), 1);
+        assert_eq!(report.applied.len(), PATCHES.len());
         assert!(report.already_there.is_empty());
-        let text = std::fs::read_to_string(dir.path().join(PREFIX_RELATIVE_INSERT.file)).unwrap();
-        assert!(text.contains(PREFIX_RELATIVE_INSERT.marker));
-        assert!(text.contains("lj_tab_getint(t, i)"));
-        assert!(text.starts_with("before\n") && text.ends_with("after\n"));
+        for patch in &PATCHES {
+            let text = read(&dir, patch);
+            assert!(
+                text.contains(patch.replacement),
+                "{} was not applied",
+                patch.what
+            );
+            assert!(text.starts_with("before\n") && text.ends_with("after\n"));
+        }
+        assert!(read(&dir, &PREFIX_RELATIVE_INSERT).contains("lj_tab_getint(t, i)"));
     }
 
     /// The checkout is fetched once and reused, so every build after the first finds its own
@@ -167,38 +272,52 @@ mod tests {
     fn a_checkout_already_patched_is_left_alone() {
         let dir = checkout_with_stock_source();
         apply(dir.path()).unwrap();
-        let once = std::fs::read_to_string(dir.path().join(PREFIX_RELATIVE_INSERT.file)).unwrap();
+        let once: Vec<String> = PATCHES.iter().map(|patch| read(&dir, patch)).collect();
 
         let report = apply(dir.path()).unwrap();
 
-        assert_eq!(report.already_there.len(), 1);
+        assert_eq!(report.already_there.len(), PATCHES.len());
         assert!(report.applied.is_empty());
-        let twice = std::fs::read_to_string(dir.path().join(PREFIX_RELATIVE_INSERT.file)).unwrap();
+        let twice: Vec<String> = PATCHES.iter().map(|patch| read(&dir, patch)).collect();
         assert_eq!(once, twice, "a second run must change nothing");
     }
 
-    /// The failure that matters: someone moves the pinned commit and the anchor is gone. A
-    /// build that silently skipped the patch would ship the bug it exists to fix.
+    /// The failure that matters: someone moves the pinned commit and an anchor is gone. A
+    /// build that silently skipped the patch would ship the bug it exists to fix - and for
+    /// every patch, not only the first one applied.
     #[test]
     fn a_source_the_patch_does_not_fit_is_refused() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            dir.path().join(PREFIX_RELATIVE_INSERT.file),
-            "a lib_table.c from some other version\n",
-        )
-        .unwrap();
+        for patch in &PATCHES {
+            let dir = checkout_with_stock_source();
+            std::fs::write(
+                dir.path().join(patch.file),
+                format!("a {} from some other version\n", patch.file),
+            )
+            .unwrap();
 
-        let error = apply(dir.path()).unwrap_err();
+            let error = apply(dir.path()).unwrap_err();
 
-        assert!(
-            error.detail().contains("expected once"),
-            "{}",
-            error.detail()
-        );
-        assert!(
-            error.message().contains("not the version it expects"),
-            "{}",
-            error.message()
-        );
+            assert!(
+                error.detail().contains("expected once") && error.detail().contains(patch.file),
+                "{}",
+                error.detail()
+            );
+            assert!(
+                error.message().contains("not the version it expects"),
+                "{}",
+                error.message()
+            );
+        }
+    }
+
+    /// The marker is how a build recognises its own earlier edit. One that the stock source
+    /// already contained would make every checkout look patched, and the fix would never go
+    /// in - silently, which is the one way a patch must not fail.
+    #[test]
+    fn a_marker_is_only_ever_found_in_its_own_replacement() {
+        for patch in &PATCHES {
+            assert!(patch.replacement.contains(patch.marker), "{}", patch.what);
+            assert!(!patch.anchor.contains(patch.marker), "{}", patch.what);
+        }
     }
 }
