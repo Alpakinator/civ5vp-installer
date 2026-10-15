@@ -62,15 +62,14 @@ fn run_app() -> Result<(), String> {
     if let Some(icon) = civ5vp_installer::theme::window_icon() {
         viewport = viewport.with_icon(icon);
     }
-    let native_options = eframe::NativeOptions {
-        viewport: viewport
+    let native_options = civ5vp_installer::native_options(
+        viewport
             .with_title("Civ 5 VP Installer")
             .with_inner_size(cli::DEFAULT_SIZE)
             // The layout is designed down to this size and no further; below it the
             // activity log would have no room left.
             .with_min_inner_size(cli::DEFAULT_SIZE),
-        ..Default::default()
-    };
+    );
     eframe::run_native(
         "civ5vp-installer",
         native_options,

@@ -1230,8 +1230,7 @@ const SNAPSHOT_PIXEL_SLACK: usize = 32;
 /// looked at proves nothing.
 #[test]
 fn every_screen_matches_its_baseline() {
-    let options = egui_kittest::SnapshotOptions::new()
-        .failed_pixel_count_threshold(SNAPSHOT_PIXEL_SLACK);
+    let options = egui_kittest::SnapshotOptions::new().max_failed_pixels(SNAPSHOT_PIXEL_SLACK);
     let mut results = SnapshotResults::new();
     for screen in Screen::ALL {
         let mut harness = harness_over(InstallerApp::preview(screen));

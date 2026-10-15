@@ -51,14 +51,13 @@ pub fn run(options: &ScreenshotOptions) -> Result<(), String> {
         problems: Arc::clone(&problems),
     };
 
-    let native_options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
+    let native_options = crate::native_options(
+        egui::ViewportBuilder::default()
             .with_title("Civ 5 VP Installer - rendering screenshots")
             .with_inner_size(first.size)
             // No window is shown: this runs unattended, including from a script.
             .with_visible(false),
-        ..Default::default()
-    };
+    );
 
     eframe::run_native(
         "civ5vp-installer-screenshots",

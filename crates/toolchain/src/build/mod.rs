@@ -530,7 +530,10 @@ impl<'a> DllBuild<'a> {
             return Ok(dll);
         }
 
-        progress.report(Stage::Build, "Linking the DLL.");
+        progress.report(
+            Stage::Build,
+            "Linking the DLL. This reports nothing until it is done, which can take minutes.",
+        );
         let response_file = variant_dir.join("link.rsp");
         let response =
             self.response_contents(request, dll_project, variant_dir, &dll, link_args, lib_dirs);

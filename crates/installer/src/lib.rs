@@ -62,6 +62,28 @@ pub fn open_path(path: &std::path::Path) {
     }
 }
 
+/// The window settings the installer and the `--screenshot` renderer share.
+///
+/// eframe asks wgpu for the high-performance GPU, which on a laptop with two is the discrete
+/// one - not the one driving the screen, so every frame is copied across to be shown, and the
+/// discrete GPU powers down whenever the window stops drawing. When it then fails to wake (an
+/// RTX 3050 under NVIDIA's 610 driver was seen to, with Xid 119), the frame in flight never
+/// finishes, the compositor never asks for another, and the window shows its last frame for
+/// good while the install carries on unseen behind it. The installer draws flat shapes and
+/// text; the GPU that is already awake is the right one. `WGPU_POWER_PREF=high` still
+/// overrides this, as it does for any wgpu program.
+pub fn native_options(viewport: egui::ViewportBuilder) -> eframe::NativeOptions {
+    let mut options = eframe::NativeOptions {
+        viewport,
+        ..Default::default()
+    };
+    if let eframe::egui_wgpu::WgpuSetup::CreateNew(setup) = &mut options.wgpu_options.wgpu_setup {
+        setup.power_preference = eframe::wgpu::PowerPreference::from_env()
+            .unwrap_or(eframe::wgpu::PowerPreference::LowPower);
+    }
+    options
+}
+
 /// Where the detail behind a user-facing error goes: appended to the log file in the App
 /// Data Store (and echoed to stderr), keeping it out of the UI. A log line that cannot be
 /// written is not worth interrupting anything over - stderr still has it.

@@ -41,6 +41,12 @@ const CHECKOUT_REF_POLL: Duration = Duration::from_secs(1);
 /// folder, not one file - and the answer changes far less often.
 const EXTRA_MODS_POLL: Duration = Duration::from_secs(3);
 
+/// How often the window looks for news from a running install, which has no way to wake it.
+/// Ten times a second is quicker than anyone reads the activity log; painting every frame
+/// instead would redraw an unchanged window at the display's refresh rate, on the CPU the
+/// compile beside it is using.
+const RUNNING_POLL: Duration = Duration::from_millis(100);
+
 const MIN_ACTIVITY_LINES: f32 = 5.0;
 
 /// Presentation state, not domain state - deliberately not public.
@@ -181,6 +187,8 @@ pub struct InstallerApp {
     activity: Vec<String>,
     status: Status,
     running: Option<RunningInstall>,
+    /// What the clock beside "Installing…" reads in a preview, which has no run to time.
+    preview_elapsed: Option<Duration>,
     /// Whether the art-deco theme has been installed on the context yet. Fonts and style
     /// are set once per context, not per frame - rebuilding the font atlas is not free.
     skinned: bool,
@@ -383,6 +391,7 @@ impl InstallerApp {
             activity: Vec::new(),
             status: Status::Ready,
             running: None,
+            preview_elapsed: None,
             skinned: false,
             store_size: None,
             first_run_note,
@@ -449,6 +458,7 @@ impl InstallerApp {
             activity: Vec::new(),
             status: Status::Ready,
             running: None,
+            preview_elapsed: None,
             skinned: false,
             store_size: None,
             first_run_note: None,
@@ -486,6 +496,7 @@ impl InstallerApp {
                     "Fetching sources: Mod files ready.".to_owned(),
                     "Building the DLL: Compiling 172 of 172 source files.".to_owned(),
                 ];
+                app.preview_elapsed = Some(Duration::from_secs(131));
             }
             Screen::Installed => {
                 // The Flavor above is Vox Populi with EUI, so this says what that installs.
@@ -863,7 +874,22 @@ impl InstallerApp {
             Status::Installing => {
                 deco::progress(ui, None);
                 ui.add_space(2.0);
-                ui.label(egui::RichText::new(line).color(theme::GOLD_BRIGHT));
+                // The time the run has taken so far. Linking the DLL is minutes with nothing
+                // to report, and the bar never moves, so a clock still counting is what says
+                // the window has not stopped.
+                let elapsed = self
+                    .running
+                    .as_ref()
+                    .map(|run| run.started.elapsed())
+                    .or(self.preview_elapsed);
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new(line).color(theme::GOLD_BRIGHT));
+                    if let Some(elapsed) = elapsed {
+                        ui.label(
+                            egui::RichText::new(elapsed_label(elapsed)).color(theme::PARCHMENT_DIM),
+                        );
+                    }
+                });
             }
             Status::Installed { .. } => {
                 deco::progress(ui, Some(1.0));
@@ -888,10 +914,9 @@ impl InstallerApp {
         }
 
         if self.running.is_some() {
-            // The worker thread has no way to wake the UI, so keep painting while it runs.
             // Keyed on a real running install, not on the status, so a preview of the
             // installing screen still settles into a still frame for the renderer.
-            ui.ctx().request_repaint();
+            ui.ctx().request_repaint_after(RUNNING_POLL);
         }
     }
 

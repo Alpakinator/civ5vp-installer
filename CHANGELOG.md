@@ -6,8 +6,23 @@ publishes binaries for.
 
 ## Unreleased
 
+### Added
+
+- A clock beside "Installing…" counts how long the install has run, and the DLL's link step
+  says up front that it can take minutes with nothing to report - so a long quiet step no
+  longer looks like a hang.
+
 ### Fixed
 
+- **The installer's window could freeze for good part-way through an install** on a laptop with
+  two graphics chips. It drew on the discrete GPU, which powers down whenever the window stops
+  drawing; when that GPU failed to wake, the window kept showing its last frame while the
+  install carried on unseen behind it. The installer now draws on the GPU that drives the
+  screen.
+- **The installer kept a whole CPU core busy** while it installed, and on Linux whenever its
+  window sat on a workspace you were not looking at - even with nothing to do. It now uses next
+  to none: it looks for progress ten times a second instead of redrawing every frame, and
+  egui 0.36.2 no longer busy-waits for a hidden window.
 - **With LuaJIT on, a new game could start with no civilizations and end at once in defeat.**
   The map script died part-way on a missing `Map`, `YieldTypes` or `DirectionTypes`. Vox
   Populi's Lua setup code drops the first game API field it is handed, and which field comes
