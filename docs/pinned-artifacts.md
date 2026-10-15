@@ -314,7 +314,7 @@ collide on purpose:
 | Tables built by | Stock LuaJIT | Patched | Note |
 | --- | --- | --- | --- |
 | assignment, all seven shapes | 0.5-2.4% | **100%** | |
-| the game's API names, first key over 10 launches | 4 different | same as stock | |
+| the game's API names, first key over 10 launches | 4 different | `ButtonPopupTypes` all 10, as the game's engine | |
 | table constructors (`{a = 1, b = 2}`) | 3.8% | 34% | not covered |
 | string keys mixed with integer keys | 2.0% | 7.5% | not covered |
 
