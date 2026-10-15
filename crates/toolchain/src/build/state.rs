@@ -9,6 +9,9 @@
 //!   header fence: if **any** project header is newer than the PCH, the PCH rebuilds, and a
 //!   rebuilt PCH makes every object stale. No per-file dependency tracking - headers change
 //!   rarely and a header change honestly invalidates close to everything anyway.
+//! * The one exception is the generated `commit_id.inc`, the DLL's version string. It changes
+//!   with every commit and every edit of a Local Repo, and only the few sources that name it
+//!   read it, so those - and only those - recompile when it does.
 //! * The flags, the toolchain, and the source root are recorded in a manifest file next to
 //!   the objects. If any of them differ from the manifest, the whole object directory is
 //!   discarded first - objects compiled with other flags or from another tree never mix.
@@ -59,9 +62,9 @@ pub fn newer_than(input: &Path, product: Option<SystemTime>) -> bool {
     }
 }
 
-/// The newest modification time of any header under `dirs` (recursively), plus any `extra`
-/// files - the input side of the PCH fence.
-pub fn newest_header(dirs: &[PathBuf], extra: &[PathBuf]) -> Option<SystemTime> {
+/// The newest modification time of any header under `dirs` (recursively) - the input side
+/// of the PCH fence.
+pub fn newest_header(dirs: &[PathBuf]) -> Option<SystemTime> {
     let mut newest: Option<SystemTime> = None;
     let mut fold = |time: Option<SystemTime>| {
         if let Some(time) = time {
@@ -71,10 +74,17 @@ pub fn newest_header(dirs: &[PathBuf], extra: &[PathBuf]) -> Option<SystemTime> 
     for dir in dirs {
         walk_headers(dir, &mut fold);
     }
-    for file in extra {
-        fold(mtime(file));
-    }
     newest
+}
+
+/// Whether the text of `source` names `file` - how a source that `#include`s the generated
+/// version string is told from one that does not. A source that cannot be read counts as
+/// naming it, for the same reason [`newer_than`] treats an unreadable input as newer.
+pub fn mentions(source: &Path, file: &str) -> bool {
+    fs::read(source).map_or(true, |text| {
+        text.windows(file.len())
+            .any(|window| window == file.as_bytes())
+    })
 }
 
 fn walk_headers(dir: &Path, fold: &mut impl FnMut(Option<SystemTime>)) {
@@ -187,29 +197,39 @@ mod tests {
     }
 
     #[test]
-    fn newest_header_sees_nested_headers_and_extra_files() {
+    fn newest_header_sees_nested_headers_and_nothing_else() {
         let dir = tempfile::tempdir().unwrap();
         let include = dir.path().join("include");
         fs::create_dir_all(include.join("nested")).unwrap();
         fs::write(include.join("a.h"), "x").unwrap();
         fs::write(include.join("nested/b.inl"), "x").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
         fs::write(include.join("ignored.cpp"), "x").unwrap();
-        let extra = dir.path().join("commit_id.inc");
-        fs::write(&extra, "x").unwrap();
+        fs::write(include.join("commit_id.inc"), "x").unwrap();
 
-        let newest =
-            newest_header(std::slice::from_ref(&include), std::slice::from_ref(&extra)).unwrap();
+        let newest = newest_header(std::slice::from_ref(&include)).unwrap();
 
         let expected = [
             mtime(&include.join("a.h")).unwrap(),
             mtime(&include.join("nested/b.inl")).unwrap(),
-            mtime(&extra).unwrap(),
         ]
         .into_iter()
         .max()
         .unwrap();
+        // Neither the .cpp file nor the version string is part of the header fence.
         assert_eq!(newest, expected);
-        // The .cpp file's mtime is not part of the header fence.
-        assert!(newest_header(&[include], &[]).is_some());
+    }
+
+    #[test]
+    fn a_source_mentions_the_files_its_text_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let game = dir.path().join("CvGame.cpp");
+        fs::write(&game, "#include \"../commit_id.inc\"\n").unwrap();
+        let city = dir.path().join("CvCity.cpp");
+        fs::write(&city, "#include \"CvGameCoreDLLPCH.h\"\n").unwrap();
+
+        assert!(mentions(&game, "commit_id.inc"));
+        assert!(!mentions(&city, "commit_id.inc"));
+        assert!(mentions(&dir.path().join("gone.cpp"), "commit_id.inc"));
     }
 }

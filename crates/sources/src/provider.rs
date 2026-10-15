@@ -40,7 +40,7 @@ impl SourceProvider for InstallationSources {
             InstallationSource::UpstreamCache { version } => {
                 self.upstream.materialize(version, progress)
             }
-            InstallationSource::LocalRepo { path } => local::materialize(path),
+            InstallationSource::LocalRepo { path } => local::materialize(path, progress),
         }
         .map_err(Into::into)
     }

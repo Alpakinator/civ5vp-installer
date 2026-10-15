@@ -31,6 +31,8 @@ pub struct FixtureSourceProvider {
     /// What this provider answers about the DLLs checked into the tree - what the real
     /// Upstream Cache decides with one API call about the commit being installed.
     shipped_dll_is_current: bool,
+    /// What the real Local Repo provider reads from git; `None` is a tree git cannot name.
+    git_description: Option<String>,
 }
 
 impl FixtureSourceProvider {
@@ -40,7 +42,15 @@ impl FixtureSourceProvider {
             // The Local-Repo answer, and the one every existing test wants: a working tree
             // has no commit that could vouch for the DLL sitting in it.
             shipped_dll_is_current: false,
+            git_description: None,
         }
+    }
+
+    /// The same fixture tree, standing in for a checkout git can name.
+    #[must_use]
+    pub fn with_git_description(mut self, description: &str) -> Self {
+        self.git_description = Some(description.to_owned());
+        self
     }
 
     /// The same fixture tree, standing in for a Release commit: the checked-in DLLs are the
@@ -49,6 +59,7 @@ impl FixtureSourceProvider {
         Self {
             root,
             shipped_dll_is_current: true,
+            git_description: None,
         }
     }
 }
@@ -71,6 +82,7 @@ impl SourceProvider for FixtureSourceProvider {
         Ok(MaterializedSource {
             root: self.root.clone(),
             source_identity,
+            git_description: self.git_description.clone(),
         })
     }
 
@@ -354,6 +366,8 @@ pub struct CountingToolchainRunner {
     pub identity: String,
     /// Every Build Configuration the boundary was asked for, in order.
     pub configurations: std::sync::Arc<std::sync::Mutex<Vec<civ5vp_core::BuildConfiguration>>>,
+    /// Every version string the boundary was asked to compile in, in order.
+    pub version_strings: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
     /// Stands in for a maintainer's `dll-flags.txt` sitting beside the installer.
     pub flag_override: Option<String>,
 }
@@ -366,6 +380,7 @@ impl CountingToolchainRunner {
                 builds: std::sync::Arc::clone(&builds),
                 identity: identity.to_owned(),
                 configurations: std::sync::Arc::default(),
+                version_strings: std::sync::Arc::default(),
                 flag_override: None,
             },
             builds,
@@ -391,6 +406,9 @@ impl ToolchainRunner for CountingToolchainRunner {
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         if let Ok(mut seen) = self.configurations.lock() {
             seen.push(request.build_configuration);
+        }
+        if let Ok(mut seen) = self.version_strings.lock() {
+            seen.push(request.version_string.clone());
         }
         MarkerToolchainRunner.build_dll(request, progress)
     }

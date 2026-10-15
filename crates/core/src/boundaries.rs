@@ -58,6 +58,14 @@ pub struct MaterializedSource {
     /// working files under the DLL's input roots (see [`crate::dll_source_identity`]). It is
     /// the source half of the Build Fingerprint.
     pub source_identity: String,
+    /// What git calls the tree, written the way upstream's own build scripts name a DLL:
+    /// `git describe --tags --long`, then `Clean` or `Dirty` by whether a tracked file
+    /// differs from `HEAD` - `Release-5.4.7-3-gd4ff625ef Dirty`.
+    ///
+    /// Only a Local Repo carries one: an Upstream Cache Version already names its commit,
+    /// and a Local Repo that is not a git checkout has nothing to say. Without one the DLL
+    /// is named by [`InstallationSource::version_label`].
+    pub git_description: Option<String>,
 }
 
 /// Boundary one: where the mod files and DLL sources come from.
@@ -68,7 +76,8 @@ pub trait SourceProvider: Send + Sync {
     /// Make `source` available on disk and describe what was materialized.
     ///
     /// The Core only ever reads from the returned tree. For a Local Repo that means the
-    /// developer's working tree is handed back untouched - no git operation runs against it.
+    /// developer's working tree is handed back untouched - no git operation changes it; its
+    /// git data is only read, to name the DLL ([`MaterializedSource::git_description`]).
     fn materialize(
         &self,
         source: &InstallationSource,
@@ -140,9 +149,10 @@ pub struct BuildRequest {
     pub forty_three_civs: FortyThreeCivs,
     /// Release or Debug - always Release until Dev mode offers the choice.
     pub build_configuration: BuildConfiguration,
-    /// Compiled into the DLL as its version string - see
+    /// Compiled into the DLL as its version string, which the game writes into its logs and
+    /// crash reports: [`MaterializedSource::git_description`] where there is one, otherwise
     /// [`InstallationSource::version_label`].
-    pub version_label: String,
+    pub version_string: String,
     /// Exactly where the Built DLL must be written.
     ///
     /// Always inside the Core's own build directory, never in a game folder - the game is

@@ -171,9 +171,16 @@ impl Core {
             Some(_) => DllProvenance::Shipped,
             None => DllProvenance::Built,
         };
+        // What the DLL will call itself in the game's logs and crash reports. A Local Repo is
+        // named by git, because "Local" cannot tell one build of it from the next.
+        let version_string = source
+            .git_description
+            .clone()
+            .unwrap_or_else(|| plan.configuration.source.version_label());
         let fingerprint = BuildFingerprint::new(
             &source.source_identity,
             &plan.configuration.source.version_label(),
+            &version_string,
             plan.configuration.build_configuration,
             plan.configuration.forty_three_civs,
             provenance,
@@ -184,7 +191,7 @@ impl Core {
             Some(deployed) => deployed,
             None => match shipped_dll {
                 Some(shipped) => self.stage_shipped_dll(&shipped, progress)?,
-                None => self.build(plan, &source.root, progress)?,
+                None => self.build(plan, &source.root, &version_string, progress)?,
             },
         };
         // In Modpack mode the whole pack is assembled in the App Data Store before Sync
@@ -491,6 +498,7 @@ impl Core {
         &self,
         plan: &Plan,
         source_root: &Path,
+        version_string: &str,
         progress: &ProgressReporter,
     ) -> Result<PathBuf, InstallError> {
         let build_dir = self.work_dir.join("build");
@@ -513,7 +521,7 @@ impl Core {
             source_root: source_root.to_path_buf(),
             forty_three_civs: plan.configuration.forty_three_civs,
             build_configuration: plan.configuration.build_configuration,
-            version_label: plan.configuration.source.version_label(),
+            version_string: version_string.to_owned(),
             output_path: output_path.clone(),
         };
         self.toolchain_runner

@@ -83,6 +83,7 @@ impl SourceProvider for DirectorySourceProvider {
                 Ok(MaterializedSource {
                     root: path.clone(),
                     source_identity,
+                    git_description: None,
                 })
             }
             InstallationSource::UpstreamCache { .. } => Err(BoundaryError::new(

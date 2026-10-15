@@ -10,7 +10,7 @@
 //! * the **Upstream Cache** - a managed clone of `LoneGazebo/Community-Patch-DLL`, fetched
 //!   incrementally, with one **Version** checked out at a time;
 //! * a **Local Repo** - a developer's own checkout, used as-is including uncommitted changes,
-//!   with no git operation performed on it at all.
+//!   and never changed: its git data is only read, to name the DLL (ADR-0007).
 //!
 //! Beside them sits one more fetched thing, which is not an Installation Source because the
 //! player never chooses it: the **pinned LuaJIT checkout** (see [`LuaJitCache`]), fetched only

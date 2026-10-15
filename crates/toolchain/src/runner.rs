@@ -169,7 +169,7 @@ mod tests {
             source_root: dir.path().join("empty-sources"),
             forty_three_civs: FortyThreeCivs::Disabled,
             build_configuration: BuildConfiguration::Release,
-            version_label: "Release-9.9".to_owned(),
+            version_string: "Release-9.9".to_owned(),
             output_path: dir.path().join("CvGameCore_Expansion2.dll"),
         };
         let error = runner

@@ -404,6 +404,8 @@ impl UpstreamCache {
         Ok(MaterializedSource {
             root: self.root.clone(),
             source_identity: format!("git-tree:{tree}"),
+            // The Version already names this commit; see `InstallationSource::version_label`.
+            git_description: None,
         })
     }
 

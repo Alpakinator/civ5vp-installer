@@ -48,7 +48,7 @@ A single-file executable - **Civ 5 VP Installer** - for Windows and Linux, style
 26. As a player, I want my folder paths and last configuration remembered, so that updating later is a two-click affair.
 27. As a player, I want to be notified when a newer installer exists, so that I can fetch it myself - without auto-update machinery running on my machine.
 28. As a player, I want the installer to look and feel like Civilization V, so that it feels official and trustworthy rather than like a hacker tool.
-29. As a mod developer, I want to point the installer at my Local Repo and have it build and deploy my working tree exactly as-is - uncommitted changes included, zero git operations performed on it - so that my edit-to-game loop is fast.
+29. As a mod developer, I want to point the installer at my Local Repo and have it build and deploy my working tree exactly as-is - uncommitted changes included, nothing in the checkout changed by the installer - so that my edit-to-game loop is fast. (git is only read, to name the DLL - ADR-0007.)
 30. As a mod developer, I want the same Flavor/EUI/43-Civs options for my Local Repo as for GitHub versions, so that I can test any configuration of my changes.
 31. As a mod developer, I want a Debug/Release choice in Dev mode, so that I can produce a debuggable DLL when I need one.
 32. As a mod developer, I want to redeploy changed Lua/SQL while the game is running, so that I can hot-reload what the game permits; the installer must not block on a running game.

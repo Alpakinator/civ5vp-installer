@@ -13,7 +13,9 @@
 //! themselves (which carry the project file), so those four stand in for them. If a flag
 //! ever stops being derivable from these, it must join the fingerprint explicitly - which is
 //! exactly what the maintainer's optimisation override is, and why
-//! [`crate::ToolchainRunner::dll_flag_override`] is one of the inputs below.
+//! [`crate::ToolchainRunner::dll_flag_override`] is one of the inputs below. The version
+//! string compiled into the DLL is the same kind of input: for a Local Repo it is git's
+//! name for the checkout, which moves on a commit that touches no DLL source.
 //!
 //! Hashing is FNV-1a 64 implemented here in a dozen lines, because the Core has no
 //! dependencies and the job is integrity against accident - a swapped DLL, an
@@ -80,9 +82,11 @@ pub struct BuildFingerprint {
 
 impl BuildFingerprint {
     /// Combine everything that determines the Built DLL.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         source_identity: &str,
         version_label: &str,
+        version_string: &str,
         configuration: BuildConfiguration,
         forty_three_civs: FortyThreeCivs,
         provenance: DllProvenance,
@@ -106,15 +110,18 @@ impl BuildFingerprint {
         // does. The cost is one rebuild per installer upgrade, which is also the honest
         // thing to do. It went to v3 when the `flags` line arrived: a v2 sidecar cannot say
         // whether the DLL beside it was built with an optimisation override, so it must not
-        // be trusted to answer that question either way.
+        // be trusted to answer that question either way. v4 added `version-string`, for the
+        // same reason about the name the DLL carries. `label` stays beside it because the
+        // save-compatibility banner reads the installed Version back from that line.
         let installer = env!("CARGO_PKG_VERSION");
         // Always written, `none` included, so that "no override" is a stated fact rather than
         // an absent line. A sidecar left behind by a run that *did* override must not read as
         // a default build.
         let flags = flag_override.unwrap_or("none");
         let rendered = format!(
-            "fingerprint v3\ninstaller {installer}\nsource {source_identity}\n\
-             label {version_label}\nconfiguration {configuration}\n\
+            "fingerprint v4\ninstaller {installer}\nsource {source_identity}\n\
+             label {version_label}\nversion-string {version_string}\n\
+             configuration {configuration}\n\
              forty-three-civs {forty_three}\ndll {provenance}\n\
              toolchain {toolchain_identity}\nflags {flags}\n"
         );
@@ -145,8 +152,8 @@ impl BuildFingerprint {
 /// rebuild" and says no to a sidecar from any older installer, because the `installer` line is
 /// one of its inputs. That is right for rebuilding and fatal for this question: everyone
 /// upgrading carries a sidecar that no longer matches, and they are exactly the people about
-/// to change Version. The `label` line predates both format bumps, so it is present and true
-/// in v2 and v3 alike.
+/// to change Version. The `label` line predates every format bump, so it is present and true
+/// in v2, v3 and v4 alike.
 pub fn label_in_sidecar(sidecar: &str) -> Option<&str> {
     sidecar
         .lines()

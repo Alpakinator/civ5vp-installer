@@ -129,9 +129,10 @@ impl InstallationSource {
     /// A short name for what is being built: the Release tag, the branch or ref, or `Local`
     /// for a developer checkout.
     ///
-    /// The DLL sources compile this into the binary as their version string (upstream
-    /// generates it with `git describe`; the installer runs no git, so the selected Version is
-    /// the honest equivalent). It reaches the toolchain runner via [`crate::BuildRequest`].
+    /// For an Upstream Cache Version the DLL sources compile this into the binary as their
+    /// version string (upstream generates it with `git describe`; the selected Version names
+    /// the same commit). A Local Repo's DLL is named by git instead - `Local` says nothing
+    /// about which commit it was built from - see [`crate::BuildRequest::version_string`].
     pub fn version_label(&self) -> String {
         match self {
             Self::UpstreamCache { version } => match version {

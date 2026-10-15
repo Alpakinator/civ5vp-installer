@@ -362,7 +362,11 @@ fn changing_the_optimisation_flags_forces_a_rebuild() {
     let (core, builds) =
         core_over_with_flags(&game, &repo, "fake-toolchain-0", Some("compiler /O2 /Ob2"));
     install(&core, &game, &config);
-    assert_eq!(builds.load(Ordering::Relaxed), 1, "changed flags, new build");
+    assert_eq!(
+        builds.load(Ordering::Relaxed),
+        1,
+        "changed flags, new build"
+    );
 
     // Run five: back to no override - the default is a flag set like any other, and the
     // DLL sitting in the game folder is the /O2 /Ob2 one, so this must rebuild too.
@@ -373,4 +377,69 @@ fn changing_the_optimisation_flags_forces_a_rebuild() {
         1,
         "removing the override must rebuild, not keep the overridden DLL"
     );
+}
+
+/// A Core whose Local Repo git names as `description` (or cannot name, for `None`), with the
+/// version strings its runner was asked to compile in.
+fn core_named(
+    game: &GameFixture,
+    repo: &Path,
+    description: Option<&str>,
+) -> (Core, Arc<AtomicUsize>, Arc<std::sync::Mutex<Vec<String>>>) {
+    let (runner, builds) = CountingToolchainRunner::new("fake-toolchain-0");
+    let version_strings = Arc::clone(&runner.version_strings);
+    let provider = FixtureSourceProvider::new(repo.to_path_buf());
+    let provider = match description {
+        Some(description) => provider.with_git_description(description),
+        None => provider,
+    };
+    let core = Core::new(
+        Box::new(provider),
+        Box::new(runner),
+        Box::new(FixtureModpackAssembler::ignored()),
+        game.work_dir(),
+    );
+    (core, builds, version_strings)
+}
+
+/// A Local Repo's DLL is named by git, the way upstream's own build names it, so a crash
+/// report says which commit crashed. The name is compiled in, so a new one rebuilds even
+/// when no DLL source changed: committing the work turns "Dirty" into a lie otherwise.
+#[test]
+fn a_local_repo_dll_carries_its_git_description_and_a_new_one_rebuilds() {
+    let game = GameFixture::new();
+    let repo = editable_repo(game.work_dir().as_path());
+    let config = configuration(&repo, FortyThreeCivs::Disabled);
+
+    let (core, builds, names) = core_named(&game, &repo, Some("Release-2.0-3-gabc1234 Dirty"));
+    install(&core, &game, &config);
+    assert_eq!(builds.load(Ordering::Relaxed), 1);
+    assert_eq!(
+        *names.lock().unwrap(),
+        ["Release-2.0-3-gabc1234 Dirty"],
+        "the runner must be asked for git's name, not the label"
+    );
+
+    let (core, builds, _) = core_named(&game, &repo, Some("Release-2.0-3-gabc1234 Dirty"));
+    install(&core, &game, &config);
+    assert_eq!(builds.load(Ordering::Relaxed), 0, "same name, no rebuild");
+
+    let (core, builds, names) = core_named(&game, &repo, Some("Release-2.0-4-gdef5678 Clean"));
+    install(&core, &game, &config);
+    assert_eq!(builds.load(Ordering::Relaxed), 1, "a new name must rebuild");
+    assert_eq!(*names.lock().unwrap(), ["Release-2.0-4-gdef5678 Clean"]);
+}
+
+/// A tree git cannot name - a Local Repo that is not a checkout - is named by its label, as
+/// before git was asked at all.
+#[test]
+fn a_local_repo_git_cannot_name_is_named_by_its_label() {
+    let game = GameFixture::new();
+    let repo = editable_repo(game.work_dir().as_path());
+    let config = configuration(&repo, FortyThreeCivs::Disabled);
+
+    let (core, _, names) = core_named(&game, &repo, None);
+    install(&core, &game, &config);
+
+    assert_eq!(*names.lock().unwrap(), ["Local"]);
 }

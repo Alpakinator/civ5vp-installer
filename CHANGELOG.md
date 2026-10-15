@@ -40,6 +40,11 @@ publishes binaries for.
 - Invalid or duplicate extra-mod folder names are rejected before assembly, avoiding
   paths outside staging and repeated database updates.
 - Non-XML asset names containing multibyte characters no longer crash Modpack assembly.
+- **A DLL built from a Local Repo names the commit it was built from** in the game's logs and
+  crash reports, the way upstream's own build does: `Release-5.4.7-3-gd4ff625ef Dirty
+  Installer`. Before, it said `Local`, or worse, whatever an earlier build had left in the
+  checkout's `commit_id.inc`, which could name a commit weeks old. The checkout is only read,
+  never written.
 
 ## 0.1.6 - 2026-09-15
 

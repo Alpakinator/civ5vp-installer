@@ -83,7 +83,7 @@ fn build_into_with(
         source_root: source_root(),
         forty_three_civs,
         build_configuration,
-        version_label: "real-build-test".to_owned(),
+        version_string: "real-build-test".to_owned(),
         output_path: output_path.clone(),
     };
     let (progress, printer) = reporting_progress();
@@ -126,6 +126,15 @@ fn the_real_dll_builds_and_matches_the_reference() {
 
     assert_eq!(ours.machine, pe::MACHINE_I386, "must target 32-bit x86");
     assert!(ours.is_dll, "must carry the PE DLL characteristic");
+
+    // The DLL names itself with the generated version string - also where the checkout holds
+    // a `commit_id.inc` of its own, which the compiler must never read (ADR-0007). A source
+    // root with a stale one in it is the case worth running this against.
+    let version = b"real-build-test Installer";
+    assert!(
+        built.windows(version.len()).any(|window| window == version),
+        "the built DLL must carry the generated version string"
+    );
 
     // The export surface is the contract with the game, fixed by CvGameCoreDLL.def.
     let def = fs::read_to_string(source_root().join("CvGameCoreDLL_Expansion2/CvGameCoreDLL.def"))

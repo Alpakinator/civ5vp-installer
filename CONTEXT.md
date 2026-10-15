@@ -28,7 +28,7 @@ Glossary for the Vox Populi installer for Civilization V. Terms only - no implem
 
 **App Data Store** - the single installer-owned directory in the platform's app-data location (`%LOCALAPPDATA%` on Windows, XDG data dir on Linux) holding the Upstream Cache, Toolchain Cache, settings, and logs. The executable itself is a lone file that stores nothing beside itself. The UI exposes the store's location and size and a button that clears it (never touching the game).
 
-**Build Fingerprint** - a hash of everything that determines the DLL a Deployment installs: all source inputs at the selected Version (or the Local Repo's working files), compiler flags (including any `dll-flags.txt` optimisation override), the 43-Civs setting, the Toolchain version, and whether the DLL was built or is the Shipped one. Recorded next to the deployed DLL together with the DLL's own hash; when both still match, the build is skipped.
+**Build Fingerprint** - a hash of everything that determines the DLL a Deployment installs: all source inputs at the selected Version (or the Local Repo's working files), compiler flags (including any `dll-flags.txt` optimisation override), the 43-Civs setting, the Toolchain version, the version string compiled into it (for a Local Repo, git's name for the checkout - ADR-0007), and whether the DLL was built or is the Shipped one. Recorded next to the deployed DLL together with the DLL's own hash; when both still match, the build is skipped.
 
 **Upstream Cache** - the installer-managed clone of the upstream repository, fetched incrementally so no file content is ever downloaded twice. Checking out a Version happens here.
 

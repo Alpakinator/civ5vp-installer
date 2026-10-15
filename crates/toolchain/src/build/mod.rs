@@ -146,18 +146,27 @@ impl<'a> DllBuild<'a> {
 
         let variant_dir = variant_dir(request)?;
 
-        // Two sources `#include "../commit_id.inc"`. Upstream generates that file at the
-        // repository root with git; the installer must not write into an Installation Source
-        // (a Local Repo is used as-is), so it generates
-        // the file under the variant directory and adds one include directory whose parent
-        // holds it. MSVC-style quoted includes try the including file's own directory first
-        // - so a `commit_id.inc` a developer's checkout already has still wins, which is
-        // exactly "as-is" - and fall back to each `/I` directory joined with the relative
-        // path, where `<generated>/include/../commit_id.inc` resolves to ours.
+        // A few sources `#include "../commit_id.inc"`, the DLL's version string. Upstream
+        // generates that file at the repository root with git; the installer must not write
+        // into an Installation Source (a Local Repo is used as-is), so it generates the file
+        // under the variant directory and shows it to the compiler in its place.
+        //
+        // MSVC-style quoted includes try the including file's own directory first, so the
+        // root is where the compiler looks. A clang VFS overlay puts ours there - over any
+        // `commit_id.inc` the tree already has. A developer's checkout usually does: upstream's
+        // scripts and Visual Studio build write it, nothing removes it, and left to win it
+        // named every later DLL after the commit it happened to be written at.
+        //
+        // The include directory is the fallback should the overlay ever miss: quoted includes
+        // end at each `/I` directory joined with the relative path, where
+        // `<generated>/include/../commit_id.inc` resolves to ours in a tree without its own.
         let generated_dir = variant_dir.join("generated");
         let generated_include = generated_dir.join("include");
+        let commit_id = generated_dir.join("commit_id.inc");
+        let overlay = generated_dir.join(COMMIT_ID_OVERLAY_FILE);
         let mut cl_args = cl_args;
         cl_args.push(format!("/I{}", generated_include.display()));
+        cl_args.push(format!("-vfsoverlay{}", overlay.display()));
 
         // The manifest check may discard the whole variant directory, so it runs before
         // anything is generated into it.
@@ -167,6 +176,11 @@ impl<'a> DllBuild<'a> {
         )?;
         fs::create_dir_all(&generated_include)
             .map_err(|error| io_error("create the build directory", &generated_include, &error))?;
+        // Before anything runs clang: every compile, the flag probe included, reads it.
+        state::write_if_changed(
+            &overlay,
+            &commit_id_overlay(&source_root_spellings(source_root), &commit_id),
+        )?;
         // Only the compiler half can be probed this way: lld-link treats an argument it does
         // not know as an input file and fails loudly on its own, so a typo there cannot pass
         // silently the way a clang-cl one can.
@@ -175,8 +189,7 @@ impl<'a> DllBuild<'a> {
         }) {
             self.reject_ignored_flags(&cl_args, &variant_dir)?;
         }
-        let commit_id = generated_dir.join("commit_id.inc");
-        state::write_if_changed(&commit_id, &commit_id_contents(&request.version_label))?;
+        state::write_if_changed(&commit_id, &commit_id_contents(&request.version_string))?;
         let mut log = BuildLog::create(variant_dir.join("build.log"))?;
 
         let compiled_anything = self.compile(
@@ -278,12 +291,13 @@ impl<'a> DllBuild<'a> {
         let pch_path = variant_dir.join(flags::PCH_FILE);
 
         // The PCH is the dependency fence: any header newer than it rebuilds it, and a
-        // rebuilt PCH is newer than every object, which makes them all stale in turn.
+        // rebuilt PCH is newer than every object, which makes them all stale in turn. The
+        // version string stays outside it - see the per-source rule below.
         let header_dirs: Vec<PathBuf> = flags::PROJECT_INCLUDE_DIRS
             .iter()
             .map(|dir| source_root.join(dir))
             .collect();
-        let newest_header = state::newest_header(&header_dirs, &[commit_id.to_path_buf()]);
+        let newest_header = state::newest_header(&header_dirs);
 
         let mut compiled_anything = false;
 
@@ -377,11 +391,15 @@ impl<'a> DllBuild<'a> {
             let source_from_root = project_prefix.join(source);
             let object = object_path(variant_dir, &source_from_root.to_string_lossy());
             let object_mtime = state::mtime(&object);
-            let source_stale =
-                state::newer_than(&source_root.join(&source_from_root), object_mtime)
-                    || pch_fence
-                        .zip(object_mtime)
-                        .is_none_or(|(pch, obj)| pch > obj);
+            let source_path = source_root.join(&source_from_root);
+            // A new version string - every commit, every first edit after one, for a Local
+            // Repo - recompiles the sources that include it, not the whole tree.
+            let source_stale = state::newer_than(&source_path, object_mtime)
+                || pch_fence
+                    .zip(object_mtime)
+                    .is_none_or(|(pch, obj)| pch > obj)
+                || (state::newer_than(commit_id, object_mtime)
+                    && state::mentions(&source_path, "commit_id.inc"));
             if !source_stale {
                 continue;
             }
@@ -682,13 +700,14 @@ fn ensure_parent(path: &Path) -> Result<(), ToolchainError> {
 }
 
 /// The generated `commit_id.inc` - upstream generates it with `git describe` as a pre-build
-/// step; the installer runs no git, so the selected Version stands in as the DLL's version
-/// string.
-fn commit_id_contents(version_label: &str) -> String {
-    let sanitized: String = version_label
+/// step; the Core hands over the same thing for a Local Repo, and the Version's label for an
+/// Upstream Cache Version (`BuildRequest::version_string`). ` Installer` marks the DLL as
+/// built here, so a crash report tells it from one built by upstream's own scripts.
+fn commit_id_contents(version_string: &str) -> String {
+    let sanitized: String = version_string
         .chars()
         .map(|c| {
-            if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '/' | '+') {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '/' | '+' | ' ') {
                 c
             } else {
                 '-'
@@ -698,6 +717,52 @@ fn commit_id_contents(version_label: &str) -> String {
     format!(
         "const char CURRENT_GAMECORE_VERSION[] = \"{sanitized} Installer\"; //autogenerated, do not commit this file!\n"
     )
+}
+
+/// The overlay's file name inside the variant's `generated` directory.
+const COMMIT_ID_OVERLAY_FILE: &str = "commit_id-overlay.yaml";
+
+/// A clang VFS overlay that shows `generated` as `commit_id.inc` at the root of each
+/// spelling of the source tree, so `#include "../commit_id.inc"` from the project directory
+/// reads it whatever the tree holds there.
+///
+/// YAML in flow style with every string single-quoted, inside which only `'` itself needs
+/// escaping (by doubling), so no path can break it. Case-insensitive because Windows paths
+/// are; on Linux it only widens a match on this one file name.
+fn commit_id_overlay(source_roots: &[PathBuf], generated: &Path) -> String {
+    let quote = |path: &Path| format!("'{}'", path.display().to_string().replace('\'', "''"));
+    let roots: Vec<String> = source_roots
+        .iter()
+        .map(|root| {
+            format!(
+                "{{ 'name': {}, 'type': 'directory', 'contents': [ {{ 'name': 'commit_id.inc', \
+                 'type': 'file', 'external-contents': {} }} ] }}",
+                quote(root),
+                quote(generated)
+            )
+        })
+        .collect();
+    format!(
+        "{{ 'version': 0, 'case-sensitive': 'false', 'roots': [\n  {}\n] }}\n",
+        roots.join(",\n  ")
+    )
+}
+
+/// Every spelling of `source_root` the overlay must answer to.
+///
+/// clang makes the including file's relative path absolute with the working directory, the
+/// source root, as the operating system reports it - with symlinks resolved, on Linux and
+/// macOS. On Windows it is reported as it was set, and the canonical form is a `\\?\` path
+/// no include ever spells, so the given path is the only one there.
+fn source_root_spellings(source_root: &Path) -> Vec<PathBuf> {
+    let mut spellings = vec![source_root.to_path_buf()];
+    if !cfg!(windows)
+        && let Ok(canonical) = source_root.canonicalize()
+        && canonical != source_root
+    {
+        spellings.push(canonical);
+    }
+    spellings
 }
 
 /// Everything that must match for cached objects to be reusable.
@@ -945,7 +1010,7 @@ mod tests {
             source_root: fixture.source_root.clone(),
             forty_three_civs: FortyThreeCivs::Disabled,
             build_configuration: BuildConfiguration::Release,
-            version_label: "Release-9.9".to_owned(),
+            version_string: "Release-9.9".to_owned(),
             output_path: fixture.output_path.clone(),
         }
     }
@@ -992,8 +1057,8 @@ mod tests {
         assert!(fixture.output_path.is_file());
 
         // The generated version include exists in the variant directory, carries the
-        // Version, and is reachable through the extra include directory - never written
-        // into the Installation Source (a Local Repo is used as-is).
+        // version string, and is reachable through the extra include directory - never
+        // written into the Installation Source (a Local Repo is used as-is).
         let generated = fixture
             .output_path
             .parent()
@@ -1068,6 +1133,96 @@ mod tests {
         assert_eq!(inputs.len(), 2, "one compile and one link: {inputs:?}");
         assert_eq!(slashed(&inputs[0]), "CvGameCoreDLL_Expansion2/CvCity.cpp");
         assert!(inputs[1].starts_with('@'));
+    }
+
+    /// The version string changes with every commit of a Local Repo, and only the sources
+    /// that include it read it: a new one recompiles those and relinks, nothing else.
+    #[test]
+    fn a_new_version_string_recompiles_only_the_sources_that_include_it() {
+        let fixture = fixture();
+        fs::write(
+            fixture
+                .source_root
+                .join("CvGameCoreDLL_Expansion2/CvCity.cpp"),
+            "#include \"../commit_id.inc\"\n",
+        )
+        .unwrap();
+        run(&fixture, &FakeInvoker::new(), &request(&fixture));
+        std::thread::sleep(std::time::Duration::from_millis(15));
+
+        let mut renamed = request(&fixture);
+        renamed.version_string = "Release-9.9-1-gabc1234 Dirty".to_owned();
+        let second = FakeInvoker::new();
+        run(&fixture, &second, &renamed);
+
+        let inputs = second.call_inputs();
+        assert_eq!(inputs.len(), 2, "one compile and one link: {inputs:?}");
+        assert_eq!(slashed(&inputs[0]), "CvGameCoreDLL_Expansion2/CvCity.cpp");
+        let commit_id = fs::read_to_string(
+            fixture
+                .output_path
+                .parent()
+                .unwrap()
+                .join("objects/release/generated/commit_id.inc"),
+        )
+        .unwrap();
+        assert!(
+            commit_id.contains("\"Release-9.9-1-gabc1234 Dirty Installer\""),
+            "{commit_id}"
+        );
+    }
+
+    /// A `commit_id.inc` already in the tree - upstream's scripts and Visual Studio builds
+    /// leave one - must not name the DLL. Every compile is shown the generated one at exactly
+    /// that path, and the tree's own is never touched.
+    #[test]
+    fn the_generated_version_string_is_shown_over_the_trees_own() {
+        let fixture = fixture();
+        fs::write(fixture.source_root.join("commit_id.inc"), "stale").unwrap();
+        let invoker = FakeInvoker::new();
+
+        run(&fixture, &invoker, &request(&fixture));
+
+        let generated = fixture
+            .output_path
+            .parent()
+            .unwrap()
+            .join("objects/release/generated");
+        let overlay_path = generated.join(COMMIT_ID_OVERLAY_FILE);
+        let overlay_flag = slashed(&format!("-vfsoverlay{}", overlay_path.display()));
+        let calls = invoker.calls();
+        for call in &calls[..calls.len() - 1] {
+            assert!(
+                call.args.iter().any(|arg| slashed(arg) == overlay_flag),
+                "every compile needs {overlay_flag}: {:?}",
+                call.args
+            );
+        }
+        let overlay = slashed(&fs::read_to_string(&overlay_path).unwrap());
+        let root = slashed(&fixture.source_root.display().to_string());
+        let ours = slashed(&generated.join("commit_id.inc").display().to_string());
+        assert!(overlay.contains(&format!("'name': '{root}'")), "{overlay}");
+        assert!(
+            overlay.contains(&format!("'external-contents': '{ours}'")),
+            "{overlay}"
+        );
+        assert_eq!(
+            fs::read_to_string(fixture.source_root.join("commit_id.inc")).unwrap(),
+            "stale"
+        );
+    }
+
+    #[test]
+    fn the_overlay_survives_any_path() {
+        let overlay = commit_id_overlay(
+            &[PathBuf::from("/home/o'brien/Community Patch")],
+            Path::new("/build/commit_id.inc"),
+        );
+
+        assert!(
+            overlay.contains("'name': '/home/o''brien/Community Patch'"),
+            "{overlay}"
+        );
     }
 
     /// A header could affect anything, so everything behind the PCH fence rebuilds - but the

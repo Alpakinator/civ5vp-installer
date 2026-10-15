@@ -20,6 +20,8 @@ gix = { version = "0.74", default-features = false, features = [
     "zlib-rs",
     "worktree-mutation",
     "revision",
+    # `is_dirty`, for the Clean/Dirty half of a Local Repo's name (`local.rs`).
+    "status",
 ] }
 
 [dev-dependencies]
