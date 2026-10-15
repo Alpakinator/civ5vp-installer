@@ -1,10 +1,10 @@
 # Ticket 10: CI builds the two single-file binaries from a clean checkout.
 #
-# The Linux binary is also verified locally on every change (AGENTS.md); the Windows binary
+# The Linux binary is also verified locally on every change (CLAUDE.md); the Windows binary
 # is built here and verified later, per the spec's platform constraint ("Windows and
 # other-distro verification is currently unavailable locally; it arrives later via CI
 # runners"). The fast suite runs on the Linux job - it needs `git` for the fixture
-# repositories (a property of the fixtures, not of the installer; AGENTS.md), which the
+# repositories (a property of the fixtures, not of the installer; CLAUDE.md), which the
 # runners have.
 #
 # `--ignored` tests (real downloads, real compiles) never run here.

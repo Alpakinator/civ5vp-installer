@@ -18,12 +18,6 @@
 *.swp
 .DS_Store
 
-# .claude/: only the shared project settings are tracked. Everything else in here is
-# machine-local (settings.local.json) or an agent-sandbox mount that surfaces as an
-# untracked entry - keep both out of `git add -A`.
-/.claude/*
-!/.claude/settings.json
-
 # Agent-sandbox mounts of the user's shell environment, not project files
 /.bash_profile
 /.bashrc
@@ -42,6 +36,8 @@
 /docs/ui-reference/art_for_inspiration/
 
 # AI-workflow files - local development tooling, not part of the published repository.
-/AGENTS.md
-/.claude/
+/CLAUDE.md
 /docs/agents/
+
+# Local Git worktrees (usable by any agent).
+/.worktrees/
