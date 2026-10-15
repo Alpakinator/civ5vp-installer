@@ -4,13 +4,15 @@ Notable changes, newest first. Versions follow [semantic versioning](https://sem
 and each one is the tag the [releases page](https://github.com/Alpakinator/civ5vp-installer/releases)
 publishes binaries for.
 
-## Unreleased
+## 0.1.7 - 2026-10-16
 
 ### Added
 
 - A clock beside "Installing…" counts how long the install has run, and the DLL's link step
   says up front that it can take minutes with nothing to report - so a long quiet step no
   longer looks like a hang.
+- Every line of the log ("Open log") starts with a readable UTC time, to the millisecond,
+  instead of seconds since 1970 - so a bug report shows when each step happened.
 
 ### Fixed
 
