@@ -39,7 +39,7 @@ fn run_app() -> Result<(), String> {
     // Upstream Cache, Toolchain Cache and settings all live inside it. The executable itself
     // stores nothing beside itself.
     let store = AppDataStore::for_this_platform().map_err(|problem| {
-        eprintln!("[civ5vp-installer] {}", problem.log_detail());
+        civ5vp_installer::log_detail(&problem.log_detail());
         problem.user_message()
     })?;
     // From here on, everything `log_detail` receives is on disk as well as stderr.

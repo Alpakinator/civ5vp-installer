@@ -87,21 +87,27 @@ pub fn native_options(viewport: egui::ViewportBuilder) -> eframe::NativeOptions 
 /// Where the detail behind a user-facing error goes: appended to the log file in the App
 /// Data Store (and echoed to stderr), keeping it out of the UI. A log line that cannot be
 /// written is not worth interrupting anything over - stderr still has it.
+/// Each physical line carries the entry's UTC timestamp, with millisecond precision.
 pub fn log_detail(detail: &str) {
+    let timestamp = jiff::Timestamp::now();
+    let mut entry = String::new();
+    for line in detail.lines() {
+        entry.push_str(&format!("[{timestamp:.3}] {line}\n"));
+    }
     if let Some(path) = LOG_FILE.get() {
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|elapsed| elapsed.as_secs())
-            .unwrap_or(0);
-        let line = format!("[{timestamp}] {detail}\n");
         let written = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(path)
-            .and_then(|mut file| std::io::Write::write_all(&mut file, line.as_bytes()));
+            .and_then(|mut file| std::io::Write::write_all(&mut file, entry.as_bytes()));
         if written.is_err() {
-            eprintln!("[civ5vp-installer] could not write {}", path.display());
+            eprintln!(
+                "[{timestamp:.3}] [civ5vp-installer] could not write {}",
+                path.display()
+            );
         }
     }
-    eprintln!("[civ5vp-installer] {detail}");
+    for line in entry.lines() {
+        eprintln!("[civ5vp-installer] {line}");
+    }
 }

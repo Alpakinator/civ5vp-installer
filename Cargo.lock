@@ -698,6 +698,7 @@ dependencies = [
  "egui-file-dialog",
  "egui_kittest",
  "image",
+ "jiff",
  "tempfile",
  "ureq",
  "winresource",
