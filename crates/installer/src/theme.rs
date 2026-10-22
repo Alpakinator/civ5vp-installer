@@ -178,17 +178,22 @@ fn visuals() -> egui::Visuals {
     visuals.widgets.inactive.fg_stroke = Stroke::new(1.0, PARCHMENT_BRIGHT);
     visuals.widgets.inactive.corner_radius = corner;
 
-    // Hover: the border lifts to bright gold at 2 px, the fill lightens one step.
+    // Hover: the border lifts to bright gold, the fill lightens one step.
+    //
+    // Every state's border is the same width, 1 px. The painted rim is always 2 px whatever
+    // this says (`deco::Plate`), but egui sizes a button's padding as `button_padding` less
+    // the border width of the state it is in - so a wider border on hover shrank the button
+    // by a pixel a side and moved its label every time the pointer crossed it.
     visuals.widgets.hovered.bg_fill = RAISED_NAVY;
     visuals.widgets.hovered.weak_bg_fill = RAISED_NAVY;
-    visuals.widgets.hovered.bg_stroke = Stroke::new(2.0, GOLD_BRIGHT);
+    visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, GOLD_BRIGHT);
     visuals.widgets.hovered.fg_stroke = Stroke::new(1.5, PARCHMENT_BRIGHT);
     visuals.widgets.hovered.corner_radius = corner;
 
     // Pressed: the one moment gold is a fill, and the lettering flips to navy.
     visuals.widgets.active.bg_fill = GOLD;
     visuals.widgets.active.weak_bg_fill = GOLD;
-    visuals.widgets.active.bg_stroke = Stroke::new(2.0, GOLD_BRIGHT);
+    visuals.widgets.active.bg_stroke = Stroke::new(1.0, GOLD_BRIGHT);
     visuals.widgets.active.fg_stroke = Stroke::new(1.5, PAGE_NAVY);
     visuals.widgets.active.corner_radius = corner;
 
@@ -202,6 +207,10 @@ fn visuals() -> egui::Visuals {
     // and tooltips. None of these is ours to paint, so square is as far as they go.
     visuals.window_corner_radius = corner;
     visuals.menu_corner_radius = corner;
+    // Their shadows fall away from the light the rims are lit by (`deco::LIGHT`, the top-left
+    // corner): down and to the right in equal measure. egui's own drop them mostly downward.
+    visuals.window_shadow.offset = [12, 12];
+    visuals.popup_shadow.offset = [6, 6];
 
     visuals
 }

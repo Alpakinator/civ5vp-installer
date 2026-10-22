@@ -75,12 +75,14 @@ impl ReplacedFile {
     /// rather than a hash: a hash would have to be pinned per game patch and would go stale,
     /// while these are true of any build of the replacement the installer could produce. The
     /// movie is the exception, because it is not produced at all - the installer carries the
-    /// one replacement it can write, so "is it ours" is "is it that file".
+    /// replacement it writes, so "is it ours" is "is it one of the intros it has written".
     fn is_a_replacement(self, bytes: &[u8]) -> bool {
         match self {
             Self::LuaEngine => looks_like_luajit(bytes),
             Self::MenuTheme => is_silent_wav(bytes),
-            Self::OpeningMovie => bytes == VOX_POPULI_INTRO,
+            Self::OpeningMovie => {
+                INSTALLER_INTROS.contains(&(bytes.len() as u64, crate::fingerprint::fnv1a64(bytes)))
+            }
         }
     }
 }
@@ -156,15 +158,33 @@ pub fn silent_theme() -> Vec<u8> {
 }
 
 /// The Vox Populi intro: about 21 seconds closing on the Civilization V logo with "Vox Populi"
-/// beneath the gold V, encoded as the game's own movie is (ASF, WMV2 video, WMA2 audio).
+/// beneath the gold V.
+///
+/// Two encodings of one edit, and each build carries the one its game can play. On Windows
+/// that is the game's own format (ASF: WMV2 video, WMA2 audio). Under Proton it is not:
+/// Proton's media converter swaps every WMV it holds no pre-transcoded copy of for a
+/// placeholder of colour bars, so the Linux build writes a WebM (VP9, Opus) under the same
+/// `.wmv` name, which Wine recognises by its content and plays (ADR-0009).
 ///
 /// Carried in the binary rather than generated like the silent theme, because a video cannot
-/// be. That also makes it the one Replaced File recognised by its exact bytes - and why a
-/// re-edited intro should be checked against what [`BackupStore::back_up_once`] would make of
-/// the old one: a game still holding the previous edit, with no backup taken, would have it
-/// banked as the original.
+/// be. That also makes it the one Replaced File recognised by its exact bytes - see
+/// [`INSTALLER_INTROS`].
+#[cfg(windows)]
 pub(crate) static VOX_POPULI_INTRO: &[u8] =
     include_bytes!("../../../assets/intro/Civ5XP2_Opening_Movie_en_US.wmv");
+#[cfg(not(windows))]
+pub(crate) static VOX_POPULI_INTRO: &[u8] =
+    include_bytes!("../../../assets/intro/Civ5XP2_Opening_Movie_en_US.webm");
+
+/// Every intro an installer build has written, as (length, FNV-1a 64): both platforms'
+/// encodings, so each build knows the other's as its own too. The 0.1.8 Linux build wrote
+/// the WMV, and a game still holding it must not have it banked as the original. A re-edited
+/// intro is added here, never swapped in: a game still holding the previous edit, with no
+/// backup taken, would otherwise have it banked as the original.
+const INSTALLER_INTROS: [(u64, u64); 2] = [
+    (10_260_377, 0xb754_2b65_805f_2955),
+    (2_180_033, 0x5422_afd8_683f_07aa),
+];
 
 /// Symbols only a LuaJIT build exports.
 ///
@@ -196,10 +216,15 @@ fn looks_like_luajit(bytes: &[u8]) -> bool {
 /// make and reports that failure properly, rather than this check turning an I/O problem into
 /// a silent refusal that looks like success.
 fn file_is_a_replacement(file: ReplacedFile, path: &Path) -> bool {
-    // The game's own movie is 86 MB and the intro is 10; reading the first only to find it is
-    // the wrong length would cost every Deployment a pointless read of the largest file here.
+    // The game's own movie is 86 MB and the intros are 10 and 2; reading the first only to
+    // find it is the wrong length would cost every Deployment a pointless read of the
+    // largest file here.
     if file == ReplacedFile::OpeningMovie
-        && std::fs::metadata(path).is_ok_and(|meta| meta.len() != VOX_POPULI_INTRO.len() as u64)
+        && std::fs::metadata(path).is_ok_and(|meta| {
+            !INSTALLER_INTROS
+                .iter()
+                .any(|(length, _)| *length == meta.len())
+        })
     {
         return false;
     }
@@ -428,8 +453,27 @@ mod tests {
         assert!(!ReplacedFile::OpeningMovie.is_a_replacement(&silent_theme()));
         assert!(!ReplacedFile::MenuTheme.is_a_replacement(VOX_POPULI_INTRO));
 
-        // The intro is the format the game's movie is in: an ASF container.
-        assert!(VOX_POPULI_INTRO.starts_with(&[0x30, 0x26, 0xb2, 0x75, 0x8e, 0x66, 0xcf, 0x11]));
+        // Windows gets the format the game's movie is in, an ASF container; the Proton
+        // build a WebM, which Wine plays by its content.
+        if cfg!(windows) {
+            assert!(
+                VOX_POPULI_INTRO.starts_with(&[0x30, 0x26, 0xb2, 0x75, 0x8e, 0x66, 0xcf, 0x11])
+            );
+        } else {
+            assert!(VOX_POPULI_INTRO.starts_with(&[0x1a, 0x45, 0xdf, 0xa3]));
+        }
+    }
+
+    /// Both platforms' intros are recognised by every build - the pinned lengths and hashes
+    /// are those of the files carried, so neither can drift from its asset.
+    #[test]
+    fn every_build_knows_both_intros_as_its_own() {
+        for intro in [
+            &include_bytes!("../../../assets/intro/Civ5XP2_Opening_Movie_en_US.wmv")[..],
+            &include_bytes!("../../../assets/intro/Civ5XP2_Opening_Movie_en_US.webm")[..],
+        ] {
+            assert!(ReplacedFile::OpeningMovie.is_a_replacement(intro));
+        }
     }
 
     /// LuaJIT's own export names, as they appear in a real build. Used to make the test

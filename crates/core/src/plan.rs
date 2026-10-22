@@ -156,8 +156,18 @@ impl Plan {
     pub(crate) fn removed_files(&self) -> Vec<ClaimedFile> {
         ClaimedFile::ALL
             .into_iter()
-            .filter(|file| !self.files.contains(file))
+            .filter(|file| !self.files.contains(file) && !self.generated_files().contains(file))
             .collect()
+    }
+
+    /// The Claimed Files this Deployment generates rather than copies from the source. Sync
+    /// replaces them itself, and leaves them out when there is nothing to put in them.
+    pub(crate) fn generated_files(&self) -> Vec<ClaimedFile> {
+        if self.modpack() {
+            vec![ClaimedFile::ModpackMapScriptText]
+        } else {
+            Vec::new()
+        }
     }
 
     /// Is this a Modpack Deployment?
@@ -194,6 +204,7 @@ impl Plan {
             .collect();
         if self.modpack() {
             folders.push(ClaimedFolder::Modpack);
+            folders.push(ClaimedFolder::ModpackMaps);
         }
         folders.sort_unstable();
         folders

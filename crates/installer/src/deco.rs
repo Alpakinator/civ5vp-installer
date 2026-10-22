@@ -9,6 +9,7 @@
 
 use std::sync::Arc;
 
+use egui::emath::GuiRounding as _;
 use egui::{Color32, Pos2, Rect, Shape, Stroke, pos2, vec2};
 
 use crate::theme;
@@ -85,9 +86,13 @@ pub enum Relief {
     Sunken,
 }
 
-/// Where the light comes from: above and a little to the right, as Civilization V lights its
-/// own frames - their top and right edges catch it, their left and bottom fall into bronze.
-const LIGHT: egui::Vec2 = vec2(0.33, -0.94);
+/// Where the light comes from: the top-left corner, at 45°. Top and left edges catch it in
+/// equal measure, bottom and right fall into bronze, and everything in the window - rims,
+/// grooves, the progress fill, the shadows egui casts - is shaded from this one direction.
+const LIGHT: egui::Vec2 = vec2(
+    -std::f32::consts::FRAC_1_SQRT_2,
+    -std::f32::consts::FRAC_1_SQRT_2,
+);
 
 /// How wide a rim is: a lit face and the shade beside it.
 const RIM: f32 = 2.0;
@@ -139,12 +144,12 @@ fn rim_mesh(
 
     let mut mesh = egui::Mesh::default();
     for (i, (_, _, normal)) in facings(outline, closed, inside).into_iter().enumerate() {
-        let towards = normal.dot(LIGHT);
+        let towards = lit_by(normal);
         let lit = match relief {
             Relief::Raised => towards,
             Relief::Sunken => -towards,
         };
-        let face = tone(metal, 1.0 + 0.6 * lit);
+        let face = facing(metal, lit);
         let shade = tone(metal, 0.35 + 0.6 * lit.max(0.0).powi(2));
         let colours = [
             Color32::TRANSPARENT,
@@ -171,6 +176,17 @@ fn rim_mesh(
 /// One physical pixel, in points.
 fn pixel_of(ui: &egui::Ui) -> f32 {
     1.0 / ui.ctx().pixels_per_point()
+}
+
+/// The colour a face of `metal` takes, `lit` from -1 (turned straight away from the light) to
+/// 1 (straight into it).
+fn facing(metal: Color32, lit: f32) -> Color32 {
+    tone(metal, 1.0 + 0.6 * lit)
+}
+
+/// How much light a stretch facing `normal` catches: its face's `lit`.
+fn lit_by(normal: egui::Vec2) -> f32 {
+    normal.dot(LIGHT)
 }
 
 /// `metal` brightened (`k` above 1, towards a pale highlight) or darkened (below 1).
@@ -629,10 +645,31 @@ pub fn progress(ui: &mut egui::Ui, fraction: Option<f32>) {
             if filled >= 1.0 {
                 let fill = Rect::from_min_size(trough.min, vec2(filled, trough.height()));
                 painter.rect_filled(fill, 0.0, theme::GOLD);
+                // A bar of gold standing in the trough: a pixel of bevel round it, lit on
+                // the faces turned to the light and shaded on the two turned away.
+                let pixel = pixel_of(ui);
+                let edge = |normal: egui::Vec2| facing(theme::GOLD, lit_by(normal));
+                let (top, left) = (fill.top() + pixel / 2.0, fill.left() + pixel / 2.0);
+                let (bottom, right) = (fill.bottom() - pixel / 2.0, fill.right() - pixel / 2.0);
                 painter.hline(
                     fill.x_range(),
-                    fill.top() + 0.5,
-                    Stroke::new(1.0, theme::GOLD_BRIGHT),
+                    bottom,
+                    Stroke::new(pixel, edge(vec2(0.0, 1.0))),
+                );
+                painter.vline(
+                    right,
+                    fill.y_range(),
+                    Stroke::new(pixel, edge(vec2(1.0, 0.0))),
+                );
+                painter.hline(
+                    fill.left()..=fill.right() - pixel,
+                    top,
+                    Stroke::new(pixel, edge(vec2(0.0, -1.0))),
+                );
+                painter.vline(
+                    left,
+                    fill.top()..=fill.bottom() - pixel,
+                    Stroke::new(pixel, edge(vec2(-1.0, 0.0))),
                 );
             }
         }
@@ -804,12 +841,13 @@ pub fn text_field(ui: &mut egui::Ui, field: egui::TextEdit<'_>) -> egui::Respons
 /// the ends of the box, and a path that started in the cut would look clipped.
 const TEXT_FIELD_MARGIN: (i8, i8) = (8, 4);
 
-/// A radio button drawn as a hex tile, pointy-top as the game's map tiles stand, with a
-/// smaller filled tile inside it when it is the one chosen.
+/// A radio button drawn as a hex tile, pointy-top as the game's map tiles stand: a well with
+/// a sunken rim, and a smaller filled tile inside it when it is the one chosen.
 ///
 /// egui's own is a circle, and a circle is the one shape this skin does not have. A hex is
-/// the game's own unit of space, and the same tile the header's emblem sits in. Everything except the mark is egui's: the sizing, the click sense, and the
-/// accessibility information a screen reader and the shell tests both read.
+/// the game's own unit of space, and the same tile the header's emblem sits in. Everything
+/// except the mark is egui's: the sizing, the click sense, and the accessibility information a
+/// screen reader and the shell tests both read.
 pub fn radio_value<T: PartialEq>(
     ui: &mut egui::Ui,
     current: &mut T,
@@ -817,7 +855,35 @@ pub fn radio_value<T: PartialEq>(
     label: &str,
 ) -> egui::Response {
     let selected = *current == chosen;
-    let mut response = radio(ui, selected, label);
+    let mut response = choice(
+        ui,
+        egui::WidgetType::RadioButton,
+        selected,
+        label,
+        |painter, mark, visuals, pixel| {
+            let outline = hexagon_points(mark.center(), mark.height() / 2.0);
+            painter.add(Shape::convex_polygon(
+                outline.clone(),
+                visuals.bg_fill,
+                Stroke::NONE,
+            ));
+            painter.extend(rim(
+                &outline,
+                true,
+                mark.center(),
+                visuals.bg_stroke.color,
+                Relief::Sunken,
+                pixel,
+            ));
+            if selected {
+                painter.add(Shape::convex_polygon(
+                    hexagon_points(mark.center(), mark.height() * MARK_HALF),
+                    visuals.fg_stroke.color,
+                    Stroke::NONE,
+                ));
+            }
+        },
+    );
     if response.clicked() && !selected {
         *current = chosen;
         response.mark_changed();
@@ -825,7 +891,67 @@ pub fn radio_value<T: PartialEq>(
     response
 }
 
-fn radio(ui: &mut egui::Ui, selected: bool, label: &str) -> egui::Response {
+/// Centre-to-point of a radio's filled mark, as a fraction of the outline's height: clear of
+/// the rim by a pixel.
+const MARK_HALF: f32 = 0.2;
+
+/// A checkbox drawn on the radio's terms: a square well with its corners cut and a sunken rim,
+/// a tick inside it when it is checked. egui's own is a rounded, flat-bordered box.
+pub fn checkbox(ui: &mut egui::Ui, checked: &mut bool, label: &str) -> egui::Response {
+    let ticked = *checked;
+    let mut response = choice(
+        ui,
+        egui::WidgetType::Checkbox,
+        ticked,
+        label,
+        |painter, mark, visuals, pixel| {
+            let outline = chamfered(mark, CHECKBOX_CHAMFER);
+            painter.add(Shape::convex_polygon(
+                outline.clone(),
+                visuals.bg_fill,
+                Stroke::NONE,
+            ));
+            painter.extend(rim(
+                &outline,
+                true,
+                mark.center(),
+                visuals.bg_stroke.color,
+                Relief::Sunken,
+                pixel,
+            ));
+            if ticked {
+                let well = mark.shrink(RIM + 1.0);
+                painter.add(Shape::line(
+                    vec![
+                        pos2(well.left(), well.center().y),
+                        pos2(well.center().x - well.width() / 6.0, well.bottom()),
+                        pos2(well.right(), well.top()),
+                    ],
+                    Stroke::new(2.0, visuals.fg_stroke.color),
+                ));
+            }
+        },
+    );
+    if response.clicked() {
+        *checked = !*checked;
+        response.mark_changed();
+    }
+    response
+}
+
+/// The cut off each corner of a checkbox: a pixel and a half, so the box keeps its square
+/// face and still has no corner the skin does not.
+const CHECKBOX_CHAMFER: f32 = 1.5;
+
+/// A choice mark with its label: lays the two out as egui lays out its own, reports itself to
+/// AccessKit as `kind`, and leaves the mark to `paint`, given a square on whole pixels.
+fn choice(
+    ui: &mut egui::Ui,
+    kind: egui::WidgetType,
+    selected: bool,
+    label: &str,
+    paint: impl FnOnce(&egui::Painter, Rect, &egui::style::WidgetVisuals, f32),
+) -> egui::Response {
     let mark_size = ui.spacing().icon_width;
     let gap = ui.spacing().icon_spacing;
     let galley = egui::WidgetText::from(label).into_galley(
@@ -841,33 +967,17 @@ fn radio(ui: &mut egui::Ui, selected: bool, label: &str) -> egui::Response {
         ),
         egui::Sense::click(),
     );
-    response.widget_info(|| {
-        egui::WidgetInfo::selected(
-            egui::WidgetType::RadioButton,
-            ui.is_enabled(),
-            selected,
-            label,
-        )
-    });
+    response.widget_info(|| egui::WidgetInfo::selected(kind, ui.is_enabled(), selected, label));
 
     if ui.is_rect_visible(rect) {
         let visuals = ui.style().interact(&response);
+        // On whole pixels, so the rim's straight stretches are crisp.
         let mark = Rect::from_center_size(
             pos2(rect.left() + mark_size / 2.0, rect.center().y),
             egui::Vec2::splat(mark_size),
-        );
-        ui.painter().add(Shape::convex_polygon(
-            hexagon_points(mark.center(), mark_size / 2.0),
-            visuals.bg_fill,
-            visuals.bg_stroke,
-        ));
-        if selected {
-            ui.painter().add(Shape::convex_polygon(
-                hexagon_points(mark.center(), mark_size * MARK_HALF),
-                visuals.fg_stroke.color,
-                Stroke::NONE,
-            ));
-        }
+        )
+        .round_to_pixels(ui.ctx().pixels_per_point());
+        paint(ui.painter(), mark, visuals, pixel_of(ui));
         ui.painter().galley(
             pos2(
                 rect.left() + mark_size + gap,
@@ -880,16 +990,21 @@ fn radio(ui: &mut egui::Ui, selected: bool, label: &str) -> egui::Response {
     response
 }
 
-/// Centre-to-point of the filled mark, as a fraction of the outline's height.
-const MARK_HALF: f32 = 0.3;
-
-/// A separator drawn inside a panel: a single recessed hairline.
+/// A separator drawn inside a panel: a groove cut across it, its upper wall in shadow and its
+/// lower wall catching the light.
 pub fn hairline(ui: &mut egui::Ui) {
     let width = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(vec2(width, 5.0), egui::Sense::hover());
-    ui.painter().hline(
-        rect.x_range(),
-        rect.center().y,
-        Stroke::new(1.0, theme::GOLD_DARK),
-    );
+    let pixel = pixel_of(ui);
+    let y = rect.center().y.round_to_pixels(ui.ctx().pixels_per_point());
+    for (row, normal) in [
+        (y - pixel / 2.0, vec2(0.0, 1.0)),
+        (y + pixel / 2.0, vec2(0.0, -1.0)),
+    ] {
+        ui.painter().hline(
+            rect.x_range(),
+            row,
+            Stroke::new(pixel, facing(theme::GOLD_DARK, lit_by(normal))),
+        );
+    }
 }

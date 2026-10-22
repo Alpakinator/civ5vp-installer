@@ -10,10 +10,11 @@
 //! creation (`CvGame::CreateMPMP` and friends) driven by the in-game "Modpack Maker for VP".
 //! Where this module and that code disagree, this module is wrong.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use crate::BUILT_DLL_FILE_NAME;
-use crate::boundaries::{CacheState, ModpackAssembler, ModpackDatabaseJob};
+use crate::boundaries::{CacheState, LocalizedText, ModpackAssembler, ModpackDatabaseJob};
 use crate::claimed::{ClaimedFolder, GameFolders};
 use crate::error::InstallError;
 use crate::modinfo;
@@ -76,49 +77,93 @@ const BASE_UI_FILES: [(&str, &str); 3] = [
     ),
 ];
 
+/// The entry point type of a map script. Not a UI addin: the game lists these in game setup,
+/// and a Modpack gets them there through the Documents-side `Maps` folder (ADR-0008).
+const MAP_SCRIPT_ADDIN: &str = "MapScript";
+
 /// The in-game Modpack Maker's own mod ID. Excluded from the extra-mod offer the same way
 /// that tool excludes itself from its packs: a hotkey listener for building modpacks is
 /// dead weight inside one.
 const MODPACK_MAKER_ID: &str = "eb8f6ed3-109d-4f2f-a81d-516c8d2f91c1";
 
-/// The player's own mods in the MODS folder that a Modpack can bake in whole: every
-/// folder holding a mod - its `.modinfo` at the top or further down - that
-/// [`bakeable_mod_roots`] accepts, minus the Claimed Folders - those are the managed set,
-/// governed by the configuration. Offering only what bakes in whole is the point: a
-/// player must never believe a mod is in their Modpack when part of it is not. Sorted;
-/// that is also the order they are applied in, after the managed set, which is what a
-/// modmod patching Vox Populi expects.
-pub fn available_extra_mods(mods_folder: &Path) -> Vec<String> {
+/// The player's own mods in the MODS folder, as the extra-mod picker shows them: every
+/// folder holding a mod - its `.modinfo` at the top or further down - minus the Claimed
+/// Folders, which are the managed set governed by the configuration.
+///
+/// Only the `offered` ones can be picked. A player must never believe a mod is in their
+/// Modpack when part of it is not, so a mod [`bakeable_mod_roots`] refuses is never offered
+/// - but it is listed, with the reason, so it does not just vanish from the list.
+pub fn extra_mod_offer(mods_folder: &Path) -> ExtraModOffer {
+    let mut offer = ExtraModOffer::default();
     let Ok(entries) = std::fs::read_dir(mods_folder) else {
-        return Vec::new();
+        return offer;
     };
-    let mut names: Vec<String> = entries
-        .flatten()
-        .filter_map(|entry| {
-            let path = entry.path();
-            let name = entry.file_name().to_str()?.to_owned();
-            if !path.is_dir() || is_claimed_name(&name) {
-                return None;
-            }
-            bakeable_mod_roots(&path).ok().map(|_| name)
-        })
-        .collect();
-    names.sort_unstable();
-    names
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        if !path.is_dir() || is_claimed_name(&name) {
+            continue;
+        }
+        match bakeable_mod_roots(&path) {
+            Ok(_) => offer.offered.push(name),
+            Err(Unbakeable::Refused(reason)) => offer.refused.push(RefusedMod { name, reason }),
+            Err(Unbakeable::NotOffered(_)) => {}
+        }
+    }
+    offer.offered.sort_unstable();
+    offer.refused.sort_unstable_by(|a, b| a.name.cmp(&b.name));
+    offer
+}
+
+/// What [`extra_mod_offer`] found in the MODS folder.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ExtraModOffer {
+    /// The mods a Modpack can bake in whole, by folder name. Sorted; that is also the order
+    /// they are applied in, after the managed set, which is what a modmod patching Vox
+    /// Populi expects.
+    pub offered: Vec<String>,
+    /// The mods it cannot, sorted by folder name.
+    pub refused: Vec<RefusedMod>,
+}
+
+/// A mod in the MODS folder that a Modpack cannot carry whole.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RefusedMod {
+    /// Its folder name.
+    pub name: String,
+    /// Why, in the player's words: a clause that reads after "cannot be baked in:".
+    pub reason: String,
+}
+
+/// Why a folder in MODS cannot be baked into a Modpack.
+enum Unbakeable {
+    /// Not a mod to show the player at all: a folder with no `.modinfo`, or the Modpack Maker.
+    NotOffered(String),
+    /// A mod the pack cannot carry whole.
+    Refused(String),
+}
+
+impl Unbakeable {
+    fn reason(&self) -> &str {
+        match self {
+            Self::NotOffered(reason) | Self::Refused(reason) => reason,
+        }
+    }
 }
 
 /// The mod roots inside one of the player's MODS folders, if every one of them bakes into
 /// a Modpack whole; otherwise why not. The offer and the build both go by this, so what
 /// the picker shows is exactly what the build can deliver.
-fn bakeable_mod_roots(folder: &Path) -> Result<Vec<PathBuf>, String> {
-    let roots = modinfo::mod_roots(folder).map_err(|error| error.user_message())?;
+fn bakeable_mod_roots(folder: &Path) -> Result<Vec<PathBuf>, Unbakeable> {
+    let roots =
+        modinfo::mod_roots(folder).map_err(|error| Unbakeable::Refused(error.user_message()))?;
     if roots.is_empty() {
-        return Err("it holds no .modinfo".to_owned());
+        return Err(Unbakeable::NotOffered("it holds no .modinfo".to_owned()));
     }
     for root in &roots {
-        if let Some(reason) = why_not_bakeable(root) {
-            return Err(reason);
-        }
+        why_not_bakeable(root)?;
     }
     Ok(roots)
 }
@@ -126,58 +171,67 @@ fn bakeable_mod_roots(folder: &Path) -> Result<Vec<PathBuf>, String> {
 /// Why this mod root cannot be baked in whole, if it cannot. A Modpack has no Mods menu:
 /// only the database updates and the UI addins the pack hooks reach the game, so a mod
 /// asking for anything else - or naming a file it does not carry - would arrive partly.
-fn why_not_bakeable(root: &Path) -> Option<String> {
+///
+/// The reasons are shown to the player beside the mod, so they are in a player's words.
+fn why_not_bakeable(root: &Path) -> Result<(), Unbakeable> {
+    use Unbakeable::{NotOffered, Refused};
     let modinfo = match modinfo::find(root) {
         Ok(Some(modinfo)) => modinfo,
-        Ok(None) => return Some("it holds no .modinfo".to_owned()),
-        Err(error) => return Some(error.user_message()),
+        Ok(None) => return Err(NotOffered("it holds no .modinfo".to_owned())),
+        Err(error) => return Err(Refused(error.user_message())),
     };
     let Ok(text) = std::fs::read_to_string(&modinfo) else {
-        return Some(format!("its {} cannot be read", modinfo.display()));
+        return Err(Refused("its .modinfo file cannot be read".to_owned()));
     };
     if modinfo::mod_id(&text).is_some_and(|id| id.eq_ignore_ascii_case(MODPACK_MAKER_ID)) {
-        return Some("it is the in-game Modpack Maker".to_owned());
+        return Err(NotOffered("it is the in-game Modpack Maker".to_owned()));
     }
     if let Some(action) = modinfo::activation_actions(&text)
         .into_iter()
         .find(|action| action != "UpdateDatabase")
     {
-        return Some(format!(
-            "it asks the game to {action} when activated, which a Modpack cannot do"
-        ));
+        return Err(Refused(format!(
+            "it needs the Mods menu to run its {action} step when it is activated"
+        )));
     }
     // The game loads one game DLL, and in a Modpack that is the Built DLL.
     let mut own_dll = Vec::new();
     if find_files_named(root, &[BUILT_DLL_FILE_NAME], &mut own_dll).is_ok() && !own_dll.is_empty() {
-        return Some(format!(
-            "it brings its own {BUILT_DLL_FILE_NAME}, and a Modpack runs the Vox Populi one"
+        return Err(Refused(
+            "it brings its own game DLL, and a modpack runs Vox Populi's".to_owned(),
         ));
     }
     let carries = |relative: &str| modinfo::resolve_case_insensitive(root, relative).is_some();
-    if let Some(missing) = modinfo::update_database_entries(&text)
+    let missing = |relative: &str| {
+        Refused(format!(
+            "its .modinfo lists \"{relative}\", which is not in the mod"
+        ))
+    };
+    if let Some(absent) = modinfo::update_database_entries(&text)
         .into_iter()
         .chain(modinfo::listed_files(&text))
         .find(|relative| !carries(relative))
     {
-        return Some(format!(
-            "its .modinfo names \"{missing}\", which it does not carry"
-        ));
+        return Err(missing(&absent));
     }
     for point in modinfo::entry_points(&text) {
+        if point.addin_type.eq_ignore_ascii_case(MAP_SCRIPT_ADDIN) {
+            if !carries(&point.file) {
+                return Err(missing(&point.file));
+            }
+            continue;
+        }
         let Some((ui_file, _)) = UI_ENTRY_FILES
             .iter()
             .find(|(_, addin_type)| addin_type.eq_ignore_ascii_case(&point.addin_type))
         else {
-            return Some(format!(
-                "its {} entry point ({}) has no place in a Modpack",
-                point.addin_type, point.file
-            ));
+            return Err(Refused(format!(
+                "part of it ({}) only runs when the mod is activated in the Mods menu",
+                point.file
+            )));
         };
         if !carries(&point.file) {
-            return Some(format!(
-                "its .modinfo names \"{}\", which it does not carry",
-                point.file
-            ));
+            return Err(missing(&point.file));
         }
         // InGame, CityView and LeaderHeadRoot come from the game; the other entry files
         // exist in a Modpack only if a mod brings them.
@@ -186,13 +240,13 @@ fn why_not_bakeable(root: &Path) -> Option<String> {
             find_files_named(root, &[ui_file], &mut found).is_ok() && !found.is_empty()
         };
         if !hook_target_exists {
-            return Some(format!(
-                "its {} entry point needs {ui_file}, which nothing in the Modpack provides",
-                point.addin_type
-            ));
+            return Err(Refused(format!(
+                "part of it ({}) plugs into {ui_file}, which nothing in the modpack has",
+                point.file
+            )));
         }
     }
-    None
+    Ok(())
 }
 
 /// Is this folder name one of the Claimed Folders, under any of its spellings?
@@ -213,8 +267,17 @@ fn is_claimed_name(name: &str) -> bool {
 const GAMEPLAY_BASE_FILE_NAME: &str = "Civ5DebugDatabase.db";
 const TEXT_BASE_FILE_NAME: &str = "Localization-Merged.db";
 
-/// Assemble the complete Modpack in the App Data Store and return its root, ready for Sync
-/// to deploy as the `VP_MODPACK` Claimed Folder.
+/// What [`assemble`] leaves in the App Data Store for Sync to deploy.
+pub(crate) struct AssembledModpack {
+    /// The pack itself, deployed as the `VP_MODPACK` Claimed Folder.
+    pub(crate) stage: PathBuf,
+    /// The map scripts deployed to `Maps/VP_MODPACK` - possibly none.
+    pub(crate) map_scripts: PathBuf,
+    /// The Text file their scan-time strings go into, if they look any up.
+    pub(crate) map_script_text: Option<String>,
+}
+
+/// Assemble the complete Modpack in the App Data Store, ready for Sync to deploy.
 ///
 /// `resolved` is [`crate::Core`]'s resolve of the plan's deployments against the
 /// materialized source - the same list Sync uses, so what lands inside the Modpack is
@@ -227,7 +290,7 @@ pub(crate) fn assemble(
     work_dir: &Path,
     assembler: &dyn ModpackAssembler,
     progress: &ProgressReporter,
-) -> Result<PathBuf, InstallError> {
+) -> Result<AssembledModpack, InstallError> {
     let (gameplay_base, text_base) =
         ensure_base_snapshot(work_dir, &plan.folders, assembler, progress)?;
 
@@ -277,14 +340,16 @@ pub(crate) fn assemble(
         }
         // Checked again here, not only when offered: the mod may have changed since it was
         // picked, and a pick the pack cannot carry whole must stop the build, not shrink.
-        let roots =
-            bakeable_mod_roots(&from).map_err(|reason| InstallError::UnsupportedConfiguration {
+        let roots = bakeable_mod_roots(&from).map_err(|unbakeable| {
+            let reason = unbakeable.reason();
+            InstallError::UnsupportedConfiguration {
                 message: format!(
                     "The mod \"{name}\" cannot be baked into the Modpack: {reason}. Untick \
                      it and try again. Your game is unchanged."
                 ),
                 detail: format!("extra mod not bakeable at {}: {reason}", from.display()),
-            })?;
+            }
+        })?;
         let destination = mods_dir.join(name);
         tree::copy_selected(
             &from,
@@ -308,6 +373,8 @@ pub(crate) fn assemble(
 
     stage_ui(&stage, &staged_mods, &plan.folders, progress)?;
     stage_overrides(&stage, &plan.folders)?;
+    let map_scripts = work_dir.join("modpack-maps");
+    let staged_scripts = stage_map_scripts(&map_scripts, &staged_mods, &plan.folders, progress)?;
 
     // The in-game Maker sees Documents/Text in its merged localization database. Our
     // saved base predates this Deployment, so it may lack VPUI's tips and EUI option
@@ -317,7 +384,8 @@ pub(crate) fn assemble(
     let mut updates: Vec<PathBuf> = plan
         .files
         .iter()
-        .map(|file| source_root.join(file.source_path()))
+        .filter_map(|file| file.source_path())
+        .map(|source_path| source_root.join(source_path))
         .collect();
     for staged in &staged_mods {
         collect_database_updates(staged, &mut updates, progress)?;
@@ -336,13 +404,222 @@ pub(crate) fn assemble(
         gameplay_dump: stage.join("Override").join(GAMEPLAY_DUMP_FILE_NAME),
         text_dump: stage.join("Override").join(TEXT_DUMP_FILE_NAME),
         scratch_dir: work_dir.join("modpack-scratch"),
+        text_tags: text_tags_in(&staged_scripts)?,
     };
-    assembler
+    let added_texts = assembler
         .merge_and_dump(&job, progress)
         .map_err(InstallError::Modpack)?;
 
     progress.report(Stage::Build, "Modpack assembled.");
-    Ok(stage)
+    Ok(AssembledModpack {
+        stage,
+        map_scripts,
+        map_script_text: (!added_texts.is_empty()).then(|| map_script_text(&added_texts)),
+    })
+}
+
+/// Stage the map scripts the game would not list for a Modpack: every staged mod's
+/// `MapScript` entry point, unless a map of the same file name is already among the game's.
+///
+/// The pack is not registered DLC and activates no mods, so the game finds map scripts only
+/// in its own map directories and the Documents-side `Maps` folder. A pack script named like
+/// one of the game's own needs nothing: it overrides that file by name (the "... for VP"
+/// entries), and a copy would list it twice. A same-named file in the player's own `Maps`
+/// is theirs and stays the one listed. Later mods win a name, as their files do in the pack.
+fn stage_map_scripts(
+    destination: &Path,
+    staged_mods: &[PathBuf],
+    folders: &GameFolders,
+    progress: &ProgressReporter,
+) -> Result<Vec<PathBuf>, InstallError> {
+    tree::remove_if_present(destination)?;
+    tree::create_dir_all(destination)?;
+
+    let mut scripts: BTreeMap<String, PathBuf> = BTreeMap::new();
+    for staged in staged_mods {
+        let Some(modinfo) = modinfo::find(staged)? else {
+            continue;
+        };
+        let text = read_file(&modinfo)?;
+        for point in modinfo::entry_points(&text) {
+            if !point.addin_type.eq_ignore_ascii_case(MAP_SCRIPT_ADDIN) {
+                continue;
+            }
+            // A missing file is the game's business in a Mods Deployment and was refused
+            // for the player's own picks; a managed mod's dangling entry lists nothing.
+            if let Some(path) = modinfo::resolve_case_insensitive(staged, &point.file)
+                && let Some(name) = path.file_name().and_then(|name| name.to_str())
+            {
+                scripts.insert(name.to_lowercase(), path);
+            }
+        }
+    }
+
+    let game_maps = folders
+        .dlc
+        .parent()
+        .map(|assets| assets.join("Maps"))
+        .into_iter()
+        .chain(dlc_map_directories(&folders.dlc)?);
+    let mut games = BTreeSet::new();
+    for directory in game_maps {
+        map_file_names(&directory, &mut games)?;
+    }
+    let mut players = BTreeSet::new();
+    map_file_names(&folders.maps(), &mut players)?;
+
+    let mut staged = Vec::new();
+    for (key, from) in scripts {
+        let Some(name) = from.file_name() else {
+            continue;
+        };
+        if games.contains(&key) {
+            continue;
+        }
+        if players.contains(&key) {
+            progress.report(
+                Stage::Build,
+                format!(
+                    "Left out the map script {} - your Maps folder already has one of that \
+                     name, and the game lists that one.",
+                    name.to_string_lossy()
+                ),
+            );
+            continue;
+        }
+        let to = destination.join(name);
+        tree::copy_file(&from, &to)?;
+        staged.push(to);
+    }
+    if !staged.is_empty() {
+        let names: Vec<String> = staged
+            .iter()
+            .filter_map(|path| path.file_stem())
+            .map(|stem| stem.to_string_lossy().into_owned())
+            .collect();
+        progress.report(
+            Stage::Build,
+            format!(
+                "Listed the map scripts {} for game setup.",
+                names.join(", ")
+            ),
+        );
+    }
+    Ok(staged)
+}
+
+/// Each DLC package's `Maps` folder - where the game's own map packs keep theirs.
+fn dlc_map_directories(dlc: &Path) -> Result<Vec<PathBuf>, InstallError> {
+    let mut found = Vec::new();
+    if !dlc.is_dir() {
+        return Ok(found);
+    }
+    for package in sorted_dir(dlc)? {
+        if !package.is_dir() || is_modpack_folder(&package) {
+            continue;
+        }
+        for child in sorted_dir(&package)? {
+            if child.is_dir()
+                && child
+                    .file_name()
+                    .is_some_and(|name| name.eq_ignore_ascii_case("Maps"))
+            {
+                found.push(child);
+            }
+        }
+    }
+    Ok(found)
+}
+
+/// The lowercased names of every map file under `dir`, skipping the Modpack's own folders -
+/// a previous Deployment's copies are not the game's.
+fn map_file_names(dir: &Path, names: &mut BTreeSet<String>) -> Result<(), InstallError> {
+    if !dir.is_dir() {
+        return Ok(());
+    }
+    for entry in sorted_dir(dir)? {
+        if entry.is_dir() {
+            if !is_modpack_folder(&entry) {
+                map_file_names(&entry, names)?;
+            }
+        } else if let Some(name) = entry.file_name().and_then(|name| name.to_str()) {
+            names.insert(name.to_lowercase());
+        }
+    }
+    Ok(())
+}
+
+fn is_modpack_folder(path: &Path) -> bool {
+    path.file_name().is_some_and(|name| {
+        ClaimedFolder::Modpack
+            .folder_names()
+            .iter()
+            .any(|known| name.eq_ignore_ascii_case(known))
+    })
+}
+
+/// Every `TXT_KEY_...` literal in these files, sorted and unique. Which of them the game
+/// really looks up at scan time does not matter: the assembler returns only strings the
+/// merge added, so a tag the game already knows is never written over.
+fn text_tags_in(files: &[PathBuf]) -> Result<Vec<String>, InstallError> {
+    const PREFIX: &[u8] = b"TXT_KEY_";
+    let mut tags = BTreeSet::new();
+    for file in files {
+        let bytes = std::fs::read(file).map_err(|cause| InstallError::Deployment {
+            action: "read",
+            path: file.clone(),
+            cause,
+        })?;
+        let mut rest = bytes.as_slice();
+        while let Some(start) = rest.windows(PREFIX.len()).position(|w| w == PREFIX) {
+            let tail = &rest[start..];
+            let length = tail
+                .iter()
+                .position(|byte| !(byte.is_ascii_alphanumeric() || *byte == b'_'))
+                .unwrap_or(tail.len());
+            tags.insert(String::from_utf8_lossy(&tail[..length]).into_owned());
+            rest = &tail[length..];
+        }
+    }
+    Ok(tags.into_iter().collect())
+}
+
+/// The Text Folder file carrying the map scripts' scan-time strings: one `Replace` per
+/// string, grouped by language in the order the assembler returned them.
+fn map_script_text(texts: &[LocalizedText]) -> String {
+    let mut xml = String::from(
+        "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\
+         <!-- Written by the Civ 5 VP Installer with the Modpack: the text its map scripts \
+         look up while the game lists them. -->\n\
+         <GameData>\n",
+    );
+    let mut open: Option<&str> = None;
+    for text in texts {
+        if open != Some(text.language.as_str()) {
+            if let Some(language) = open {
+                xml.push_str(&format!("\t</Language_{language}>\n"));
+            }
+            xml.push_str(&format!("\t<Language_{}>\n", text.language));
+            open = Some(text.language.as_str());
+        }
+        xml.push_str(&format!(
+            "\t\t<Replace Tag=\"{}\">\n\t\t\t<Text>{}</Text>\n\t\t</Replace>\n",
+            escape_xml(&text.tag),
+            escape_xml(&text.text)
+        ));
+    }
+    if let Some(language) = open {
+        xml.push_str(&format!("\t</Language_{language}>\n"));
+    }
+    xml.push_str("</GameData>\n");
+    xml
+}
+
+fn escape_xml(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 /// The snapshot of the game's pristine databases, taking it now if the game's cache can

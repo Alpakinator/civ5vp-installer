@@ -74,7 +74,7 @@ const SKIPPED_SCHEMAS: [&str; 21] = [
 
 /// The Lua's `LANGUAGE_LIST`, in its exact order. Every language gets its element written,
 /// with data or without.
-const LANGUAGES: [&str; 10] = [
+pub(crate) const LANGUAGES: [&str; 10] = [
     "en_US",
     "DE_DE",
     "ES_ES",
@@ -291,7 +291,7 @@ pub(crate) fn dump_text(conn: &Connection, path: &Path) -> Result<(), BoundaryEr
     dump.out.flush().map_err(io)
 }
 
-fn table_exists(conn: &Connection, table: &str) -> Result<bool, String> {
+pub(crate) fn table_exists(conn: &Connection, table: &str) -> Result<bool, String> {
     // Views count: in the game's merged localization database the active language is a
     // *view* over `LocalizedText` (with INSTEAD OF triggers carrying writes into it), and
     // the in-game Modpack Maker dumps straight through it. Only the never-loaded

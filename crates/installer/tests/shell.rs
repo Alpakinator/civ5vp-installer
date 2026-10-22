@@ -250,6 +250,31 @@ fn a_launch_pre_fills_the_folders_it_detects() {
     }
 }
 
+/// A button lights up under the pointer and otherwise stays exactly as it was: the same size,
+/// in the same place, with its label where it was.
+#[test]
+fn hovering_a_button_does_not_move_or_resize_it() {
+    let game = TempGame::new();
+    let mut harness = harness_over(game.launch(&game.locations()));
+    harness.run();
+
+    for label in [
+        "Install",
+        "Uninstall",
+        "Choose the Civilization V game folder",
+        "Open the Civilization 5 Documents folder",
+    ] {
+        let at_rest = harness.get_by_label(label).rect();
+        harness.hover_at(at_rest.center());
+        harness.run();
+        assert_eq!(
+            harness.get_by_label(label).rect(),
+            at_rest,
+            "{label} changed shape under the pointer",
+        );
+    }
+}
+
 /// An install driven the way a user drives it, into the folders detection found, with the
 /// smallest Flavor picked explicitly.
 ///
@@ -342,6 +367,57 @@ fn picking_vox_populi_with_eui_installs_the_whole_thing() {
         !mods.join("(1) Community Patch/LUA").exists(),
         "EUI replaces the Lua in (1), so the original must not be there",
     );
+}
+
+/// A mod the Modpack cannot carry whole is listed, but greyed out after the ones it can,
+/// with the reason under it - and cannot be ticked.
+#[test]
+fn a_mod_the_modpack_cannot_carry_is_shown_greyed_out_with_the_reason() {
+    use egui_kittest::kittest::NodeT as _;
+    let game = TempGame::new();
+    fs::create_dir_all(game.mods_folder().join("My Modmod")).unwrap();
+    fs::write(
+        game.mods_folder().join("My Modmod/My Modmod.modinfo"),
+        "<Mod id=\"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\" version=\"1\"/>",
+    )
+    .unwrap();
+    // Sorts before "My Modmod", so only grouping puts it after.
+    fs::create_dir_all(game.mods_folder().join("Giant Earth/GameSetup")).unwrap();
+    fs::write(
+        game.mods_folder().join("Giant Earth/Giant Earth.modinfo"),
+        "<Mod id=\"giant-earth\" version=\"1\"><EntryPoints>\
+         <EntryPoint type=\"Custom\" file=\"GameSetup/Setup.xml\"/></EntryPoints></Mod>",
+    )
+    .unwrap();
+    fs::write(
+        game.mods_folder().join("Giant Earth/GameSetup/Setup.xml"),
+        "<Context/>",
+    )
+    .unwrap();
+
+    let mut harness = harness_over(game.launch(&game.locations()));
+    harness.step();
+    harness
+        .get_by_label("Install as a modpack - loads automatically, works in multiplayer")
+        .click();
+    harness.run();
+
+    let refused = harness.get_by_label("Giant Earth");
+    assert!(
+        refused.accesskit_node().is_disabled(),
+        "it cannot be ticked"
+    );
+    assert!(
+        refused.rect().top() > harness.get_by_label("My Modmod").rect().top(),
+        "listed after the mods that can be baked in",
+    );
+    harness.get_by_label(
+        "Part of it (GameSetup/Setup.xml) only runs when the mod is activated in the Mods menu",
+    );
+
+    harness.get_by_label("Giant Earth").click();
+    harness.run();
+    assert!(!is_ticked(&mut harness, "Giant Earth"));
 }
 
 /// The Modpack mode radio drives a Modpack Deployment - the pack lands in the

@@ -41,6 +41,7 @@ fn the_real_vox_populi_merge_runs_dry() {
         gameplay_dump: out.join("CIV5Units.xml"),
         text_dump: out.join("CIV5Units_Mongol.xml"),
         scratch_dir: out.join("scratch"),
+        text_tags: Vec::new(),
     };
     let (sender, receiver) = std::sync::mpsc::channel();
     let started = std::time::Instant::now();

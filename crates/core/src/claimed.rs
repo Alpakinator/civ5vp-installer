@@ -44,6 +44,17 @@ impl GameFolders {
         self.documents_root().map(|root| root.join("cache"))
     }
 
+    /// The Documents-side `Maps` folder, which the game scans for map scripts at startup.
+    ///
+    /// Derived like [`Self::cache`]. Every caller runs after [`Self::check`], so the
+    /// fallback beside the MODS Folder is the same place, spelled for an unchecked value.
+    pub(crate) fn maps(&self) -> PathBuf {
+        self.documents_root()
+            .or_else(|| self.mods.parent())
+            .unwrap_or(&self.mods)
+            .join("Maps")
+    }
+
     /// Refuse folders the installer cannot safely write to, before anything happens.
     ///
     /// Every destination path is derived from these roots, so they must be real absolute
@@ -94,6 +105,8 @@ impl GameFolders {
 pub enum DeploymentTarget {
     ModsFolder,
     DlcFolder,
+    /// The Documents-side `Maps` folder - see [`ClaimedFolder::ModpackMaps`].
+    MapsFolder,
 }
 
 /// A folder the installer owns and may create, sync, or delete.
@@ -114,12 +127,17 @@ pub enum ClaimedFolder {
     /// from the Installation Source - the Core assembles it in the App Data Store and Sync
     /// deploys the result.
     Modpack,
+    /// The map scripts the Modpack carries that the game would not list otherwise, in the
+    /// Documents-side `Maps` folder. A Modpack is not registered DLC, so the game ignores
+    /// its map directories, and no mod is activated to offer them as Modder Map Scripts -
+    /// but it scans `Maps` (ADR-0008). Generated with the Modpack, never from the source.
+    ModpackMaps,
 }
 
 impl ClaimedFolder {
     /// Every Claimed Folder, in a fixed order. Iterating this - rather than a `HashSet` - is
     /// what keeps Sync's file operations deterministic.
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::CommunityPatch,
         Self::VoxPopuli,
         Self::EuiCompatibilityFiles,
@@ -128,6 +146,7 @@ impl ClaimedFolder {
         Self::Vpui,
         Self::UiBc1,
         Self::Modpack,
+        Self::ModpackMaps,
     ];
 
     /// Every name this folder has been known by, the one in current use first.
@@ -158,6 +177,8 @@ impl ClaimedFolder {
             // this also cleans up a modpack the player made by hand, which is exactly the
             // conflict removal exists to prevent.
             Self::Modpack => &["VP_MODPACK"],
+            // Named after the pack it belongs to; it lives in a different folder.
+            Self::ModpackMaps => &["VP_MODPACK"],
         }
     }
 
@@ -171,6 +192,15 @@ impl ClaimedFolder {
         }
     }
 
+    /// How the player is told about this folder: its name, and where that is ambiguous,
+    /// the folder it sits in too.
+    pub fn label(self) -> String {
+        match self {
+            Self::ModpackMaps => format!("Maps/{}", self.folder_name()),
+            _ => self.folder_name().to_owned(),
+        }
+    }
+
     pub fn target(self) -> DeploymentTarget {
         match self {
             Self::CommunityPatch
@@ -179,6 +209,7 @@ impl ClaimedFolder {
             | Self::FortyThreeCivsCommunityPatch
             | Self::SquadsForVoxPopuli => DeploymentTarget::ModsFolder,
             Self::Vpui | Self::UiBc1 | Self::Modpack => DeploymentTarget::DlcFolder,
+            Self::ModpackMaps => DeploymentTarget::MapsFolder,
         }
     }
 
@@ -193,10 +224,11 @@ impl ClaimedFolder {
         self.folder_names().iter().map(|n| root.join(n)).collect()
     }
 
-    fn root_in(self, folders: &GameFolders) -> &Path {
+    fn root_in(self, folders: &GameFolders) -> PathBuf {
         match self.target() {
-            DeploymentTarget::ModsFolder => &folders.mods,
-            DeploymentTarget::DlcFolder => &folders.dlc,
+            DeploymentTarget::ModsFolder => folders.mods.clone(),
+            DeploymentTarget::DlcFolder => folders.dlc.clone(),
+            DeploymentTarget::MapsFolder => folders.maps(),
         }
     }
 }
@@ -211,34 +243,39 @@ impl ClaimedFolder {
 pub enum ClaimedFile {
     /// The loading-screen tips, deployed by every Vox Populi configuration.
     VpuiTips,
+    /// The text the Modpack's map scripts look up while the game scans them, generated with
+    /// the Modpack. The scan runs before the pack's own text is loaded, so without this a
+    /// script that builds its name from a key shows the raw key (ADR-0008).
+    ModpackMapScriptText,
 }
 
 impl ClaimedFile {
     /// Every Claimed File, in a fixed order.
-    pub const ALL: [Self; 1] = [Self::VpuiTips];
+    pub const ALL: [Self; 2] = [Self::VpuiTips, Self::ModpackMapScriptText];
 
     /// The file's name in the game folder.
     pub fn file_name(self) -> &'static str {
         match self {
             Self::VpuiTips => "VPUI_tips_en_us.xml",
+            Self::ModpackMapScriptText => "VP_MODPACK_MapScripts.xml",
         }
     }
 
-    /// Where it comes from, relative to the Installation Source root.
+    /// Where it comes from, relative to the Installation Source root - `None` for a file the
+    /// installer generates.
     ///
     /// Note the space in `VPUI Text`, and that it is a different folder from the `VPUI` that
     /// is deployed as DLC.
-    pub(crate) fn source_path(self) -> &'static str {
+    pub(crate) fn source_path(self) -> Option<&'static str> {
         match self {
-            Self::VpuiTips => "VPUI Text/VPUI_tips_en_us.xml",
+            Self::VpuiTips => Some("VPUI Text/VPUI_tips_en_us.xml"),
+            Self::ModpackMapScriptText => None,
         }
     }
 
     /// Where it lives in the user's game.
     pub fn path_in(self, folders: &GameFolders) -> PathBuf {
-        match self {
-            Self::VpuiTips => folders.text.join(self.file_name()),
-        }
+        folders.text.join(self.file_name())
     }
 }
 

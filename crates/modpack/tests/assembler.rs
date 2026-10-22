@@ -63,6 +63,7 @@ fn job_in(dir: &Path, updates: &[(&str, &str)]) -> ModpackDatabaseJob {
         gameplay_dump: dir.join("gameplay-dump.xml"),
         text_dump: dir.join("text-dump.xml"),
         scratch_dir: dir.join("scratch"),
+        text_tags: Vec::new(),
     }
 }
 
@@ -127,6 +128,55 @@ fn an_empty_civilizations_table_is_not_a_usable_base() {
 }
 
 // ---------------------------------------------------------------- applying updates
+
+/// `<DeleteMissingReferences table="…" column="…"/>`, as Giant Earth and Firaxis's own New
+/// World scenario ship it: rows that refer through a declared foreign key to a value no
+/// longer in `table.column` go; rows whose reference is still there, or NULL, stay; tables
+/// referring elsewhere are untouched.
+#[test]
+fn delete_missing_references_drops_rows_left_pointing_at_deleted_values() {
+    let merged = run_merge(
+        "PRAGMA foreign_keys = OFF; \
+         CREATE TABLE Civilizations (Type text not null unique); \
+         CREATE TABLE Leaders (Type text not null unique); \
+         CREATE TABLE Civilization_Leaders (CivilizationType text, LeaderheadType text, \
+             foreign key (CivilizationType) references Civilizations(Type), \
+             foreign key (LeaderheadType) references Leaders(Type)); \
+         CREATE TABLE Civilization_Notes (CivilizationType text, Note text, \
+             foreign key (CivilizationType) references Civilizations(Type)); \
+         INSERT INTO Civilizations VALUES ('CIVILIZATION_ROME'), ('CIVILIZATION_GONE'); \
+         INSERT INTO Leaders VALUES ('LEADER_AUGUSTUS'); \
+         INSERT INTO Civilization_Leaders VALUES \
+             ('CIVILIZATION_ROME', 'LEADER_AUGUSTUS'), \
+             ('CIVILIZATION_GONE', 'LEADER_AUGUSTUS'), \
+             ('CIVILIZATION_ROME', 'LEADER_NOBODY'); \
+         INSERT INTO Civilization_Notes VALUES (NULL, 'unattached'), ('CIVILIZATION_GONE', 'x');",
+        "",
+        &[(
+            "DeleteMissingReferences.xml",
+            "<GameData>\
+               <Civilizations><Delete Type=\"CIVILIZATION_GONE\"/></Civilizations>\
+               <DeleteMissingReferences table=\"Civilizations\" column=\"Type\"/>\
+             </GameData>",
+        )],
+    )
+    .unwrap();
+
+    assert!(merged.gameplay.contains("CIVILIZATION_ROME"));
+    assert!(
+        !merged.gameplay.contains("CIVILIZATION_GONE"),
+        "{}",
+        merged.gameplay
+    );
+    assert!(
+        merged.gameplay.contains("LEADER_NOBODY"),
+        "a reference into Leaders is not this call's business"
+    );
+    assert!(
+        merged.gameplay.contains("unattached"),
+        "a NULL reference stays"
+    );
+}
 
 #[test]
 fn sql_updates_run_against_the_gameplay_database() {
@@ -388,6 +438,61 @@ fn language_tables_route_to_the_localization_database() {
     assert!(merged.text.contains("\t\t<Replace Tag=\"TXT_KEY_A\">"));
     assert!(merged.text.contains("\t\t\t\tHello"));
     assert!(!merged.gameplay.contains("TXT_KEY_A"));
+}
+
+/// The map scripts' scan-time strings: only what the merge added, in every language that
+/// has it - a string the game's own text already holds is never handed back to be written
+/// over, and a tag nobody defines is simply absent.
+#[test]
+fn the_merge_hands_back_the_requested_strings_it_added() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut job = job_in(dir.path(), &[("MapText.xml", "")]);
+    job.text_tags = vec![
+        "TXT_KEY_TECTONIC".to_owned(),
+        "TXT_KEY_BASE".to_owned(),
+        "TXT_KEY_NOWHERE".to_owned(),
+    ];
+    create_db(&job.gameplay_base, "");
+    create_db(
+        &job.text_base,
+        "CREATE TABLE Language_en_US (Tag text PRIMARY KEY, Text text, Gender text, Plurality text);\
+         CREATE TABLE Language_DE_DE (Tag text PRIMARY KEY, Text text, Gender text, Plurality text);\
+         INSERT INTO Language_en_US (Tag, Text) VALUES ('TXT_KEY_BASE', 'Base');",
+    );
+    fs::write(
+        &job.updates[0],
+        "<GameData>\
+         <Language_en_US>\
+         <Replace Tag=\"TXT_KEY_TECTONIC\"><Text>Tectonic</Text></Replace>\
+         <Replace Tag=\"TXT_KEY_BASE\"><Text>Base, changed</Text></Replace>\
+         <Replace Tag=\"TXT_KEY_UNASKED\"><Text>Unasked</Text></Replace>\
+         </Language_en_US>\
+         <Language_DE_DE><Replace Tag=\"TXT_KEY_TECTONIC\"><Text>Tektonik</Text></Replace></Language_DE_DE>\
+         </GameData>",
+    )
+    .unwrap();
+
+    let added = SqliteModpackAssembler::new()
+        .merge_and_dump(&job, &ProgressReporter::silent())
+        .unwrap();
+
+    let added: Vec<(&str, &str, &str)> = added
+        .iter()
+        .map(|text| {
+            (
+                text.language.as_str(),
+                text.tag.as_str(),
+                text.text.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        added,
+        [
+            ("en_US", "TXT_KEY_TECTONIC", "Tectonic"),
+            ("DE_DE", "TXT_KEY_TECTONIC", "Tektonik"),
+        ]
+    );
 }
 
 #[test]

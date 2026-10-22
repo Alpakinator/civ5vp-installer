@@ -267,6 +267,19 @@ pub struct ModpackDatabaseJob {
     pub text_dump: PathBuf,
     /// Scratch space owned by the assembler for the working database copies.
     pub scratch_dir: PathBuf,
+    /// Text tags whose strings the Core needs outside the dump: those the Modpack's map
+    /// scripts look up while the game scans them, before the dump is loaded (ADR-0008).
+    pub text_tags: Vec<String>,
+}
+
+/// One string the merge added to the localization database: present after the mods'
+/// updates, absent from the base.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalizedText {
+    /// The language as the game's tables name it - `en_US`, `DE_DE`, ...
+    pub language: String,
+    pub tag: String,
+    pub text: String,
 }
 
 /// Boundary three: the Modpack's database merge.
@@ -278,10 +291,12 @@ pub trait ModpackAssembler: Send + Sync {
     /// Whether `gameplay_db` is a usable Modpack base - see [`CacheState`].
     fn cache_state(&self, gameplay_db: &std::path::Path) -> Result<CacheState, BoundaryError>;
 
-    /// Apply the updates to copies of the base databases and write both dumps.
+    /// Apply the updates to copies of the base databases and write both dumps. Returns the
+    /// strings of `job.text_tags` the merge added, in every language that has them - the
+    /// game's languages in a fixed order, then by tag.
     fn merge_and_dump(
         &self,
         job: &ModpackDatabaseJob,
         progress: &ProgressReporter,
-    ) -> Result<(), BoundaryError>;
+    ) -> Result<Vec<LocalizedText>, BoundaryError>;
 }

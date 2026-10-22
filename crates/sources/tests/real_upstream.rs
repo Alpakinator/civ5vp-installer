@@ -317,7 +317,7 @@ impl civ5vp_core::ModpackAssembler for UnusedModpackAssembler {
         &self,
         _job: &civ5vp_core::ModpackDatabaseJob,
         _progress: &civ5vp_core::ProgressReporter,
-    ) -> Result<(), civ5vp_core::BoundaryError> {
+    ) -> Result<Vec<civ5vp_core::LocalizedText>, civ5vp_core::BoundaryError> {
         Err(civ5vp_core::BoundaryError::new(
             "No modpack in this test.",
             "UnusedModpackAssembler::merge_and_dump called",

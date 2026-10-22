@@ -15,22 +15,33 @@ publishes binaries for.
 
 ### Fixed
 
+- Modpack: map scripts that only Vox Populi or a baked-in mod brings - Communitu, Continental
+  Drift, Tectonic - are listed in game setup again, with their proper names. They go to
+  `Documents/…/Maps/VP_MODPACK`, the names they look up to `Text/VP_MODPACK_MapScripts.xml`;
+  both are removed with the Modpack.
+- Modpack: a mod with its own map scripts (Tectonic) can be baked in.
+- Modpack: building a pack with Giant Earth no longer stops at `DeleteMissingReferences`.
 - Modpack: your own mods unpacked one folder deep (`Trade_Scanner_v25/Trade Scanner (v 25)/`)
   are offered for baking in - the game finds them, so the installer does too.
-- Modpack: only mods the pack can carry whole are offered. One whose setup screen or map
-  script only the Mods menu can reach, that names a file it does not have, or that brings
-  its own game DLL is left off the list, so a ticked mod is always entirely in your
-  Modpack. A ticked mod that has changed since stops the install, with the reason, before
-  the game is touched.
+- Modpack: only mods the pack can carry whole can be ticked. One whose setup screen only the
+  Mods menu can reach, that names a file it does not have, or that brings its own game DLL
+  is listed greyed out after the others, with the reason under it, so a ticked mod is always
+  entirely in your Modpack. A ticked mod that has changed since stops the install, with the
+  reason, before the game is touched.
+- Linux: the Vox Populi intro plays under Proton instead of colour bars. The Linux build
+  writes it as WebM under the game's file name; Windows keeps the WMV.
+- Buttons no longer shrink by a pixel a side, and move their label, when the pointer is over
+  them or presses them.
 
 ### Changed
 
 - A new header: "VP" in a hex tile at the centre of the window, between two plates reading
   "Civilization 5" and "Installer", with the rule running out from their points.
 - Radio buttons are hex tiles, the way the game's map tiles stand.
-- Every frame is a single lit gold rim after Civilization V's own, instead of a double line:
-  panels and buttons are raised, text boxes and the progress bar sunken, all lit from the
-  same direction.
+- Every frame is a single lit gold rim after Civilization V's own, instead of a double line,
+  all lit from the top-left: panels and buttons are raised, text boxes, checkboxes, radio
+  hexes and the progress bar sunken. The divider is a groove, the progress fill has a bevel,
+  and dropdown and browser shadows fall down and to the right.
 
 ## 0.1.7 - 2026-10-16
 

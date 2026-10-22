@@ -25,8 +25,8 @@ const LUA_ENGINE_FILE_NAME: &str = "lua51_Win32.dll";
 /// something that could have failed, and Sync runs only once none of them did.
 struct Built<'a> {
     dll: &'a Path,
-    /// The staged Modpack, in Modpack mode only.
-    modpack: Option<&'a Path>,
+    /// The assembled Modpack, in Modpack mode only.
+    modpack: Option<&'a crate::modpack::AssembledModpack>,
     /// The LuaJIT engine, when the configuration opted into it.
     luajit: Option<&'a Path>,
 }
@@ -241,7 +241,7 @@ impl Core {
             &source.root,
             &Built {
                 dll: &built_dll,
-                modpack: staged_modpack.as_deref(),
+                modpack: staged_modpack.as_ref(),
                 luajit: built_luajit.as_deref(),
             },
             &fingerprint,
@@ -369,12 +369,12 @@ impl Core {
             }
         }
 
-        for file in &plan.files {
-            let path = source.root.join(file.source_path());
+        for source_path in plan.files.iter().filter_map(|file| file.source_path()) {
+            let path = source.root.join(source_path);
             if !path.is_file() {
                 return Err(InstallError::MissingInSource {
                     item: SourceItem::File,
-                    name: file.source_path().to_owned(),
+                    name: source_path.to_owned(),
                     path,
                 });
             }
@@ -572,10 +572,7 @@ impl Core {
                     // the log does not care that it was found under an older spelling.
                     progress.report(
                         Stage::Sync,
-                        format!(
-                            "Removed {} - not part of this install.",
-                            folder.folder_name()
-                        ),
+                        format!("Removed {} - not part of this install.", folder.label()),
                     );
                     removed.push(folder);
                 }
@@ -627,25 +624,54 @@ impl Core {
 
         // The assembled Modpack, deployed whole. Verbatim: the stage is the Core's own
         // work, Built DLL included, so the source-tree exclusions must not apply.
-        if let Some(stage) = staged_modpack {
+        let mut deployed_files = Vec::new();
+        if let Some(modpack) = staged_modpack {
             let destination = ClaimedFolder::Modpack.path_in(&plan.folders);
             tree::remove_if_present(&destination)?;
-            tree::copy_all(stage, &destination)?;
+            tree::copy_all(&modpack.stage, &destination)?;
             progress.report(
                 Stage::Sync,
-                format!("Installed {}.", ClaimedFolder::Modpack.folder_name()),
+                format!("Installed {}.", ClaimedFolder::Modpack.label()),
             );
             deployed.push(ClaimedFolder::Modpack);
+
+            // Its map scripts and their scan-time text, replaced like everything else here -
+            // and left out entirely when the pack has none, rather than deployed empty.
+            let maps = ClaimedFolder::ModpackMaps.path_in(&plan.folders);
+            tree::remove_if_present(&maps)?;
+            if tree::has_entries(&modpack.map_scripts)? {
+                tree::copy_all(&modpack.map_scripts, &maps)?;
+                progress.report(
+                    Stage::Sync,
+                    format!("Installed {}.", ClaimedFolder::ModpackMaps.label()),
+                );
+                deployed.push(ClaimedFolder::ModpackMaps);
+            }
+            let text = ClaimedFile::ModpackMapScriptText.path_in(&plan.folders);
+            tree::remove_file_if_present(&text)?;
+            if let Some(contents) = &modpack.map_script_text {
+                tree::write_file(&text, contents.as_bytes())?;
+                progress.report(
+                    Stage::Sync,
+                    format!(
+                        "Installed {}.",
+                        ClaimedFile::ModpackMapScriptText.file_name()
+                    ),
+                );
+                deployed_files.push(ClaimedFile::ModpackMapScriptText);
+            }
             deployed.sort_unstable();
         }
 
         for file in &plan.files {
-            tree::copy_file(
-                &source_root.join(file.source_path()),
-                &file.path_in(&plan.folders),
-            )?;
+            let Some(source_path) = file.source_path() else {
+                continue;
+            };
+            tree::copy_file(&source_root.join(source_path), &file.path_in(&plan.folders))?;
             progress.report(Stage::Sync, format!("Installed {}.", file.file_name()));
+            deployed_files.push(*file);
         }
+        deployed_files.sort_unstable();
 
         // Every Flavor includes the Community Patch, and the Built DLL is the only DLL
         // deployed. In Mods mode it goes at the root of `(1) Community Patch`; in Modpack
@@ -691,7 +717,7 @@ impl Core {
         Ok(InstallOutcome {
             deployed,
             removed,
-            deployed_files: plan.files.clone(),
+            deployed_files,
             built_dll: dll_destination,
             engine,
         })
@@ -884,7 +910,7 @@ impl Core {
                 }
                 tree::remove_if_present(&path)?;
                 if !removed.contains(&folder) {
-                    progress.report(Stage::Sync, format!("Removed {}.", folder.folder_name()));
+                    progress.report(Stage::Sync, format!("Removed {}.", folder.label()));
                     removed.push(folder);
                 }
             }

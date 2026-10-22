@@ -4,7 +4,8 @@
 //! written for the game's own SQLite and nothing else. `.xml` files are the game's GameData
 //! format: a `<GameData>` root whose children either declare a table (`<Table name="…">`)
 //! or carry operations for one (`<Row>`, `<Replace>`, `<InsertOrIgnore>`, `<Update>`,
-//! `<Delete>`). `Language_*` tables live in the localization database and every other table
+//! `<Delete>`), or are a `<DeleteMissingReferences table="…" column="…"/>` cleanup.
+//! `Language_*` tables live in the localization database and every other table
 //! in the gameplay database - routed per top-level element, exactly as the game routes them.
 //!
 //! Strictness is calibrated to what the game itself tolerates. A `<Row>` colliding with an
@@ -122,11 +123,15 @@ fn apply_gamedata(
                 create_table(route(table), table, child)?;
             }
             "DeleteMissingReferences" => {
-                // Not part of VP's data. If a mod ever ships one, fail loudly so the
-                // construct gets implemented deliberately instead of half-guessed.
-                return Err(
-                    "<DeleteMissingReferences> is not supported by the Modpack merge".to_string(),
-                );
+                let table = child.attribute("table").ok_or_else(|| {
+                    "<DeleteMissingReferences> without a table attribute".to_string()
+                })?;
+                let column = child.attribute("column").ok_or_else(|| {
+                    "<DeleteMissingReferences> without a column attribute".to_string()
+                })?;
+                valid_name(table)?;
+                valid_name(column)?;
+                delete_missing_references(route(table), table, column)?;
             }
             table => {
                 valid_name(table)?;
@@ -149,6 +154,65 @@ fn apply_gamedata(
         }
     }
     Ok(())
+}
+
+/// `<DeleteMissingReferences table="…" column="…"/>`: every row that refers, through a
+/// declared foreign key, to a `table.column` value no longer there is deleted - the
+/// cleanup a mod runs after deleting civilizations or resources. The game's own
+/// statements, read out of its `CvGameDatabase` DLL: `pragma foreign_key_list` over the
+/// tables, then `DELETE FROM %s WHERE %s NOT IN (SELECT %s FROM %s)` per matching key. The
+/// same statement keeps the same edge: a NULL reference is not "missing", so it stays.
+fn delete_missing_references(conn: &Connection, table: &str, column: &str) -> Result<(), String> {
+    if !has_table(conn, table)? {
+        return Err(format!(
+            "<DeleteMissingReferences> names {table}, which does not exist"
+        ));
+    }
+    let context = |error: rusqlite::Error| format!("deleting references to {table}: {error}");
+    let tables: Vec<String> = conn
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| row.get(0))?
+                .collect::<Result<_, _>>()
+        })
+        .map_err(context)?;
+    for referring in tables {
+        let keys: Vec<(String, String, Option<String>)> = conn
+            .prepare("SELECT \"table\", \"from\", \"to\" FROM pragma_foreign_key_list(?1)")
+            .and_then(|mut statement| {
+                statement
+                    .query_map([&referring], |row| {
+                        Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+                    })?
+                    .collect::<Result<_, _>>()
+            })
+            .map_err(context)?;
+        for (target, from, to) in keys {
+            let points_here = target.eq_ignore_ascii_case(table)
+                && to.is_none_or(|to| to.eq_ignore_ascii_case(column));
+            if !points_here {
+                continue;
+            }
+            conn.execute(
+                &format!(
+                    "DELETE FROM {} WHERE {} NOT IN (SELECT \"{column}\" FROM \"{table}\")",
+                    quoted(&referring),
+                    quoted(&from)
+                ),
+                [],
+            )
+            .map_err(context)?;
+        }
+    }
+    Ok(())
+}
+
+/// A name read back out of the schema, quoted for splicing into SQL. Unlike names from a
+/// mod's XML these are not checked with [`valid_name`] - they already exist - so they are
+/// escaped instead.
+fn quoted(name: &str) -> String {
+    format!("\"{}\"", name.replace('"', "\"\""))
 }
 
 /// Does the database hold this table - or a view standing in for it, the way the merged

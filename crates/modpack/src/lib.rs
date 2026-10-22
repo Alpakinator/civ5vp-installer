@@ -35,7 +35,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use civ5vp_core::{
-    BoundaryError, CacheState, ModpackAssembler, ModpackDatabaseJob, ProgressReporter,
+    BoundaryError, CacheState, LocalizedText, ModpackAssembler, ModpackDatabaseJob,
+    ProgressReporter,
 };
 use rusqlite::Connection;
 
@@ -65,7 +66,7 @@ impl ModpackAssembler for SqliteModpackAssembler {
         &self,
         job: &ModpackDatabaseJob,
         progress: &ProgressReporter,
-    ) -> Result<(), BoundaryError> {
+    ) -> Result<Vec<LocalizedText>, BoundaryError> {
         fs::create_dir_all(&job.scratch_dir).map_err(|error| {
             scratch_error(
                 format!("create scratch directory {}", job.scratch_dir.display()),
@@ -95,8 +96,62 @@ impl ModpackAssembler for SqliteModpackAssembler {
 
         dump::dump_gameplay(&gameplay, &job.gameplay_dump)?;
         dump::dump_text(&text, &job.text_dump)?;
-        Ok(())
+        added_texts(&text, &job.text_base, &job.text_tags)
     }
+}
+
+/// Of `tags`, the strings in the merged localization database that its base does not have,
+/// language by language in the dump's order, then by tag. Read through the same
+/// `Language_*` tables the dump reads, so what is returned is what the dump carries.
+fn added_texts(
+    merged: &Connection,
+    base: &Path,
+    tags: &[String],
+) -> Result<Vec<LocalizedText>, BoundaryError> {
+    let failure = |detail: String| {
+        BoundaryError::new(
+            "Reading the Modpack's merged text failed - try again, and report it if it \
+             keeps happening.",
+            detail,
+        )
+    };
+    let mut found = Vec::new();
+    if tags.is_empty() {
+        return Ok(found);
+    }
+    let base = Connection::open_with_flags(base, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|error| failure(format!("open {}: {error}", base.display())))?;
+    for language in dump::LANGUAGES {
+        let table = format!("Language_{language}");
+        if !dump::table_exists(merged, &table).map_err(failure)? {
+            continue;
+        }
+        let in_base = dump::table_exists(&base, &table).map_err(failure)?;
+        let query = format!("SELECT Text FROM \"{table}\" WHERE Tag = ?1");
+        let mut sorted: Vec<&String> = tags.iter().collect();
+        sorted.sort_unstable();
+        for tag in sorted {
+            let text = |conn: &Connection| -> Result<Option<String>, BoundaryError> {
+                match conn.query_row(&query, [tag], |row| row.get::<_, Option<String>>(0)) {
+                    Ok(text) => Ok(text),
+                    Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                    Err(error) => Err(failure(format!("{table} {tag}: {error}"))),
+                }
+            };
+            let Some(merged_text) = text(merged)? else {
+                continue;
+            };
+            if in_base && text(&base)?.is_some() {
+                continue;
+            }
+            found.push(LocalizedText {
+                language: (*language).to_owned(),
+                tag: tag.clone(),
+                text: merged_text,
+            });
+        }
+    }
+    Ok(found)
 }
 
 /// Attach the localization scratch copy to the gameplay connection, under the name the

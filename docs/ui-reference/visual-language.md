@@ -45,7 +45,7 @@ text gets brighter as it gets more important.
 
 | Name        | Hex       | Role |
 | ----------- | --------- | ---- |
-| Gold bright | `#E7C565` | Emphasis lines: hovered borders, panel captions, the lit half of a divider, progress fill highlights. |
+| Gold bright | `#E7C565` | Emphasis lines: hovered borders, panel captions. |
 | Gold        | `#C3963C` | The standard trim line: outer panel frames, progress fill, divider diamonds. |
 | Gold dark   | `#7E6226` | Recessed trim: inner frame lines, resting widget borders, the quiet ends of a divider. |
 
@@ -80,10 +80,12 @@ Four motifs, and only these four. Restraint is the style.
 
 1. **Lit rim.** Every border is one metal edge, 2 px deep, lying just inside the shape's
    outline, after Civilization V's own frames (`grid9framegold8`): a face pixel and a shade
-   pixel inside it. Light comes from above and a little to the right, so each stretch is
-   toned by the way it faces - the face brightens towards a pale highlight on top and right
-   edges and falls to bronze on the left and bottom; the shade stays dark except where the
-   face turns fully up. The rim is faceted like a machined frame: each straight stretch is one
+   pixel inside it. Light comes from the top-left corner, at 45°, so each stretch is toned
+   by the way it faces - the face brightens towards a pale highlight on top and left edges
+   and falls to bronze on the right and bottom; the shade stays dark except on the faces
+   turned to the light. Everything else that is shaded takes the same light: the progress
+   fill's bevel, a panel's groove, the shadows under the file browser and dropdowns, which
+   fall down and to the right. The rim is faceted like a machined frame: each straight stretch is one
    colour from end to end, set only by the way it faces, and stretches meet on a mitre at
    the corner - so the light never shifts along an edge, and every edge facing the same way,
    on any piece, is the same colour. A *raised* rim
@@ -159,11 +161,15 @@ falls to Panel navy, label to Parchment dim, border stays Gold dark.
 **Text field.** Well-navy trough, a sunken Gold-dark rim, Body parchment text; the caret and
 selection use Gold. Focus strikes the rim in Gold bright.
 
-**Choice marks (radio / checkbox).** Well-navy trough with a Gold-dark ring or box; the
-chosen mark is a Gold fill. Label in Body parchment.
+**Choice marks (radio / checkbox).** A well-navy hex (radio) or square with 1.5 px cuts
+(checkbox), with a sunken Gold-dark rim. The chosen mark is a parchment hex or tick. Label in
+Body parchment.
 
-**Progress bar.** A well-navy trough with a sunken Gold-dark rim (3 px chamfer). Determinate: a Gold fill from the left, inset 3 px, with a 1 px Gold-bright
-highlight along its top edge. Indeterminate: the hatched-fill motif across the whole
+**Groove.** The divider inside a panel: a cut across it, two 1 px rows of Gold dark - the
+upper wall in shadow, the lower one lit.
+
+**Progress bar.** A well-navy trough with a sunken Gold-dark rim (3 px chamfer). Determinate: a Gold fill from the left, inset 3 px, with a 1 px bevel lit along its top
+and left edges and shaded along its bottom and right. Indeterminate: the hatched-fill motif across the whole
 trough. Never animated in still renders.
 
 **Notice.** A panel variant whose rim is struck in an outcome accent (Laurel or Ember) and

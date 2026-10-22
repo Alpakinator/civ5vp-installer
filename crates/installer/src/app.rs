@@ -180,10 +180,10 @@ pub struct InstallerApp {
     /// without the Toolchain Bootstrap's download.
     compile_dll: bool,
     install_mode: InstallMode,
-    /// The player's own MODS-folder mods a Modpack could bake in: what the
-    /// Core found, and which of those are ticked. Recomputed when the folders resolve -
-    /// listing means reading every modinfo, not a per-frame job.
-    extra_mods_available: Vec<String>,
+    /// The player's own MODS-folder mods: the ones a Modpack could bake in and the ones it
+    /// cannot, as the Core found them, and which of the first are ticked. Recomputed on a
+    /// timer - listing means reading every modinfo, not a per-frame job.
+    extra_mods: civ5vp_core::ExtraModOffer,
     extra_mods_picked: Vec<String>,
     activity: Vec<String>,
     status: Status,
@@ -391,7 +391,7 @@ impl InstallerApp {
             build_configuration,
             compile_dll,
             install_mode,
-            extra_mods_available: Vec::new(),
+            extra_mods: civ5vp_core::ExtraModOffer::default(),
             extra_mods_picked,
             activity: Vec::new(),
             status: Status::Ready,
@@ -459,7 +459,7 @@ impl InstallerApp {
             // A picture of the ordinary case: a Release install takes the DLL it ships.
             compile_dll: false,
             install_mode: InstallMode::Mods,
-            extra_mods_available: Vec::new(),
+            extra_mods: civ5vp_core::ExtraModOffer::default(),
             extra_mods_picked: Vec::new(),
             activity: Vec::new(),
             status: Status::Ready,
@@ -715,9 +715,12 @@ impl InstallerApp {
             // 43 Civs is legal with either Flavor and with or without EUI, so it is the one
             // genuinely independent toggle.
             let mut enabled = self.forty_three_civs == FortyThreeCivs::Enabled;
-            if ui
-                .checkbox(&mut enabled, "43 Civs - room for 43 civilizations on a map")
-                .changed()
+            if deco::checkbox(
+                ui,
+                &mut enabled,
+                "43 Civs - room for 43 civilizations on a map",
+            )
+            .changed()
             {
                 self.forty_three_civs = if enabled {
                     FortyThreeCivs::Enabled
@@ -731,8 +734,7 @@ impl InstallerApp {
             // *not* do: ADR-0006 measured the claim, and Vox Populi's AI turn time is native
             // C++ that no Lua engine can speed up. Promising faster turns here would be a lie
             // the player only finds out about after a two-hour game.
-            let engine = ui
-                .checkbox(&mut self.luajit, "Use the LuaJIT engine")
+            let engine = deco::checkbox(ui, &mut self.luajit, "Use the LuaJIT engine")
                 .on_hover_text(
                     "Replaces the game's Lua engine with LuaJIT. Map generation and the \
                      interface get faster; AI turn times are decided by the mod's C++ code \
@@ -746,8 +748,7 @@ impl InstallerApp {
             // back when the box is cleared - and the hover text names the one theme it touches,
             // because "the main menu music" is four different files in this game and silencing
             // the wrong one would look like the option did nothing.
-            let theme = ui
-                .checkbox(&mut self.silent_menu, "Silence the main menu music")
+            let theme = deco::checkbox(ui, &mut self.silent_menu, "Silence the main menu music")
                 .on_hover_text(
                     "Replaces Brave New World's main menu theme with silence. Only that one \
                      theme, which is the one Vox Populi reaches. Your original file is saved, \
@@ -757,13 +758,16 @@ impl InstallerApp {
                 chosen = true;
             }
             // The third file the game owns, on the same promise as the two above.
-            let intro = ui
-                .checkbox(&mut self.vp_intro, "Swap the intro for the Vox Populi one")
-                .on_hover_text(
-                    "Replaces Brave New World's opening movie with a short Vox Populi intro \
+            let intro = deco::checkbox(
+                ui,
+                &mut self.vp_intro,
+                "Swap the intro for the Vox Populi one",
+            )
+            .on_hover_text(
+                "Replaces Brave New World's opening movie with a short Vox Populi intro \
                      ending on the Civilization V logo. Your original file is saved, and put \
                      back if you clear this box or uninstall.",
-                );
+            );
             if intro.changed() {
                 chosen = true;
             }
@@ -794,12 +798,12 @@ impl InstallerApp {
                     .color(theme::PARCHMENT_DIM),
                 );
                 self.poll_extra_mods(ui);
-                if !self.extra_mods_available.is_empty() {
+                if !self.extra_mods.offered.is_empty() || !self.extra_mods.refused.is_empty() {
                     ui.add_space(4.0);
                     ui.label("Also bake in your own mods from the MODS folder:");
-                    for name in self.extra_mods_available.clone() {
+                    for name in self.extra_mods.offered.clone() {
                         let mut picked = self.extra_mods_picked.contains(&name);
-                        if ui.checkbox(&mut picked, &name).changed() {
+                        if deco::checkbox(ui, &mut picked, &name).changed() {
                             if picked {
                                 self.extra_mods_picked.push(name.clone());
                                 self.extra_mods_picked.sort_unstable();
@@ -807,6 +811,36 @@ impl InstallerApp {
                                 self.extra_mods_picked.retain(|kept| kept != &name);
                             }
                             chosen = true;
+                        }
+                    }
+                    // The ones it cannot, after the ones it can and never mixed in with them:
+                    // greyed out, so they cannot be ticked, each with the reason under it. A
+                    // mod that is simply missing from the list reads as a bug.
+                    if !self.extra_mods.refused.is_empty() {
+                        ui.add_space(4.0);
+                        ui.label(
+                            egui::RichText::new(
+                                "These cannot be baked in. Install as mods to play them:",
+                            )
+                            .color(theme::PARCHMENT_DIM),
+                        );
+                        for refused in &self.extra_mods.refused {
+                            ui.add_enabled_ui(false, |ui| {
+                                deco::checkbox(ui, &mut false, &refused.name);
+                            });
+                            let indent = ui.spacing().icon_width + ui.spacing().icon_spacing;
+                            egui::Frame::NONE
+                                .inner_margin(egui::Margin {
+                                    left: indent as i8,
+                                    ..egui::Margin::ZERO
+                                })
+                                .show(ui, |ui| {
+                                    ui.label(
+                                        egui::RichText::new(sentence_case(&refused.reason))
+                                            .small()
+                                            .color(theme::PARCHMENT_DIM),
+                                    );
+                                });
                         }
                     }
                 }
@@ -818,8 +852,7 @@ impl InstallerApp {
             // checkbox that could only be refused.
             if self.dev_mode() {
                 let mut debug = self.build_configuration == BuildConfiguration::Debug;
-                if ui
-                    .checkbox(&mut debug, "Debug build - for stepping through the DLL")
+                if deco::checkbox(ui, &mut debug, "Debug build - for stepping through the DLL")
                     .changed()
                 {
                     self.build_configuration = if debug {
@@ -1097,12 +1130,12 @@ impl InstallerApp {
 
     /// Re-list the player's own MODS-folder mods, and drop picks that no longer exist.
     fn refresh_extra_mods(&mut self) {
-        self.extra_mods_available = match &self.resolved {
-            Ok(folders) => civ5vp_core::available_extra_mods(&folders.mods),
-            Err(_) => Vec::new(),
+        self.extra_mods = match &self.resolved {
+            Ok(folders) => civ5vp_core::extra_mod_offer(&folders.mods),
+            Err(_) => civ5vp_core::ExtraModOffer::default(),
         };
         self.extra_mods_picked
-            .retain(|name| self.extra_mods_available.contains(name));
+            .retain(|name| self.extra_mods.offered.contains(name));
     }
 
     fn remember(&self) {
@@ -1509,8 +1542,7 @@ impl InstallerApp {
                         | PickedVersion::Release(_)
                         | PickedVersion::Custom
                 ) {
-                    changed |= ui
-                        .checkbox(&mut self.compile_dll, "Compile the DLL myself")
+                    changed |= deco::checkbox(ui, &mut self.compile_dll, "Compile the DLL myself")
                         .on_hover_text(
                             "A release ships the DLL it was built from, so the installer \
                              deploys that one and has nothing to compile. Tick this to build \
@@ -1519,7 +1551,8 @@ impl InstallerApp {
                         )
                         .changed();
                 }
-                ui.checkbox(
+                deco::checkbox(
+                    ui,
                     &mut self.show_unofficial,
                     "Unofficial versions - every change since the release before last",
                 );
@@ -1783,7 +1816,7 @@ impl InstallerApp {
                 let names: Vec<_> = outcome
                     .deployed
                     .iter()
-                    .map(|folder| folder.folder_name())
+                    .map(|folder| folder.label())
                     .collect();
                 format!("Installed {}.", names.join(", "))
             });
@@ -1825,7 +1858,7 @@ impl InstallerApp {
                     let names: Vec<_> = outcome
                         .removed
                         .iter()
-                        .map(|folder| folder.folder_name())
+                        .map(|folder| folder.label())
                         .collect();
                     format!(
                         "Removed {}. Your game is back to how it was.",
@@ -2101,6 +2134,15 @@ fn human_size(bytes: u64) -> String {
         }
     }
     format!("{bytes} bytes")
+}
+
+/// A clause the Core words to follow a colon, shown as a line of its own.
+fn sentence_case(clause: &str) -> String {
+    let mut letters = clause.chars();
+    letters
+        .next()
+        .map(|first| first.to_uppercase().chain(letters).collect())
+        .unwrap_or_default()
 }
 
 fn display_path(path: &Path) -> String {

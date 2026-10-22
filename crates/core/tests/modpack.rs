@@ -178,6 +178,15 @@ fn a_modpack_deployment_builds_the_pack_and_leaves_mods_alone() {
             .is_file()
     );
     assert!(outcome.deployed.contains(&ClaimedFolder::Modpack));
+    // No map script to list, so nothing is put in Maps or Text for one.
+    assert!(!game.game_root().join("Maps/VP_MODPACK").exists());
+    assert!(
+        !game
+            .game_root()
+            .join("Text/VP_MODPACK_MapScripts.xml")
+            .exists()
+    );
+    assert!(!outcome.deployed.contains(&ClaimedFolder::ModpackMaps));
     assert_eq!(
         outcome.built_dll,
         game.game_root()
@@ -245,9 +254,12 @@ fn a_modpack_deployment_installs_the_vox_populi_intro_too() {
     let plan = core.plan(&configuration, &game.folders()).unwrap();
     core.execute(&plan, &ProgressReporter::silent()).unwrap();
 
+    // The WMV on Windows, the WebM Proton plays everywhere else (ADR-0009).
+    let encoding = if cfg!(windows) { "wmv" } else { "webm" };
     let intro = std::fs::read(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../assets/intro/Civ5XP2_Opening_Movie_en_US.wmv"),
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+            "../../assets/intro/Civ5XP2_Opening_Movie_en_US.{encoding}"
+        )),
     )
     .unwrap();
     assert!(std::fs::read(game.game_root().join(movie)).unwrap() == intro);
@@ -332,9 +344,11 @@ fn the_extra_mod_offer_lists_the_players_own_mods_only() {
         "<Mod id=\"x\"/>",
     );
 
-    let offered = civ5vp_core::available_extra_mods(&game.folders().mods);
+    let offer = civ5vp_core::extra_mod_offer(&game.folders().mods);
 
-    assert_eq!(offered, vec!["Even More Bonuses".to_owned()]);
+    assert_eq!(offer.offered, vec!["Even More Bonuses".to_owned()]);
+    // Neither the picture folder nor the Modpack Maker is a mod to explain away either.
+    assert_eq!(offer.refused, Vec::new());
 }
 
 /// A mod whose `.modinfo` sits a folder down - the shape a download unpacked into a folder
@@ -361,7 +375,7 @@ fn a_mod_nested_inside_its_folder_is_offered_and_baked_in() {
         "<Context/>",
     );
 
-    let offered = civ5vp_core::available_extra_mods(&game.folders().mods);
+    let offered = civ5vp_core::extra_mod_offer(&game.folders().mods).offered;
     assert_eq!(offered, vec!["Trade_Scanner_v25".to_owned()]);
 
     let (assembler, jobs) = FixtureModpackAssembler::new();
@@ -389,9 +403,11 @@ fn a_mod_nested_inside_its_folder_is_offered_and_baked_in() {
 
 /// Only a mod the pack can carry whole is offered: a player must never believe a mod is in
 /// their Modpack when part of it is not. A Modpack has no Mods menu, so an entry point the
-/// pack does not hook, or a file the modinfo names but the mod lacks, keeps it off the list.
+/// pack does not hook, or a file the modinfo names but the mod lacks, keeps it from being
+/// picked. It is still listed, after the ones that can be, with the reason in a player's
+/// words - a mod that silently is not there reads as a bug.
 #[test]
-fn a_mod_the_pack_cannot_carry_whole_is_not_offered() {
+fn a_mod_the_pack_cannot_carry_whole_is_listed_as_refused_with_the_reason() {
     let game = modpack_game();
     plant_players_own_mods(&game);
     // A custom game-setup screen, opened from the Mods menu a Modpack game never shows.
@@ -430,13 +446,41 @@ fn a_mod_the_pack_cannot_carry_whole_is_not_offered() {
     game.plant("MODS/Overlay With Panel/Overlay.lua", "-- fixture");
     game.plant("MODS/Overlay With Panel/UI/MiniMapPanel.lua", "-- fixture");
 
-    let offered = civ5vp_core::available_extra_mods(&game.folders().mods);
+    let offer = civ5vp_core::extra_mod_offer(&game.folders().mods);
 
     assert_eq!(
-        offered,
+        offer.offered,
         vec![
             "Even More Bonuses".to_owned(),
             "Overlay With Panel".to_owned()
+        ]
+    );
+    let refused: Vec<(&str, &str)> = offer
+        .refused
+        .iter()
+        .map(|refused| (refused.name.as_str(), refused.reason.as_str()))
+        .collect();
+    assert_eq!(
+        refused,
+        vec![
+            (
+                "Giant Earth",
+                "part of it (GameSetup/Setup.xml) only runs when the mod is activated in the \
+                 Mods menu"
+            ),
+            (
+                "Half A Mod",
+                "its .modinfo lists \"Gone.sql\", which is not in the mod"
+            ),
+            (
+                "Overlay",
+                "part of it (Overlay.lua) plugs into MiniMapPanel.lua, which nothing in the \
+                 modpack has"
+            ),
+            (
+                "Own DLL Mod",
+                "it brings its own game DLL, and a modpack runs Vox Populi's"
+            ),
         ]
     );
 }
@@ -541,6 +585,186 @@ fn a_vanished_extra_mod_stops_the_deployment() {
 }
 
 /// Uninstall treats the Modpack as what it is: a Claimed Folder.
+/// A map-script mod: one script of its own, which builds its name from a text key while
+/// the game scans it, and one named like a script of the game's own map pack.
+fn plant_map_script_mod(game: &GameFixture) {
+    game.plant(
+        "MODS/Tectonic Map Script (v 6)/Tectonic Map Script (v 6).modinfo",
+        "<Mod id=\"tectonic\" version=\"6\"><EntryPoints>\
+         <EntryPoint type=\"MapScript\" file=\"Maps/Tectonic.lua\"/>\
+         <EntryPoint type=\"MapScript\" file=\"Maps/Amazon_XP.lua\"/>\
+         </EntryPoints></Mod>",
+    );
+    game.plant(
+        "MODS/Tectonic Map Script (v 6)/Maps/Tectonic.lua",
+        "function GetMapScriptInfo()\n\treturn { Name = L(\"TXT_KEY_TECTONIC\") .. \" - v6\", \
+         Description = \"TXT_KEY_TECTONIC_HELP\" }\nend\n",
+    );
+    game.plant(
+        "MODS/Tectonic Map Script (v 6)/Maps/Amazon_XP.lua",
+        "-- overrides the game's own Amazon_XP.lua by name\n",
+    );
+    game.plant("DLC/Expansion/Maps/Amazon_XP.lua", "-- the game's own\n");
+}
+
+fn modpack_with(extra_mods: &[&str]) -> InstallConfiguration {
+    let mut configuration = vox_populi_modpack();
+    configuration.extra_mods = extra_mods.iter().map(|name| (*name).to_owned()).collect();
+    configuration
+}
+
+/// A Modpack is not registered DLC and activates no mods, so the game lists none of its map
+/// scripts on its own - except those named like one of the game's, which override that file
+/// in place. The rest go to the Documents-side Maps folder, and the text they look up while
+/// the game scans them, before the pack's text is loaded, to the Text folder (ADR-0008).
+#[test]
+fn a_modpack_lists_its_map_scripts_where_the_game_finds_them() {
+    let game = modpack_game();
+    plant_map_script_mod(&game);
+    let (assembler, jobs) = FixtureModpackAssembler::new();
+    let core = core_over(&game, assembler);
+
+    assert!(
+        civ5vp_core::extra_mod_offer(&game.folders().mods)
+            .offered
+            .contains(&"Tectonic Map Script (v 6)".to_owned()),
+        "a mod carrying its map scripts bakes in whole"
+    );
+    let plan = core
+        .plan(
+            &modpack_with(&["Tectonic Map Script (v 6)"]),
+            &game.folders(),
+        )
+        .unwrap();
+    let outcome = core.execute(&plan, &ProgressReporter::silent()).unwrap();
+
+    assert!(
+        game.read("Maps/VP_MODPACK/Tectonic.lua")
+            .contains("TXT_KEY_TECTONIC")
+    );
+    assert!(
+        !game
+            .game_root()
+            .join("Maps/VP_MODPACK/Amazon_XP.lua")
+            .exists(),
+        "a script named like the game's own is listed through it already"
+    );
+    assert!(
+        game.game_root()
+            .join("DLC/VP_MODPACK/Mods/Tectonic Map Script (v 6)/Maps/Amazon_XP.lua")
+            .is_file(),
+        "the pack still carries it, which is what overrides the game's copy"
+    );
+    assert_eq!(
+        jobs.lock().unwrap()[0].text_tags,
+        ["TXT_KEY_TECTONIC", "TXT_KEY_TECTONIC_HELP"]
+    );
+    let text = game.read("Text/VP_MODPACK_MapScripts.xml");
+    assert!(text.contains("<GameData>"), "got: {text}");
+    assert!(
+        text.contains(
+            "\t<Language_en_US>\n\t\t<Replace Tag=\"TXT_KEY_TECTONIC\">\n\
+             \t\t\t<Text>TXT_KEY_TECTONIC &amp; text</Text>\n\t\t</Replace>\n"
+        ),
+        "got: {text}"
+    );
+    assert!(outcome.deployed.contains(&ClaimedFolder::ModpackMaps));
+    assert!(
+        outcome
+            .deployed_files
+            .contains(&civ5vp_core::ClaimedFile::ModpackMapScriptText)
+    );
+}
+
+/// The map scripts belong to the Modpack: a Mods Deployment takes them away with it, and
+/// leaves the player's own maps beside them alone.
+#[test]
+fn a_mods_deployment_removes_the_modpack_map_scripts() {
+    let game = modpack_game();
+    plant_map_script_mod(&game);
+    game.plant("Maps/My Own Map.Civ5Map", "the player's");
+    let core = core_over(&game, FixtureModpackAssembler::ignored());
+    let modpack = modpack_with(&["Tectonic Map Script (v 6)"]);
+    let plan = core.plan(&modpack, &game.folders()).unwrap();
+    core.execute(&plan, &ProgressReporter::silent()).unwrap();
+    assert!(
+        game.game_root()
+            .join("Maps/VP_MODPACK/Tectonic.lua")
+            .is_file()
+    );
+
+    let plan = core.plan(&mods_mode(modpack), &game.folders()).unwrap();
+    let outcome = core.execute(&plan, &ProgressReporter::silent()).unwrap();
+
+    assert!(!game.game_root().join("Maps/VP_MODPACK").exists());
+    assert!(
+        !game
+            .game_root()
+            .join("Text/VP_MODPACK_MapScripts.xml")
+            .exists()
+    );
+    assert!(outcome.removed.contains(&ClaimedFolder::ModpackMaps));
+    assert_eq!(game.read("Maps/My Own Map.Civ5Map"), "the player's");
+}
+
+/// A map script the player already has in Maps under the same name stays the one the game
+/// lists - the pack's copy is not put beside it.
+#[test]
+fn a_players_own_map_script_of_the_same_name_stays_listed() {
+    let game = modpack_game();
+    plant_map_script_mod(&game);
+    game.plant("Maps/tectonic.lua", "-- the player's own copy");
+    let core = core_over(&game, FixtureModpackAssembler::ignored());
+
+    let plan = core
+        .plan(
+            &modpack_with(&["Tectonic Map Script (v 6)"]),
+            &game.folders(),
+        )
+        .unwrap();
+    core.execute(&plan, &ProgressReporter::silent()).unwrap();
+
+    assert!(
+        !game
+            .game_root()
+            .join("Maps/VP_MODPACK/Tectonic.lua")
+            .exists()
+    );
+    assert_eq!(game.read("Maps/tectonic.lua"), "-- the player's own copy");
+}
+
+#[test]
+fn uninstall_removes_the_modpack_map_scripts() {
+    let game = modpack_game();
+    plant_map_script_mod(&game);
+    let core = core_over(&game, FixtureModpackAssembler::ignored());
+    let plan = core
+        .plan(
+            &modpack_with(&["Tectonic Map Script (v 6)"]),
+            &game.folders(),
+        )
+        .unwrap();
+    core.execute(&plan, &ProgressReporter::silent()).unwrap();
+
+    let outcome = core
+        .uninstall(&game.folders(), &ProgressReporter::silent())
+        .unwrap();
+
+    assert!(!game.game_root().join("Maps/VP_MODPACK").exists());
+    assert!(
+        !game
+            .game_root()
+            .join("Text/VP_MODPACK_MapScripts.xml")
+            .exists()
+    );
+    assert!(outcome.removed.contains(&ClaimedFolder::ModpackMaps));
+    assert!(
+        outcome
+            .removed_files
+            .contains(&civ5vp_core::ClaimedFile::ModpackMapScriptText)
+    );
+}
+
 #[test]
 fn uninstall_removes_the_modpack() {
     let game = modpack_game();

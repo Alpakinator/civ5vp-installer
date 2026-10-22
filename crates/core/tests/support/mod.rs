@@ -251,7 +251,7 @@ impl ModpackAssembler for FixtureModpackAssembler {
         &self,
         job: &ModpackDatabaseJob,
         progress: &ProgressReporter,
-    ) -> Result<(), BoundaryError> {
+    ) -> Result<Vec<civ5vp_core::LocalizedText>, BoundaryError> {
         progress.report(Stage::Build, "Faking the database merge.");
         let write = |path: &Path, marker: &str| {
             fs::write(path, marker).map_err(|err| {
@@ -266,7 +266,16 @@ impl ModpackAssembler for FixtureModpackAssembler {
         if let Ok(mut jobs) = self.jobs.lock() {
             jobs.push(job.clone());
         }
-        Ok(())
+        // Every requested tag the fixture's mods "added", worded so a test can recognise it.
+        Ok(job
+            .text_tags
+            .iter()
+            .map(|tag| civ5vp_core::LocalizedText {
+                language: "en_US".to_owned(),
+                tag: tag.clone(),
+                text: format!("{tag} & text"),
+            })
+            .collect())
     }
 }
 

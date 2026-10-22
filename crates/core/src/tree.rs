@@ -131,6 +131,14 @@ pub(crate) fn holds_anything_selected(
     Ok(false)
 }
 
+/// Does this directory hold anything at all? A missing one holds nothing.
+pub(crate) fn has_entries(dir: &Path) -> Result<bool, InstallError> {
+    if !dir.is_dir() {
+        return Ok(false);
+    }
+    Ok(!sorted_entries(dir)?.is_empty())
+}
+
 /// Delete `path` and everything under it, if it exists at all.
 pub(crate) fn remove_if_present(path: &Path) -> Result<(), InstallError> {
     match fs::remove_dir_all(path) {

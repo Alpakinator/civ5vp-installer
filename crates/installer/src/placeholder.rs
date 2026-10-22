@@ -261,7 +261,7 @@ impl ModpackAssembler for PlaceholderModpackAssembler {
         &self,
         job: &ModpackDatabaseJob,
         progress: &ProgressReporter,
-    ) -> Result<(), BoundaryError> {
+    ) -> Result<Vec<civ5vp_core::LocalizedText>, BoundaryError> {
         progress.report(Stage::Build, "Placeholder database merge.");
         let write = |path: &Path| {
             fs::write(path, PLACEHOLDER_DUMP_CONTENTS).map_err(|err| {
@@ -272,7 +272,8 @@ impl ModpackAssembler for PlaceholderModpackAssembler {
             })
         };
         write(&job.gameplay_dump)?;
-        write(&job.text_dump)
+        write(&job.text_dump)?;
+        Ok(Vec::new())
     }
 }
 

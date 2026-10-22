@@ -530,9 +530,23 @@ fn with_a_stock_opening_movie(game: &GameFixture) -> PathBuf {
 
 /// The intro the installer carries, read from the repository rather than from the Core: the
 /// test is that the game ends up with this file, not with whatever the Core says it is.
+/// The intro this platform's build writes: the WMV on Windows, the WebM Proton can play
+/// everywhere else (ADR-0009).
 fn the_vox_populi_intro() -> Vec<u8> {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../assets/intro/Civ5XP2_Opening_Movie_en_US.wmv");
+    let encoding = if cfg!(windows) { "wmv" } else { "webm" };
+    intro_asset(encoding)
+}
+
+/// The intro the other platform's build writes - on Linux, the WMV the 0.1.8 build wrote.
+fn the_other_platforms_intro() -> Vec<u8> {
+    let encoding = if cfg!(windows) { "webm" } else { "wmv" };
+    intro_asset(encoding)
+}
+
+fn intro_asset(extension: &str) -> Vec<u8> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+        "../../assets/intro/Civ5XP2_Opening_Movie_en_US.{extension}"
+    ));
     std::fs::read(path).expect("the intro in the repository")
 }
 
@@ -652,6 +666,39 @@ fn the_vox_populi_intro_is_never_saved_as_the_original() {
         std::fs::read(&movie).expect("the movie"),
         before,
         "the game's own movie was banked once it was back, not the intro before it"
+    );
+}
+
+/// A game still holding the intro an older or other-platform build wrote - the 0.1.8 Linux
+/// build wrote the WMV - with no original saved. That intro is the installer's own, so it is
+/// replaced and never banked as the game's movie.
+#[test]
+fn the_other_platforms_intro_is_never_saved_as_the_original() {
+    let game = GameFixture::new();
+    let movie = with_a_stock_opening_movie(&game);
+    let before = std::fs::read(&movie).expect("the movie");
+    std::fs::write(&movie, the_other_platforms_intro()).expect("an older build's intro");
+    let core = core_over(&game);
+    let plan = core
+        .plan(&with_the_vox_populi_intro(), &game.folders())
+        .expect("a plan");
+
+    core.execute(&plan, &ProgressReporter::silent())
+        .expect("a Deployment");
+    assert!(
+        std::fs::read(&movie).expect("the movie") == the_vox_populi_intro(),
+        "this build's intro replaced the other one"
+    );
+    std::fs::write(&movie, &before).expect("Steam verifies the game's files");
+    core.execute(&plan, &ProgressReporter::silent())
+        .expect("installing again, with the real movie back");
+    core.uninstall(&game.folders(), &ProgressReporter::silent())
+        .expect("an Uninstall");
+
+    assert_eq!(
+        std::fs::read(&movie).expect("the movie"),
+        before,
+        "the game's own movie was banked, not the older intro"
     );
 }
 

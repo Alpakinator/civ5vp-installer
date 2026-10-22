@@ -40,7 +40,7 @@ mod tree;
 mod versions;
 
 pub use boundaries::{
-    BoundaryError, BuildRequest, CacheState, LuaJitBuildRequest, MaterializedSource,
+    BoundaryError, BuildRequest, CacheState, LocalizedText, LuaJitBuildRequest, MaterializedSource,
     ModpackAssembler, ModpackDatabaseJob, SourceProvider, ToolchainRunner,
 };
 pub use checkout::{CheckoutRef, current_ref};
@@ -58,7 +58,7 @@ pub use detect::{
 pub use error::{GameFolderProblem, InstallError, SourceItem};
 pub use fingerprint::{DllProvenance, dll_source_identity, label_in_sidecar};
 pub use install::{Core, InstallOutcome, UninstallOutcome};
-pub use modpack::available_extra_mods;
+pub use modpack::{ExtraModOffer, RefusedMod, extra_mod_offer};
 pub use plan::Plan;
 pub use progress::{ProgressEvent, ProgressReporter, Stage};
 pub use replaced::{BackupStore, EngineOutcome, ReplacedFile, Restored};
