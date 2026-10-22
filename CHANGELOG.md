@@ -4,6 +4,24 @@ Notable changes, newest first. Versions follow [semantic versioning](https://sem
 and each one is the tag the [releases page](https://github.com/Alpakinator/civ5vp-installer/releases)
 publishes binaries for.
 
+## 0.1.8 - 2026-10-22
+
+### Added
+
+- **"Swap the intro for the Vox Populi one"**: replaces Brave New World's opening movie with a
+  short Vox Populi intro ending on the Civilization V logo, in either install mode. Your
+  original movie is saved, and put back if you clear the box or uninstall. The game's own
+  setting for skipping the intro is left alone.
+
+### Changed
+
+- A new header: "VP" in a hex tile at the centre of the window, between two plates reading
+  "Civilization 5" and "Installer", with the rule running out from their points.
+- Radio buttons are hex tiles, the way the game's map tiles stand.
+- Every frame is a single lit gold rim after Civilization V's own, instead of a double line:
+  panels and buttons are raised, text boxes and the progress bar sunken, all lit from the
+  same direction.
+
 ## 0.1.7 - 2026-10-16
 
 ### Added
