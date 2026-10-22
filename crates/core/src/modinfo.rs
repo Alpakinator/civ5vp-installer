@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::InstallError;
 
-/// The mod's `.modinfo`, at the mod root - the only place the game looks for one.
+/// The mod's `.modinfo`, at the mod root - the folder that holds it is the mod.
 pub(crate) fn find(mod_root: &Path) -> Result<Option<PathBuf>, InstallError> {
     let entries = std::fs::read_dir(mod_root).map_err(|cause| InstallError::Deployment {
         action: "read",
@@ -27,6 +27,32 @@ pub(crate) fn find(mod_root: &Path) -> Result<Option<PathBuf>, InstallError> {
         }
     }
     Ok(None)
+}
+
+/// Every mod root under `folder`: the folder itself if it holds a `.modinfo`, otherwise
+/// the outermost subfolders that do. The game finds a mod at any depth under MODS, so a
+/// download unpacked into a folder of its own (`Trade_Scanner_v25/Trade Scanner (v 25)/`)
+/// is a mod too. Sorted; symlinked folders are not followed.
+pub(crate) fn mod_roots(folder: &Path) -> Result<Vec<PathBuf>, InstallError> {
+    if find(folder)?.is_some() {
+        return Ok(vec![folder.to_path_buf()]);
+    }
+    let entries = std::fs::read_dir(folder).map_err(|cause| InstallError::Deployment {
+        action: "read",
+        path: folder.to_path_buf(),
+        cause,
+    })?;
+    let mut subfolders: Vec<PathBuf> = entries
+        .flatten()
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+        .map(|entry| entry.path())
+        .collect();
+    subfolders.sort_unstable();
+    let mut roots = Vec::new();
+    for subfolder in subfolders {
+        roots.extend(mod_roots(&subfolder)?);
+    }
+    Ok(roots)
 }
 
 /// The `id="…"` of the root `<Mod>` element.
@@ -78,6 +104,33 @@ pub(crate) fn update_database_entries(modinfo: &str) -> Vec<String> {
         .flat_map(|active| element_payloads_raw(active, "UpdateDatabase"))
         .map(unescape_xml)
         .collect()
+}
+
+/// The element name of every action under `<Actions><OnModActivated>`, in document order -
+/// `UpdateDatabase` and whatever else a mod asks the game to do on activation.
+pub(crate) fn activation_actions(modinfo: &str) -> Vec<String> {
+    let modinfo = without_comments(modinfo);
+    let mut names = Vec::new();
+    for active in element_payloads_raw(&modinfo, "Actions")
+        .into_iter()
+        .flat_map(|actions| element_payloads_raw(actions, "OnModActivated"))
+    {
+        let mut rest = active;
+        while let Some(start) = rest.find('<') {
+            rest = &rest[start + 1..];
+            if rest.starts_with('/') {
+                continue;
+            }
+            let name: String = rest
+                .chars()
+                .take_while(|c| !c.is_whitespace() && *c != '>' && *c != '/')
+                .collect();
+            if !name.is_empty() {
+                names.push(name);
+            }
+        }
+    }
+    names
 }
 
 /// Every `<File …>…</File>` payload - the manifest of what the game will load. The game

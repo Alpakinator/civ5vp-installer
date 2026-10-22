@@ -81,11 +81,13 @@ const BASE_UI_FILES: [(&str, &str); 3] = [
 /// dead weight inside one.
 const MODPACK_MAKER_ID: &str = "eb8f6ed3-109d-4f2f-a81d-516c8d2f91c1";
 
-/// The player's own mods in the MODS folder that a Modpack could bake in:
-/// every folder holding a `.modinfo`, minus the Claimed Folders - those are the managed
-/// set, governed by the configuration - and the in-game Modpack Maker. Sorted; that is
-/// also the order they are applied in, after the managed set, which is what a modmod
-/// patching Vox Populi expects.
+/// The player's own mods in the MODS folder that a Modpack can bake in whole: every
+/// folder holding a mod - its `.modinfo` at the top or further down - that
+/// [`bakeable_mod_roots`] accepts, minus the Claimed Folders - those are the managed set,
+/// governed by the configuration. Offering only what bakes in whole is the point: a
+/// player must never believe a mod is in their Modpack when part of it is not. Sorted;
+/// that is also the order they are applied in, after the managed set, which is what a
+/// modmod patching Vox Populi expects.
 pub fn available_extra_mods(mods_folder: &Path) -> Vec<String> {
     let Ok(entries) = std::fs::read_dir(mods_folder) else {
         return Vec::new();
@@ -98,16 +100,99 @@ pub fn available_extra_mods(mods_folder: &Path) -> Vec<String> {
             if !path.is_dir() || is_claimed_name(&name) {
                 return None;
             }
-            let modinfo = modinfo::find(&path).ok()??;
-            let text = std::fs::read_to_string(&modinfo).ok()?;
-            if modinfo::mod_id(&text).is_some_and(|id| id.eq_ignore_ascii_case(MODPACK_MAKER_ID)) {
-                return None;
-            }
-            Some(name)
+            bakeable_mod_roots(&path).ok().map(|_| name)
         })
         .collect();
     names.sort_unstable();
     names
+}
+
+/// The mod roots inside one of the player's MODS folders, if every one of them bakes into
+/// a Modpack whole; otherwise why not. The offer and the build both go by this, so what
+/// the picker shows is exactly what the build can deliver.
+fn bakeable_mod_roots(folder: &Path) -> Result<Vec<PathBuf>, String> {
+    let roots = modinfo::mod_roots(folder).map_err(|error| error.user_message())?;
+    if roots.is_empty() {
+        return Err("it holds no .modinfo".to_owned());
+    }
+    for root in &roots {
+        if let Some(reason) = why_not_bakeable(root) {
+            return Err(reason);
+        }
+    }
+    Ok(roots)
+}
+
+/// Why this mod root cannot be baked in whole, if it cannot. A Modpack has no Mods menu:
+/// only the database updates and the UI addins the pack hooks reach the game, so a mod
+/// asking for anything else - or naming a file it does not carry - would arrive partly.
+fn why_not_bakeable(root: &Path) -> Option<String> {
+    let modinfo = match modinfo::find(root) {
+        Ok(Some(modinfo)) => modinfo,
+        Ok(None) => return Some("it holds no .modinfo".to_owned()),
+        Err(error) => return Some(error.user_message()),
+    };
+    let Ok(text) = std::fs::read_to_string(&modinfo) else {
+        return Some(format!("its {} cannot be read", modinfo.display()));
+    };
+    if modinfo::mod_id(&text).is_some_and(|id| id.eq_ignore_ascii_case(MODPACK_MAKER_ID)) {
+        return Some("it is the in-game Modpack Maker".to_owned());
+    }
+    if let Some(action) = modinfo::activation_actions(&text)
+        .into_iter()
+        .find(|action| action != "UpdateDatabase")
+    {
+        return Some(format!(
+            "it asks the game to {action} when activated, which a Modpack cannot do"
+        ));
+    }
+    // The game loads one game DLL, and in a Modpack that is the Built DLL.
+    let mut own_dll = Vec::new();
+    if find_files_named(root, &[BUILT_DLL_FILE_NAME], &mut own_dll).is_ok() && !own_dll.is_empty() {
+        return Some(format!(
+            "it brings its own {BUILT_DLL_FILE_NAME}, and a Modpack runs the Vox Populi one"
+        ));
+    }
+    let carries = |relative: &str| modinfo::resolve_case_insensitive(root, relative).is_some();
+    if let Some(missing) = modinfo::update_database_entries(&text)
+        .into_iter()
+        .chain(modinfo::listed_files(&text))
+        .find(|relative| !carries(relative))
+    {
+        return Some(format!(
+            "its .modinfo names \"{missing}\", which it does not carry"
+        ));
+    }
+    for point in modinfo::entry_points(&text) {
+        let Some((ui_file, _)) = UI_ENTRY_FILES
+            .iter()
+            .find(|(_, addin_type)| addin_type.eq_ignore_ascii_case(&point.addin_type))
+        else {
+            return Some(format!(
+                "its {} entry point ({}) has no place in a Modpack",
+                point.addin_type, point.file
+            ));
+        };
+        if !carries(&point.file) {
+            return Some(format!(
+                "its .modinfo names \"{}\", which it does not carry",
+                point.file
+            ));
+        }
+        // InGame, CityView and LeaderHeadRoot come from the game; the other entry files
+        // exist in a Modpack only if a mod brings them.
+        let hook_target_exists = BASE_UI_FILES.iter().any(|(_, base)| base == ui_file) || {
+            let mut found = Vec::new();
+            find_files_named(root, &[ui_file], &mut found).is_ok() && !found.is_empty()
+        };
+        if !hook_target_exists {
+            return Some(format!(
+                "its {} entry point needs {ui_file}, which nothing in the Modpack provides",
+                point.addin_type
+            ));
+        }
+    }
+    None
 }
 
 /// Is this folder name one of the Claimed Folders, under any of its spellings?
@@ -190,6 +275,16 @@ pub(crate) fn assemble(
                 detail: format!("extra mod missing at {}", from.display()),
             });
         }
+        // Checked again here, not only when offered: the mod may have changed since it was
+        // picked, and a pick the pack cannot carry whole must stop the build, not shrink.
+        let roots =
+            bakeable_mod_roots(&from).map_err(|reason| InstallError::UnsupportedConfiguration {
+                message: format!(
+                    "The mod \"{name}\" cannot be baked into the Modpack: {reason}. Untick \
+                     it and try again. Your game is unchanged."
+                ),
+                detail: format!("extra mod not bakeable at {}: {reason}", from.display()),
+            })?;
         let destination = mods_dir.join(name);
         tree::copy_selected(
             &from,
@@ -197,7 +292,12 @@ pub(crate) fn assemble(
             &crate::plan::SourceSelection::Everything,
         )?;
         progress.report(Stage::Build, format!("Baked {name} into the Modpack."));
-        staged_mods.push(destination);
+        // Each mod root inside the copy - the folder itself, or a nested one - is where
+        // its modinfo's paths resolve from.
+        for root in roots {
+            let inner = root.strip_prefix(&from).unwrap_or(Path::new(""));
+            staged_mods.push(destination.join(inner));
+        }
     }
 
     // The Built DLL, where the game's VFS will find it. Every Flavor includes the Community

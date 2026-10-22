@@ -13,6 +13,16 @@ publishes binaries for.
   original movie is saved, and put back if you clear the box or uninstall. The game's own
   setting for skipping the intro is left alone.
 
+### Fixed
+
+- Modpack: your own mods unpacked one folder deep (`Trade_Scanner_v25/Trade Scanner (v 25)/`)
+  are offered for baking in - the game finds them, so the installer does too.
+- Modpack: only mods the pack can carry whole are offered. One whose setup screen or map
+  script only the Mods menu can reach, that names a file it does not have, or that brings
+  its own game DLL is left off the list, so a ticked mod is always entirely in your
+  Modpack. A ticked mod that has changed since stops the install, with the reason, before
+  the game is touched.
+
 ### Changed
 
 - A new header: "VP" in a hex tile at the centre of the window, between two plates reading

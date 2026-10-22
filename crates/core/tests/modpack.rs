@@ -337,6 +337,143 @@ fn the_extra_mod_offer_lists_the_players_own_mods_only() {
     assert_eq!(offered, vec!["Even More Bonuses".to_owned()]);
 }
 
+/// A mod whose `.modinfo` sits a folder down - the shape a download unpacked into a folder
+/// of its own takes - is a mod to the game, so it is offered and baked in like any other:
+/// its database updates and UI hooks resolve from the folder that holds the `.modinfo`.
+#[test]
+fn a_mod_nested_inside_its_folder_is_offered_and_baked_in() {
+    let game = modpack_game();
+    game.plant(
+        "MODS/Trade_Scanner_v25/Trade Scanner (v 25)/Trade Scanner (v 25).modinfo",
+        "<Mod id=\"trade-scanner\" version=\"25\">\n\
+         \t<Actions><OnModActivated>\n\
+         \t\t<UpdateDatabase>Data/ScannerText.sql</UpdateDatabase>\n\
+         \t</OnModActivated></Actions>\n\
+         \t<EntryPoints><EntryPoint type=\"InGameUIAddin\" file=\"UI/TradeScanner.xml\"/></EntryPoints>\n\
+         </Mod>",
+    );
+    game.plant(
+        "MODS/Trade_Scanner_v25/Trade Scanner (v 25)/Data/ScannerText.sql",
+        "-- fixture",
+    );
+    game.plant(
+        "MODS/Trade_Scanner_v25/Trade Scanner (v 25)/UI/TradeScanner.xml",
+        "<Context/>",
+    );
+
+    let offered = civ5vp_core::available_extra_mods(&game.folders().mods);
+    assert_eq!(offered, vec!["Trade_Scanner_v25".to_owned()]);
+
+    let (assembler, jobs) = FixtureModpackAssembler::new();
+    let core = core_over(&game, assembler);
+    let mut configuration = vox_populi_modpack();
+    configuration.extra_mods = offered;
+    let plan = core.plan(&configuration, &game.folders()).unwrap();
+    core.execute(&plan, &ProgressReporter::silent()).unwrap();
+
+    let jobs = jobs.lock().unwrap();
+    assert!(
+        jobs[0]
+            .updates
+            .iter()
+            .any(|path| path.ends_with("Trade Scanner (v 25)/Data/ScannerText.sql")),
+        "{:?}",
+        jobs[0].updates
+    );
+    assert!(
+        game.read("DLC/VP_MODPACK/UI/InGame.lua")
+            .contains("\"TradeScanner\""),
+        "the nested mod's UI addin is hooked"
+    );
+}
+
+/// Only a mod the pack can carry whole is offered: a player must never believe a mod is in
+/// their Modpack when part of it is not. A Modpack has no Mods menu, so an entry point the
+/// pack does not hook, or a file the modinfo names but the mod lacks, keeps it off the list.
+#[test]
+fn a_mod_the_pack_cannot_carry_whole_is_not_offered() {
+    let game = modpack_game();
+    plant_players_own_mods(&game);
+    // A custom game-setup screen, opened from the Mods menu a Modpack game never shows.
+    game.plant(
+        "MODS/Giant Earth/Giant Earth.modinfo",
+        "<Mod id=\"giant-earth\" version=\"1\">\n\
+         \t<EntryPoints><EntryPoint type=\"Custom\" file=\"GameSetup/Setup.xml\"/></EntryPoints>\n\
+         </Mod>",
+    );
+    game.plant("MODS/Giant Earth/GameSetup/Setup.xml", "<Context/>");
+    // A database update the mod does not carry.
+    game.plant(
+        "MODS/Half A Mod/Half A Mod.modinfo",
+        "<Mod id=\"half\" version=\"1\"><Actions><OnModActivated>\
+         <UpdateDatabase>Gone.sql</UpdateDatabase></OnModActivated></Actions></Mod>",
+    );
+    // A minimap overlay: its hook target exists only if a mod brings MiniMapPanel.lua.
+    game.plant(
+        "MODS/Overlay/Overlay.modinfo",
+        "<Mod id=\"overlay\" version=\"1\"><EntryPoints>\
+         <EntryPoint type=\"MiniMapOverlayAddin\" file=\"Overlay.lua\"/></EntryPoints></Mod>",
+    );
+    game.plant("MODS/Overlay/Overlay.lua", "-- fixture");
+    // Its own game DLL: the game loads one, and in a Modpack that is the Built DLL.
+    game.plant(
+        "MODS/Own DLL Mod/Own DLL Mod.modinfo",
+        "<Mod id=\"own-dll\" version=\"1\"/>",
+    );
+    game.plant("MODS/Own DLL Mod/CvGameCore_Expansion2.dll", "MZ");
+    // The same overlay bringing the file it hooks into is fine.
+    game.plant(
+        "MODS/Overlay With Panel/Overlay.modinfo",
+        "<Mod id=\"overlay-panel\" version=\"1\"><EntryPoints>\
+         <EntryPoint type=\"MiniMapOverlayAddin\" file=\"Overlay.lua\"/></EntryPoints></Mod>",
+    );
+    game.plant("MODS/Overlay With Panel/Overlay.lua", "-- fixture");
+    game.plant("MODS/Overlay With Panel/UI/MiniMapPanel.lua", "-- fixture");
+
+    let offered = civ5vp_core::available_extra_mods(&game.folders().mods);
+
+    assert_eq!(
+        offered,
+        vec![
+            "Even More Bonuses".to_owned(),
+            "Overlay With Panel".to_owned()
+        ]
+    );
+}
+
+/// A pick that can no longer be carried whole - edited since it was offered - stops the
+/// build before the game is touched, rather than baking in part of it.
+#[test]
+fn a_pick_the_pack_cannot_carry_whole_stops_the_deployment() {
+    let game = modpack_game();
+    plant_players_own_mods(&game);
+    game.plant(
+        "MODS/Even More Bonuses/Even More Bonuses.modinfo",
+        "<Mod id=\"11111111-2222-3333-4444-555555555555\" version=\"3\">\n\
+         \t<Actions><OnModActivated>\n\
+         \t\t<UpdateDatabase>Data/MoreBonuses.sql</UpdateDatabase>\n\
+         \t\t<UpdateDatabase>Data/AddedLater.sql</UpdateDatabase>\n\
+         \t</OnModActivated></Actions>\n\
+         </Mod>",
+    );
+    let core = core_over(&game, FixtureModpackAssembler::ignored());
+
+    let mut configuration = vox_populi_modpack();
+    configuration.extra_mods = vec!["Even More Bonuses".to_owned()];
+    let before = game.files();
+    let plan = core.plan(&configuration, &game.folders()).unwrap();
+    let error = core
+        .execute(&plan, &ProgressReporter::silent())
+        .expect_err("half a mod must not be baked in");
+
+    let message = error.user_message();
+    assert!(
+        message.contains("Even More Bonuses") && message.contains("Data/AddedLater.sql"),
+        "got: {message}"
+    );
+    assert_eq!(game.files(), before, "rule 7: the game is untouched");
+}
+
 /// A picked extra mod is baked into the pack - copied inside, its database updates applied
 /// after the managed set's - and its MODS original is left exactly where it was.
 #[test]
