@@ -32,6 +32,9 @@ publishes binaries for.
   writes it as WebM under the game's file name; Windows keeps the WMV.
 - Buttons no longer shrink by a pixel a side, and move their label, when the pointer is over
   them or presses them.
+- The activity log no longer says "Building the DLL" when nothing is compiled. The DLL's
+  stage is "Preparing the DLL" - a Release's DLL is taken as shipped - and assembling a
+  Modpack is "Building the modpack".
 
 ### Changed
 

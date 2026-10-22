@@ -6,12 +6,17 @@
 
 use std::sync::mpsc::Sender;
 
-/// The three stages of a Deployment, in order - Sync comes last so the game stays untouched
+/// The stages of a Deployment, in order - Sync comes last so the game stays untouched
 /// until everything that can fail has succeeded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stage {
     Fetch,
+    /// Settling the DLL: taking the one a Release ships, keeping the one already deployed, or
+    /// compiling it - and the Lua engine, when LuaJIT is asked for.
     Build,
+    /// Assembling a Modpack. Its own stage, because a Modpack built on a Release compiles
+    /// nothing, and its lines must not read as a DLL build.
+    Modpack,
     Sync,
 }
 
@@ -19,7 +24,10 @@ impl Stage {
     pub fn label(self) -> &'static str {
         match self {
             Self::Fetch => "Fetching sources",
-            Self::Build => "Building the DLL",
+            // "Preparing", not "Building": a Release's DLL is taken as shipped, and one
+            // already deployed is kept. The messages say when it is actually compiled.
+            Self::Build => "Preparing the DLL",
+            Self::Modpack => "Building the modpack",
             Self::Sync => "Installing into the game",
         }
     }

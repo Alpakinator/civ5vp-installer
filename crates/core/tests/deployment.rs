@@ -97,7 +97,8 @@ fn stage_order(stage: Stage) -> u8 {
     match stage {
         Stage::Fetch => 0,
         Stage::Build => 1,
-        Stage::Sync => 2,
+        Stage::Modpack => 2,
+        Stage::Sync => 3,
     }
 }
 

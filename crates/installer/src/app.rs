@@ -500,7 +500,7 @@ impl InstallerApp {
                 app.activity = vec![
                     "Fetching sources: Getting the mod files ready.".to_owned(),
                     "Fetching sources: Mod files ready.".to_owned(),
-                    "Building the DLL: Compiling 172 of 172 source files.".to_owned(),
+                    "Preparing the DLL: Compiling 172 of 172 source files.".to_owned(),
                 ];
                 app.preview_elapsed = Some(Duration::from_secs(131));
             }
@@ -514,7 +514,7 @@ impl InstallerApp {
                 };
                 app.activity = vec![
                     "Fetching sources: Mod files ready.".to_owned(),
-                    "Building the DLL: DLL built.".to_owned(),
+                    "Preparing the DLL: DLL built.".to_owned(),
                     format!("Installing into the game: {summary}"),
                 ];
             }

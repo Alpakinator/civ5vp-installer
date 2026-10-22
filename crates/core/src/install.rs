@@ -194,26 +194,10 @@ impl Core {
                 None => self.build(plan, &source.root, &version_string, progress)?,
             },
         };
-        // In Modpack mode the whole pack is assembled in the App Data Store before Sync
-        // runs - the game is untouched until everything that can fail has succeeded.
-        let staged_modpack = if plan.modpack() {
-            let resolved = self.resolve_sources(plan, &source.root)?;
-            Some(crate::modpack::assemble(
-                plan,
-                &source.root,
-                &resolved,
-                &built_dll,
-                &self.work_dir,
-                self.modpack_assembler.as_ref(),
-                progress,
-            )?)
-        } else {
-            None
-        };
-        // Built before Sync for the same reason the DLL and the Modpack are: the game is not
-        // touched until everything that can fail has succeeded. A LuaJIT build that fails -
-        // no wine, a broken download, an engine missing a symbol the game needs - must leave
-        // the player's engine exactly where it was.
+        // Built before Sync for the same reason the DLL is: the game is not touched until
+        // everything that can fail has succeeded. A LuaJIT build that fails - no wine, a
+        // broken download, an engine missing a symbol the game needs - must leave the
+        // player's engine exactly where it was.
         let built_luajit = if plan.luajit() {
             let luajit_source = self
                 .source_provider
@@ -233,6 +217,23 @@ impl Core {
                 )
                 .map_err(InstallError::Build)?;
             Some(output_path)
+        } else {
+            None
+        };
+        // In Modpack mode the whole pack is assembled in the App Data Store before Sync
+        // runs - the game is untouched until everything that can fail has succeeded. Last of
+        // the preparations, so the activity log reads in stage order.
+        let staged_modpack = if plan.modpack() {
+            let resolved = self.resolve_sources(plan, &source.root)?;
+            Some(crate::modpack::assemble(
+                plan,
+                &source.root,
+                &resolved,
+                &built_dll,
+                &self.work_dir,
+                self.modpack_assembler.as_ref(),
+                progress,
+            )?)
         } else {
             None
         };

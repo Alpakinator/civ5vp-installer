@@ -252,7 +252,7 @@ impl ModpackAssembler for FixtureModpackAssembler {
         job: &ModpackDatabaseJob,
         progress: &ProgressReporter,
     ) -> Result<Vec<civ5vp_core::LocalizedText>, BoundaryError> {
-        progress.report(Stage::Build, "Faking the database merge.");
+        progress.report(Stage::Modpack, "Faking the database merge.");
         let write = |path: &Path, marker: &str| {
             fs::write(path, marker).map_err(|err| {
                 BoundaryError::new(

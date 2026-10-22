@@ -78,6 +78,42 @@ fn core_over(game: &GameFixture, assembler: FixtureModpackAssembler) -> Core {
     )
 }
 
+/// Assembling the pack is reported as its own stage, after the DLL's and before the game is
+/// touched. Never under the DLL's: a Modpack built on a Release compiles nothing, and its
+/// lines must not read as a DLL build.
+#[test]
+fn modpack_assembly_is_reported_as_its_own_stage() {
+    use civ5vp_core::Stage;
+    let game = modpack_game();
+    let (assembler, _) = FixtureModpackAssembler::new();
+    let core = core_over(&game, assembler);
+    let (sender, receiver) = std::sync::mpsc::channel();
+
+    let plan = core.plan(&vox_populi_modpack(), &game.folders()).unwrap();
+    core.execute(&plan, &ProgressReporter::to_channel(sender))
+        .unwrap();
+
+    let events: Vec<_> = receiver.iter().collect();
+    let order = |stage: Stage| match stage {
+        Stage::Fetch => 0,
+        Stage::Build => 1,
+        Stage::Modpack => 2,
+        Stage::Sync => 3,
+    };
+    assert!(
+        events
+            .windows(2)
+            .all(|pair| order(pair[0].stage) <= order(pair[1].stage)),
+        "stages should never go backwards: {events:?}",
+    );
+    let assembly = events
+        .iter()
+        .find(|event| event.message == "Assembling the Modpack.")
+        .expect("the assembly is reported");
+    assert_eq!(assembly.stage, Stage::Modpack);
+    assert!(!Stage::Modpack.label().contains("DLL"));
+}
+
 /// The whole Modpack path at once: the pack is assembled and deployed, the databases cross
 /// the seam in activation order, and - the user's rule - a Vox Populi install already
 /// sitting in MODS is left exactly where it is.

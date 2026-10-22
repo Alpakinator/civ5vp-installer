@@ -294,7 +294,7 @@ pub(crate) fn assemble(
     let (gameplay_base, text_base) =
         ensure_base_snapshot(work_dir, &plan.folders, assembler, progress)?;
 
-    progress.report(Stage::Build, "Assembling the Modpack.");
+    progress.report(Stage::Modpack, "Assembling the Modpack.");
     let stage = work_dir.join("modpack-stage");
     tree::remove_if_present(&stage)?;
     tree::create_dir_all(&stage)?;
@@ -323,7 +323,7 @@ pub(crate) fn assemble(
             // A hand-edited configuration could name a managed folder; staging it twice
             // would fight the managed copy, so it is dropped with a word.
             progress.report(
-                Stage::Build,
+                Stage::Modpack,
                 format!("Skipped \"{name}\" - it is part of the install already."),
             );
             continue;
@@ -356,7 +356,7 @@ pub(crate) fn assemble(
             &destination,
             &crate::plan::SourceSelection::Everything,
         )?;
-        progress.report(Stage::Build, format!("Baked {name} into the Modpack."));
+        progress.report(Stage::Modpack, format!("Baked {name} into the Modpack."));
         // Each mod root inside the copy - the folder itself, or a nested one - is where
         // its modinfo's paths resolve from.
         for root in roots {
@@ -391,7 +391,7 @@ pub(crate) fn assemble(
         collect_database_updates(staged, &mut updates, progress)?;
     }
     progress.report(
-        Stage::Build,
+        Stage::Modpack,
         format!(
             "Merging {} database updates into the game's data.",
             updates.len()
@@ -410,7 +410,7 @@ pub(crate) fn assemble(
         .merge_and_dump(&job, progress)
         .map_err(InstallError::Modpack)?;
 
-    progress.report(Stage::Build, "Modpack assembled.");
+    progress.report(Stage::Modpack, "Modpack assembled.");
     Ok(AssembledModpack {
         stage,
         map_scripts,
@@ -478,7 +478,7 @@ fn stage_map_scripts(
         }
         if players.contains(&key) {
             progress.report(
-                Stage::Build,
+                Stage::Modpack,
                 format!(
                     "Left out the map script {} - your Maps folder already has one of that \
                      name, and the game lists that one.",
@@ -498,7 +498,7 @@ fn stage_map_scripts(
             .map(|stem| stem.to_string_lossy().into_owned())
             .collect();
         progress.report(
-            Stage::Build,
+            Stage::Modpack,
             format!(
                 "Listed the map scripts {} for game setup.",
                 names.join(", ")
@@ -666,7 +666,7 @@ fn ensure_base_snapshot(
             tree::copy_file(&cached_gameplay, &gameplay)?;
             tree::copy_file(&cached_text, &text)?;
             progress.report(
-                Stage::Build,
+                Stage::Modpack,
                 "Saved a copy of the game's own data - future Modpack builds reuse it.",
             );
             Ok((gameplay, text))
@@ -745,7 +745,7 @@ fn stage_ui(
             let stem = file_stem_of(&point.file);
             if !target.is_file() {
                 progress.report(
-                    Stage::Build,
+                    Stage::Modpack,
                     format!("Skipped the {stem} hook - no UI file to hook it into."),
                 );
                 continue;
@@ -838,7 +838,7 @@ fn collect_database_updates(
     for relative in modinfo::update_database_entries(&text) {
         let Some(path) = modinfo::resolve_case_insensitive(staged_mod, &relative) else {
             progress.report(
-                Stage::Build,
+                Stage::Modpack,
                 format!(
                     "Skipped a database update of {mod_name}: its modinfo references \
                      \"{relative}\", which is not among its files - the game skips it the \
