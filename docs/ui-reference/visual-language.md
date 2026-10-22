@@ -13,7 +13,7 @@ out of the game's files (ADR-0003).
 
 Civilization V frames its interface like a 1930s exposition poster: deep night-blue grounds,
 warm parchment lettering, and machined gold trim. Ornament is disciplined - a few strong
-motifs (stepped frames, sunburst fans, diamond-studded rules) applied sparingly on large
+motifs (lit rims, hex crowns, rules) applied sparingly on large
 calm surfaces. The installer should read as a small, well-made instrument from that same
 workshop: dark, warm, symmetrical, with gold used as a *line* colour far more often than as
 a *fill* colour.
@@ -78,41 +78,45 @@ synthetic bold; hierarchy comes from size and colour.
 
 Four motifs, and only these four. Restraint is the style.
 
-1. **Stepped frame.** A panel border is two concentric lines: a 1 px Gold outer line on the
-   panel's edge and a 1 px Gold-dark inner line inset 3 px. Corners are chamfered (see
-   below), so the two lines step around each corner in parallel 45° cuts - the "stepped
-   ziggurat" read.
-2. **Sunburst fan.** Straight rays fanning symmetrically from a low centre point, used once:
-   behind the window title. Rays are 1.5 px Gold at low opacity (≈ 22%), spanning roughly
-   150° of arc, inner radius ≈ 14 px, outer radius ≈ 48 px, one ray every 10°. The fan is
-   ornament behind text - it must never fight the lettering.
-3. **Diamond rule.** A horizontal divider: a 1 px Gold-dark hairline across the full width,
-   over-struck for its central ≈ 160 px by a 1 px Gold line, with a small solid Gold
-   diamond (a square rotated 45°, 4 px from centre to point) at the exact centre. Marks the
-   boundary between header and content.
+1. **Lit rim.** Every border is one metal edge, 2 px deep, lying just inside the shape's
+   outline, after Civilization V's own frames (`grid9framegold8`): a face pixel and a shade
+   pixel inside it. Light comes from above and a little to the right, so each stretch is
+   toned by the way it faces - the face brightens towards a pale highlight on top and right
+   edges and falls to bronze on the left and bottom; the shade stays dark except where the
+   face turns fully up. The rim is faceted like a machined frame: each straight stretch is one
+   colour from end to end, set only by the way it faces, and stretches meet on a mitre at
+   the corner - so the light never shifts along an edge, and every edge facing the same way,
+   on any piece, is the same colour. A *raised* rim
+   (panels, plates, buttons) catches the light on its outward faces; a *sunken* one (text
+   boxes, the progress trough, a pressed button) on its far wall.
+2. **Hex crown.** The game's own map tile - a pointy-top hexagon - set inside a second
+   outline of itself 5 px out, which shows above and below whatever crosses the tile, its
+   upright sides carried to stand on it. Used once, around the header's emblem, as a raised
+   rim.
+3. **Rule.** A rim seen edge-on, lit as any upward-facing stretch is: its face row over its
+   shade row. In the header it runs out from the points of the title plates to the edges of
+   the page, fading as it goes.
 4. **Hatched fill.** Diagonal 45° Gold stripes (3 px wide, 9 px apart, ≈ 55% opacity) inside
    a well - the "working" state of the progress bar, when there is no fraction to show.
 
 ## Line weights
 
-- **1 px** - almost everything: frames, rules, widget borders. The style is drawn with a
-  fine pen.
-- **1.5 px** - sunburst rays only.
-- **2 px** - reserved for emphasis borders (a hovered or focused interactive element).
-- Nothing heavier. Weight is expressed by doubling lines, never by thickening one.
+- **2 px** - every border and rule: the lit rim. One line, never doubled.
+- Emphasis is the metal, not the width: a hovered widget's rim is struck in Gold bright.
+- Straight stretches of a rim sit on whole pixels, so each of its two rows is one crisp
+  pixel, not two half-lit ones. Slopes are only ever parallel to the hex's own edges.
 
 ## Corner treatments
 
-- **Painted panels:** chamfered corners, 8 px cut at 45° on the outer line; the inner line
-  follows at its 3 px inset with a 6 px cut. Never rounded.
+- **Painted panels:** chamfered corners, 8 px cut at 45°, the rim following the cut. Never
+  rounded.
 - **Painted widgets** (buttons, path boxes, the version box): chamfered corners, 4 px cut at
   45°, painted by the shell rather than by egui - egui draws widget frames as rounded
   rectangles and has no chamfer, so the frame is drawn underneath and the widget's own is
   suppressed (`deco::button`, `deco::text_field`, `deco::plate`).
-- **Radio buttons**: a diamond - a square standing on its corner, the 45° cut taken all the
-  way - with a smaller filled diamond inside the one chosen. Painted by the shell
-  (`deco::radio_value`); egui's own is a circle, and a circle is the one shape this skin does
-  not have.
+- **Radio buttons**: a hex tile, pointy-top as the game's map tiles stand, with a smaller
+  filled hex inside the one chosen. Painted by the shell (`deco::radio_value`); egui's own is
+  a circle, and a circle is the one shape this skin does not have.
 - **Everything else** (checks, and every part of the embedded file browser): square,
   zero radius. Nothing in this skin is rounded; deco is straight lines and 45° cuts, and a
   radius - however small - is the one shape it does not have. Where the cut cannot be painted,
@@ -124,7 +128,7 @@ Four motifs, and only these four. Restraint is the style.
 - Window: 900 × 640 points is both the default and the minimum - the layout is designed
   down to that size and the window will not shrink further.
 - Page margin: 20 px on every side of the window.
-- Header: ≈ 50 px tall - title centred, fan behind, diamond rule below.
+- Header: ≈ 77 px tall - the VP tile in its hex outline, the title plates, the rule.
 - Panels: 10 px internal padding; 6 px vertical rhythm between panels.
 - Grid (label/field rows): 12 px column gap, 4 px row gap; fields 360 px wide.
 - Buttons: minimum 150 × 30 px for the primary action; label centred.
@@ -134,30 +138,35 @@ Four motifs, and only these four. Restraint is the style.
 
 ## Component recipes
 
-**Panel.** Panel-navy octagon (8 px chamfer) filled under the content, stepped frame around
-it, 14 px padding. An optional caption in Caption style sits at the top-left inside the
+**Panel.** Panel-navy octagon (8 px chamfer) filled under the content, a raised Gold rim on
+its edge, 10 px padding. An optional caption in Caption style sits at the top-left inside the
 frame, followed by 6 px of air. Panels span the full content width.
 
-**Header.** The display title centred at the top of the page, sunburst fan painted behind
-it, diamond rule below. Rendered once per window.
+**Header.** "VP" in Gold bright at 31 px, a fifth above Display, in a pointy-top hex tile on
+the window's exact horizontal centre. Two plates flank it 3 px clear of its sides, tall
+enough to meet the corners of the outline around the tile and ending in a point whose edges
+meet at 120°, a hex's own corner; "CIVILIZATION 5" and "INSTALLER" sit on them in spaced
+capitals (19 px, 3 px tracking), each centred on its plate, and the plates are equal so the
+whole stays symmetrical. Tile and plates have Panel-navy faces and raised Gold rims. The hex
+crown frames the tile above and below the plates, and the rule runs out from the plates'
+points to the page edges, the version resting on its right end. Rendered once per window.
 
-**Button.** Raised-navy fill, 1 px Gold-dark border, Button-style parchment-bright label.
-Hover: the border lifts to Gold bright at 2 px and the fill lightens one step. Pressed: the
-fill flips to Gold, the label to Page navy - the one moment gold is a fill. Disabled: fill
+**Button.** Raised-navy fill, a raised Gold-dark rim, Button-style parchment-bright label.
+Hover: the rim is struck in Gold bright and the fill lightens one step. Pressed: the rim
+sinks, the fill flips to Gold, the label to Page navy - the one moment gold is a fill. Disabled: fill
 falls to Panel navy, label to Parchment dim, border stays Gold dark.
 
-**Text field.** Well-navy trough, 1 px Gold-dark border, Body parchment text; the caret and
-selection use Gold. Focus lifts the border to Gold bright.
+**Text field.** Well-navy trough, a sunken Gold-dark rim, Body parchment text; the caret and
+selection use Gold. Focus strikes the rim in Gold bright.
 
 **Choice marks (radio / checkbox).** Well-navy trough with a Gold-dark ring or box; the
 chosen mark is a Gold fill. Label in Body parchment.
 
-**Progress bar.** A well-navy trough with its own stepped frame (1 px Gold-dark, 3 px
-chamfer). Determinate: a Gold fill from the left, inset 3 px, with a 1 px Gold-bright
+**Progress bar.** A well-navy trough with a sunken Gold-dark rim (3 px chamfer). Determinate: a Gold fill from the left, inset 3 px, with a 1 px Gold-bright
 highlight along its top edge. Indeterminate: the hatched-fill motif across the whole
 trough. Never animated in still renders.
 
-**Notice.** A panel variant whose border takes an outcome accent (Laurel or Ember) and
+**Notice.** A panel variant whose rim is struck in an outcome accent (Laurel or Ember) and
 whose fill is Panel navy warmed very slightly toward the accent. The text stays parchment -
 the border carries the tone.
 

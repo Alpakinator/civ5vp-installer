@@ -1,11 +1,13 @@
 //! The painted art-deco components: page, header, panels, divider, progress.
 //!
 //! Everything here is drawn from the recipes in `docs/ui-reference/visual-language.md` -
-//! the four motifs (stepped frame, sunburst fan, diamond rule, hatched fill), the line
+//! the four motifs (lit rim, hex crown, rule, hatched fill), the line
 //! weights, and the chamfered corners. All of it is original artwork painted in code; no
 //! game asset is embedded or traced (ADR-0003).
 //!
 //! Presentation only: these functions lay out and paint, and decide nothing.
+
+use std::sync::Arc;
 
 use egui::{Color32, Pos2, Rect, Shape, Stroke, pos2, vec2};
 
@@ -15,9 +17,9 @@ use crate::theme;
 pub const PAGE_MARGIN: i8 = 20;
 /// Internal padding of a framed panel.
 const PANEL_PADDING: i8 = 10;
-/// Chamfer of a panel's outer line; the inner line follows at its inset with a smaller cut.
+/// The 45° cut taken off each corner of a panel.
 const PANEL_CHAMFER: f32 = 8.0;
-/// How far the inner frame line sits inside the outer one.
+/// How far a progress bar's fill sits inside its trough: clear of the 2 px rim by a pixel.
 const FRAME_INSET: f32 = 3.0;
 
 /// The window surface: page-navy ground, page margin all round.
@@ -59,18 +61,187 @@ fn chamfered(rect: Rect, cut: f32) -> Vec<Pos2> {
     ]
 }
 
-/// The stepped frame: a filled chamfered octagon, a 1 px gold outer line on its edge, and a
-/// 1 px gold-dark inner line inset 3 px, stepping around each corner in parallel cuts.
-fn stepped_frame(rect: Rect, fill: Color32, outer_line: Color32) -> Shape {
-    let outer = chamfered(rect, PANEL_CHAMFER);
-    let inner = chamfered(rect.shrink(FRAME_INSET), PANEL_CHAMFER - 2.0);
-    Shape::Vec(vec![
-        Shape::convex_polygon(outer, fill, Stroke::new(1.0, outer_line)),
-        Shape::closed_line(inner, Stroke::new(1.0, theme::GOLD_DARK)),
-    ])
+/// A panel's ground: a filled chamfered octagon with a raised rim on its edge.
+fn rimmed_plate(rect: Rect, fill: Color32, metal: Color32, pixel: f32) -> Shape {
+    let outline = chamfered(rect, PANEL_CHAMFER);
+    let mut shapes = vec![Shape::convex_polygon(outline.clone(), fill, Stroke::NONE)];
+    shapes.extend(rim(
+        &outline,
+        true,
+        rect.center(),
+        metal,
+        Relief::Raised,
+        pixel,
+    ));
+    Shape::Vec(shapes)
 }
 
-/// A framed panel: panel-navy ground under the content, stepped frame around it, an
+// ── The rim ──────────────────────────────────────────────────────────────────
+
+/// Which way a rim is struck: standing out of the surface, or sunk into it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Relief {
+    Raised,
+    Sunken,
+}
+
+/// Where the light comes from: above and a little to the right, as Civilization V lights its
+/// own frames - their top and right edges catch it, their left and bottom fall into bronze.
+const LIGHT: egui::Vec2 = vec2(0.33, -0.94);
+
+/// How wide a rim is: a lit face and the shade beside it.
+const RIM: f32 = 2.0;
+
+/// The metal edge every frame in the skin is drawn with, after Civilization V's own: one line,
+/// two pixels deep - a face that catches the light, and a shade inside it that only brightens
+/// where the face is turned fully up.
+///
+/// Built as facets, the way a machined frame is: every straight stretch is lit by the one way
+/// it faces and is that one colour from end to end, and neighbouring stretches meet on a mitre
+/// at the corner. Light is never blended along an edge, so no edge brightens or darkens as it
+/// runs, and two pieces facing the same way are always the same colour.
+///
+/// `outline` is the outer edge of the solid shape and the rim lies just inside it, so a frame
+/// whose corners are on whole pixels has every straight stretch of its rim on whole pixels.
+/// `inside` is any point on the inner side of every stretch: the shape's centre will do.
+/// `pixel` is one physical pixel in points - the width of the soft edge either side.
+fn rim(
+    outline: &[Pos2],
+    closed: bool,
+    inside: Pos2,
+    metal: Color32,
+    relief: Relief,
+    pixel: f32,
+) -> Vec<Shape> {
+    vec![Shape::mesh(rim_mesh(
+        outline, closed, inside, metal, relief, pixel,
+    ))]
+}
+
+fn rim_mesh(
+    outline: &[Pos2],
+    closed: bool,
+    inside: Pos2,
+    metal: Color32,
+    relief: Relief,
+    pixel: f32,
+) -> egui::Mesh {
+    // Depths into the shape at which the colour is pinned: transparent outside, the face,
+    // the face giving way to the shade across one pixel, the shade, transparent inside. On
+    // whole pixels every pixel centre lands on a pinned colour, so the straight stretches are
+    // crisp; on a slope the same ramps are its anti-aliasing.
+    let soft = pixel / 2.0;
+    let depths = [-soft, soft, 1.0 - soft, 1.0 + soft, RIM - soft, RIM + soft];
+    let rows: Vec<Vec<Pos2>> = depths
+        .iter()
+        .map(|depth| offset_path(outline, closed, inside, *depth))
+        .collect();
+
+    let mut mesh = egui::Mesh::default();
+    for (i, (_, _, normal)) in facings(outline, closed, inside).into_iter().enumerate() {
+        let towards = normal.dot(LIGHT);
+        let lit = match relief {
+            Relief::Raised => towards,
+            Relief::Sunken => -towards,
+        };
+        let face = tone(metal, 1.0 + 0.6 * lit);
+        let shade = tone(metal, 0.35 + 0.6 * lit.max(0.0).powi(2));
+        let colours = [
+            Color32::TRANSPARENT,
+            face,
+            face,
+            shade,
+            shade,
+            Color32::TRANSPARENT,
+        ];
+        let next = (i + 1) % rows[0].len();
+        for band in 0..rows.len() - 1 {
+            let base = mesh.vertices.len() as u32;
+            for (row, colour) in [(band, colours[band]), (band + 1, colours[band + 1])] {
+                mesh.colored_vertex(rows[row][i], colour);
+                mesh.colored_vertex(rows[row][next], colour);
+            }
+            mesh.add_triangle(base, base + 1, base + 3);
+            mesh.add_triangle(base, base + 3, base + 2);
+        }
+    }
+    mesh
+}
+
+/// One physical pixel, in points.
+fn pixel_of(ui: &egui::Ui) -> f32 {
+    1.0 / ui.ctx().pixels_per_point()
+}
+
+/// `metal` brightened (`k` above 1, towards a pale highlight) or darkened (below 1).
+fn tone(metal: Color32, k: f32) -> Color32 {
+    let channel = |c: u8| {
+        let c = f32::from(c);
+        let value = if k <= 1.0 {
+            c * k.max(0.0)
+        } else {
+            c + (255.0 - c) * (k - 1.0).min(1.0)
+        };
+        value.round().clamp(0.0, 255.0) as u8
+    };
+    Color32::from_rgb(channel(metal.r()), channel(metal.g()), channel(metal.b()))
+}
+
+/// Every stretch of a path with the unit normal pointing away from `inside`.
+fn facings(points: &[Pos2], closed: bool, inside: Pos2) -> Vec<(Pos2, Pos2, egui::Vec2)> {
+    let count = points.len();
+    let stretches = if closed {
+        count
+    } else {
+        count.saturating_sub(1)
+    };
+    (0..stretches)
+        .map(|i| {
+            let (a, b) = (points[i], points[(i + 1) % count]);
+            let direction = (b - a).normalized();
+            let mut normal = vec2(direction.y, -direction.x);
+            if normal.dot(a - inside) < 0.0 {
+                normal = -normal;
+            }
+            (a, b, normal)
+        })
+        .collect()
+}
+
+/// A path with every stretch moved `distance` towards `inside`, each corner where its two
+/// moved stretches meet - so the new path runs exactly parallel to the old at the same
+/// distance everywhere, slopes included. An open path's two ends move with their own stretch.
+fn offset_path(points: &[Pos2], closed: bool, inside: Pos2, distance: f32) -> Vec<Pos2> {
+    let moved: Vec<(Pos2, egui::Vec2)> = facings(points, closed, inside)
+        .into_iter()
+        .map(|(a, b, normal)| (a - normal * distance, (b - a).normalized()))
+        .collect();
+    let meet = |(p, d): (Pos2, egui::Vec2), (q, e): (Pos2, egui::Vec2)| {
+        let cross = d.x * e.y - d.y * e.x;
+        if cross.abs() < 1e-6 {
+            return q;
+        }
+        let t = ((q.x - p.x) * e.y - (q.y - p.y) * e.x) / cross;
+        p + d * t
+    };
+    let count = moved.len();
+    if closed {
+        (0..count)
+            .map(|i| meet(moved[(i + count - 1) % count], moved[i]))
+            .collect()
+    } else {
+        let Some(&(last_start, last_direction)) = moved.last() else {
+            return points.to_vec();
+        };
+        let mut path = vec![moved[0].0];
+        path.extend((1..count).map(|i| meet(moved[i - 1], moved[i])));
+        let last_length = (points[count] - points[count - 1]).length();
+        path.push(last_start + last_direction * last_length);
+        path
+    }
+}
+
+/// A framed panel: panel-navy ground under the content, a raised rim around it, an
 /// optional caption in gold at the top. Spans the full content width.
 pub fn panel<R>(
     ui: &mut egui::Ui,
@@ -119,35 +290,92 @@ fn framed<R>(
             }
             contents(ui)
         });
-    ui.painter()
-        .set(ground, stepped_frame(inner.response.rect, fill, outer_line));
+    ui.painter().set(
+        ground,
+        rimmed_plate(inner.response.rect, fill, outer_line, pixel_of(ui)),
+    );
     inner.inner
 }
 
-/// The header: the display title centred, the sunburst fan behind it, the diamond rule
-/// below. Rendered once per window.
-pub fn header(ui: &mut egui::Ui, title: &str, corner: Option<&str>) {
-    let crest = ui.painter().add(Shape::Noop);
-    ui.add_space(CREST_HEIGHT);
-    let title_rect = ui
-        .vertical_centered(|ui| {
-            ui.heading(egui::RichText::new(title).color(theme::PARCHMENT_BRIGHT))
-                .rect
-        })
-        .inner;
-    // The heading's layout rect already ends with descender room below the glyphs, which
-    // reads as blank space; pulling the rule up makes the gap under the text match the one
-    // above it inside the frame.
-    ui.add_space(-3.0);
-    let rule_rect = diamond_rule(ui);
-    ui.painter()
-        .set(crest, crowned_portal(title_rect, rule_rect));
-    // Painted rather than laid out, so it costs no vertical space at all: it sits in the
-    // blank the crest's wings leave to the right of the title, resting on the rule.
+/// The header: `emblem` in a hex tile on the window's exact horizontal centre, `before` and
+/// `after` on two pointed plates either side of it, a second hex outline around the tile above
+/// and below the plates, and the rule running out from the plates' points to the edges of the page. Rendered once
+/// per window.
+///
+/// One geometry throughout, so the parts read as one piece: every edge is horizontal,
+/// vertical, or parallel to the tile's own slopes, and every edge is the same lit rim the
+/// panels are framed with.
+pub fn header(ui: &mut egui::Ui, [before, emblem, after]: [&str; 3], corner: Option<&str>) {
+    let label = format!("{before} {emblem} {after}");
+    let set = |text: String, size: f32, tracking: f32, colour: Color32| {
+        egui::WidgetText::from(
+            egui::RichText::new(text)
+                .size(size)
+                .extra_letter_spacing(tracking)
+                .color(colour),
+        )
+        .into_galley(
+            ui,
+            Some(egui::TextWrapMode::Extend),
+            f32::INFINITY,
+            egui::TextStyle::Heading,
+        )
+    };
+    // The words as a nameplate sets them - spaced capitals, a size below the emblem - so the
+    // tile's two letters are the largest thing in the header and the eye lands on them first.
+    let word = |text: &str| {
+        set(
+            text.to_uppercase(),
+            WORD_SIZE,
+            WORD_TRACKING,
+            theme::PARCHMENT_BRIGHT,
+        )
+    };
+    let (before, after) = (word(before), word(after));
+    let emblem = set(emblem.to_owned(), EMBLEM_SIZE, 0.0, theme::GOLD_BRIGHT);
+
+    let (area, response) = ui.allocate_exact_size(
+        vec2(ui.available_width(), Crest::HEIGHT),
+        egui::Sense::hover(),
+    );
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, &label));
+
+    let crest = Crest::new(
+        ui.ctx().pixels_per_point(),
+        area,
+        before.size().x.max(after.size().x),
+    );
+    let painter = ui.painter();
+    painter.extend(crest.shapes(area));
+
+    // Each word is centred on the face its plate's rim encloses, and every line of text sits
+    // on the band's middle.
+    let text_top = |galley: &Arc<egui::Galley>| crest.centre.y - galley.size().y / 2.0 + TEXT_DROP;
+    let face = offset_path(&crest.plate(1.0), true, crest.plate_centre(1.0), RIM);
+    let (near, far) = face
+        .iter()
+        .fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), p| {
+            (lo.min(p.x), hi.max(p.x))
+        });
+    let plate_middle = (near + far) / 2.0 - crest.centre.x;
+    for (galley, middle) in [
+        (&before, crest.centre.x - plate_middle),
+        (&after, crest.centre.x + plate_middle),
+        (&emblem, crest.centre.x),
+    ] {
+        painter.galley(
+            pos2(middle - galley.size().x / 2.0, text_top(galley)),
+            galley.clone(),
+            theme::PARCHMENT_BRIGHT,
+        );
+    }
+
+    // Painted rather than laid out, so it costs no vertical space: it rests on the rule at
+    // the right, in the blank beyond the plates.
     if let Some(corner) = corner {
         let font = egui::TextStyle::Small.resolve(ui.style());
         ui.painter().text(
-            pos2(rule_rect.right(), rule_rect.center().y - CORNER_LIFT),
+            pos2(area.right(), crest.centre.y - RIM / 2.0 - CORNER_LIFT),
             egui::Align2::RIGHT_BOTTOM,
             corner,
             font,
@@ -158,150 +386,219 @@ pub fn header(ui: &mut egui::Ui, title: &str, corner: Option<&str>) {
 }
 
 /// How far above the rule the corner text rests, so its descenders clear the line.
-const CORNER_LIFT: f32 = 3.0;
+const CORNER_LIFT: f32 = 2.0;
 
-/// Vertical room reserved above the title for the crest's wings and medallion.
-const CREST_HEIGHT: f32 = 34.0;
+/// How far below the line box's centre the capitals' optical centre falls.
+const TEXT_DROP: f32 = 1.0;
 
-/// The crowned portal, after the game's own main menu: an arched-fan medallion at the top
-/// centre, tiered wing lines sweeping outward from its base, their outer ends dropping as
-/// stems that flank the title and land on the rule below - crest, stems and rule as one
-/// connected frame with the title inside. Original line-art in the skin's 1-px pen
-/// (ADR-0003: the game's asset is composition reference, never copied).
-fn crowned_portal(title_rect: Rect, rule_rect: Rect) -> Shape {
-    let mut lines = Vec::new();
-    let centre_x = title_rect.center().x;
-    let rule_y = rule_rect.center().y;
-    let shoulder_y = title_rect.top() - 3.0;
+/// The flanking words' size and tracking.
+const WORD_SIZE: f32 = 19.0;
+const WORD_TRACKING: f32 = 3.0;
+/// The emblem's size: a fifth above the Display size, the largest type in the window.
+const EMBLEM_SIZE: f32 = 31.0;
 
-    let bright = Stroke::new(1.2, theme::GOLD);
-    let dim = Stroke::new(1.0, theme::GOLD_DARK);
-
-    // Side stems, chamfered into the shoulders - the same 45° corner cut every panel below
-    // carries - then down to the rule with a diamond foot at the join.
-    let stem_reach = title_rect.width() / 2.0 + 16.0;
-    const CHAMFER: f32 = 5.0;
-    for side in [-1.0_f32, 1.0] {
-        let x = centre_x + side * stem_reach;
-        let corner = pos2(x - side * CHAMFER, shoulder_y);
-        lines.push(Shape::line_segment(
-            [pos2(x, shoulder_y + CHAMFER), pos2(x, rule_y)],
-            bright,
-        ));
-        lines.push(Shape::line_segment(
-            [corner, pos2(x, shoulder_y + CHAMFER)],
-            bright,
-        ));
-        lines.push(diamond(pos2(x, rule_y), 3.0));
-        // The shoulder runs from the chamfer all the way to the medallion's base, so the
-        // arch sits astride a continuous lintel rather than hovering in a gap.
-        lines.push(Shape::line_segment(
-            [corner, pos2(centre_x + side * MEDALLION_HALF, shoulder_y)],
-            bright,
-        ));
-    }
-
-    // Wing tiers: four lines a side, tightly stepped, the longest at the bottom,
-    // alternating bright and dim - each with a feather tick at its outer end. Every tier
-    // runs inward until it meets the arch's outer arc and stops exactly there, so the wings
-    // join the dome rather than hiding behind it; the tier heights stay inside the arch's
-    // radius so even the top one lands on the dome near its crown.
-    for tier in 0..4 {
-        let height = 5.0 + tier as f32 * 4.0;
-        let y = shoulder_y - height;
-        let inner = (MEDALLION_HALF * MEDALLION_HALF - height * height)
-            .max(0.0)
-            .sqrt();
-        let outer = stem_reach - 10.0 - tier as f32 * 18.0;
-        let stroke = if tier % 2 == 0 { bright } else { dim };
-        // The outer end drops all the way to the tier below - and the bottom tier all the
-        // way to the lintel - so the wing reads as one connected stepped setback, not four
-        // floating dashes.
-        let step_down = if tier == 0 { height } else { 4.0 };
-        for side in [-1.0_f32, 1.0] {
-            let from = pos2(centre_x + side * inner, y);
-            let to = pos2(centre_x + side * outer, y);
-            lines.push(Shape::line_segment([from, to], stroke));
-            lines.push(Shape::line_segment([to, pos2(to.x, y + step_down)], stroke));
-        }
-    }
-
-    // The medallion: a fan arch seated on the lintel, the arc doubled in the skin's
-    // two-pen manner, spokes radiating from a diamond hub.
-    let arc_centre = pos2(centre_x, shoulder_y);
-    for (radius, stroke) in [(MEDALLION_HALF, bright), (MEDALLION_HALF - 3.0, dim)] {
-        let mut arc = Vec::new();
-        let mut degrees = 0.0_f32;
-        while degrees <= 180.0 {
-            let direction = vec2(degrees.to_radians().cos(), -degrees.to_radians().sin());
-            arc.push(arc_centre + direction * radius);
-            degrees += 11.25;
-        }
-        lines.push(Shape::line(arc, stroke));
-    }
-    for spoke in [30.0_f32, 60.0, 90.0, 120.0, 150.0] {
-        let direction = vec2(spoke.to_radians().cos(), -spoke.to_radians().sin());
-        lines.push(Shape::line_segment(
-            [
-                arc_centre + direction * 5.0,
-                arc_centre + direction * (MEDALLION_HALF - 4.5),
-            ],
-            dim,
-        ));
-    }
-    lines.push(diamond(arc_centre + vec2(0.0, -1.0), 2.5));
-
-    Shape::Vec(lines)
+/// The header's geometry, settled once and on whole pixels, so every part is placed from the
+/// same numbers and every straight rim lands on whole pixels.
+struct Crest {
+    /// The tile's centre: the window's horizontal centre, on a pixel boundary, so the tile's
+    /// two sides are whole pixels equally far either side of it.
+    centre: Pos2,
+    /// Half the tile's side length.
+    half: f32,
+    /// Half a plate's height: out to the corners of the outline around the tile, so the
+    /// plates and that outline meet.
+    plate_half: f32,
+    /// Centre to the tile's upright sides.
+    side: f32,
+    /// Centre to where each plate begins, a little clear of the tile.
+    plate_start: f32,
+    /// Centre to where each plate's straight run ends and its point begins.
+    plate_end: f32,
+    /// How far each plate's point reaches beyond `plate_end`.
+    point: f32,
+    /// One physical pixel, in points.
+    pixel: f32,
 }
 
-/// Half-width (and radius) of the crest's fan medallion.
-const MEDALLION_HALF: f32 = 18.0;
+/// Half the band's height. The tile is twice this from its centre to its points.
+const BAND_HALF: f32 = 15.0;
+/// The perpendicular gap between the tile and the outline around it.
+const CROWN_GAP: f32 = 5.0;
+/// How far the outline's points stand beyond the tile's: a hex's point moves 2/√3 of the
+/// distance its edges are offset.
+const CROWN_RISE: f32 = CROWN_GAP * 1.155;
+/// The gap between the tile and each plate - the tile is set into the band, not welded to it.
+const PLATE_GAP: f32 = 3.0;
+/// Air between a plate's rim and the word on it.
+const TITLE_GAP: f32 = 4.0;
 
-/// The four points of a square standing on its corner - the 45° cut taken all the way.
-fn diamond_points(centre: egui::Pos2, half: f32) -> Vec<Pos2> {
+impl Crest {
+    /// Everything the header occupies: a pixel of air, the outline over the tile, the tile,
+    /// the outline under it, and room beneath.
+    const HEIGHT: f32 = 1.0 + 2.0 * CROWN_RISE + 4.0 * BAND_HALF + 4.0;
+
+    fn new(pixels_per_point: f32, area: Rect, longest_word: f32) -> Self {
+        let whole = |v: f32| (v * pixels_per_point).round() / pixels_per_point;
+
+        let half = BAND_HALF;
+        let band_top = whole(area.top() + 1.0 + CROWN_RISE + half);
+        let centre = pos2(whole(area.center().x), band_top + half);
+        // A regular hex's side is √3/2 of its point radius; on a whole pixel, a fraction of
+        // a pixel away from that, which no eye can see and every pixel of the sides shows.
+        let side = whole(2.0 * half * HEX_WIDTH_RATIO);
+        let plate_start = side + PLATE_GAP;
+        let plate_end = whole(plate_start + 2.0 * (RIM + TITLE_GAP) + longest_word);
+        // Offsetting the tile's edges outward moves its side corners out along the slope, by
+        // the gap times tan 30° - on a whole pixel, a tenth of one from exact.
+        let plate_half = whole(half + CROWN_GAP / 3.0_f32.sqrt());
+        Self {
+            centre,
+            half,
+            plate_half,
+            side,
+            plate_start,
+            plate_end,
+            // The point's edges meet at 120°, a hex's own corner.
+            point: plate_half / 3.0_f32.sqrt(),
+            pixel: 1.0 / pixels_per_point,
+        }
+    }
+
+    /// The tile, pointy-top.
+    fn tile(&self) -> Vec<Pos2> {
+        let Pos2 { x, y } = self.centre;
+        let (h, s) = (self.half, self.side);
+        vec![
+            pos2(x, y - 2.0 * h),
+            pos2(x + s, y - h),
+            pos2(x + s, y + h),
+            pos2(x, y + 2.0 * h),
+            pos2(x - s, y + h),
+            pos2(x - s, y - h),
+        ]
+    }
+
+    /// One plate, `side` -1 for the left and 1 for the right.
+    fn plate(&self, side: f32) -> Vec<Pos2> {
+        let Pos2 { x, y } = self.centre;
+        let h = self.plate_half;
+        vec![
+            pos2(x + side * self.plate_start, y - h),
+            pos2(x + side * self.plate_end, y - h),
+            pos2(x + side * (self.plate_end + self.point), y),
+            pos2(x + side * self.plate_end, y + h),
+            pos2(x + side * self.plate_start, y + h),
+        ]
+    }
+
+    fn plate_centre(&self, side: f32) -> Pos2 {
+        pos2(
+            self.centre.x + side * (self.plate_start + self.plate_end) / 2.0,
+            self.centre.y,
+        )
+    }
+
+    fn shapes(&self, area: Rect) -> Vec<Shape> {
+        let metal = theme::GOLD;
+        let tile = self.tile();
+        let mut shapes = Vec::new();
+
+        // The rule: out from each plate's point to the edge of the page - a rim seen edge-on,
+        // lit exactly as the plates' own top edges are, fading as it goes so the header's
+        // weight stays at the centre.
+        let reach = self.plate_end + self.point;
+        for side in [-1.0_f32, 1.0] {
+            let from = self.centre.x + side * reach;
+            let to = if side < 0.0 {
+                area.left()
+            } else {
+                area.right()
+            };
+            let top = self.centre.y - RIM / 2.0;
+            let mut rule = rim_mesh(
+                &[pos2(from, top), pos2(to, top)],
+                false,
+                pos2(from, self.centre.y + 1.0),
+                metal,
+                Relief::Raised,
+                self.pixel,
+            );
+            let span = (to - from).abs().max(1.0);
+            for vertex in &mut rule.vertices {
+                let gone = ((vertex.pos.x - from).abs() / span).clamp(0.0, 1.0);
+                vertex.color = vertex.color.gamma_multiply(1.0 - 0.7 * gone);
+            }
+            shapes.push(Shape::mesh(rule));
+        }
+
+        // The crown: the tile's outline offset outward, over its top and under its bottom,
+        // the upright sides of each half carried to stand on the plates.
+        let grown = offset_path(&tile, true, self.centre, -CROWN_GAP);
+        let (top, bottom) = (
+            self.centre.y - self.plate_half,
+            self.centre.y + self.plate_half,
+        );
+        for half in [
+            [
+                pos2(grown[5].x, top),
+                grown[5],
+                grown[0],
+                grown[1],
+                pos2(grown[1].x, top),
+            ],
+            [
+                pos2(grown[4].x, bottom),
+                grown[4],
+                grown[3],
+                grown[2],
+                pos2(grown[2].x, bottom),
+            ],
+        ] {
+            shapes.extend(rim(
+                &half,
+                false,
+                self.centre,
+                metal,
+                Relief::Raised,
+                self.pixel,
+            ));
+        }
+
+        // The tile and the two plates: navy faces, each with its own rim.
+        for (piece, inside) in [
+            (tile, self.centre),
+            (self.plate(-1.0), self.plate_centre(-1.0)),
+            (self.plate(1.0), self.plate_centre(1.0)),
+        ] {
+            shapes.push(Shape::convex_polygon(
+                piece.clone(),
+                theme::PANEL_NAVY,
+                Stroke::NONE,
+            ));
+            shapes.extend(rim(&piece, true, inside, metal, Relief::Raised, self.pixel));
+        }
+        shapes
+    }
+}
+
+/// Width of a pointy-top hexagon over its height: √3 / 2.
+const HEX_WIDTH_RATIO: f32 = 0.866_025_4;
+
+/// The six corners of a pointy-top hexagon - the orientation of the game's map tiles - with
+/// `radius` from the centre to its top and bottom points.
+fn hexagon_points(centre: Pos2, radius: f32) -> Vec<Pos2> {
+    let side = radius * HEX_WIDTH_RATIO;
     vec![
-        pos2(centre.x, centre.y - half),
-        pos2(centre.x + half, centre.y),
-        pos2(centre.x, centre.y + half),
-        pos2(centre.x - half, centre.y),
+        pos2(centre.x, centre.y - radius),
+        pos2(centre.x + side, centre.y - radius / 2.0),
+        pos2(centre.x + side, centre.y + radius / 2.0),
+        pos2(centre.x, centre.y + radius),
+        pos2(centre.x - side, centre.y + radius / 2.0),
+        pos2(centre.x - side, centre.y - radius / 2.0),
     ]
 }
 
-/// A small filled diamond, the skin's punctuation mark.
-fn diamond(centre: egui::Pos2, half: f32) -> Shape {
-    Shape::convex_polygon(diamond_points(centre, half), theme::GOLD, Stroke::NONE)
-}
-
-pub fn diamond_rule(ui: &mut egui::Ui) -> Rect {
-    let width = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(vec2(width, 9.0), egui::Sense::hover());
-    let painter = ui.painter();
-    let y = rect.center().y;
-
-    painter.hline(rect.x_range(), y, Stroke::new(1.0, theme::GOLD_DARK));
-    let lit = 80.0_f32.min(width / 2.0);
-    painter.hline(
-        egui::Rangef::new(rect.center().x - lit, rect.center().x + lit),
-        y,
-        Stroke::new(1.0, theme::GOLD),
-    );
-
-    let c = rect.center();
-    let half = 4.0;
-    painter.add(Shape::convex_polygon(
-        vec![
-            pos2(c.x, y - half),
-            pos2(c.x + half, y),
-            pos2(c.x, y + half),
-            pos2(c.x - half, y),
-        ],
-        theme::GOLD,
-        Stroke::NONE,
-    ));
-    rect
-}
-
-/// The progress bar: a well-navy trough with its own stepped frame. `Some(fraction)` draws
+/// The progress bar: a well-navy trough with a sunken rim. `Some(fraction)` draws
 /// the gold fill from the left with a bright highlight along its top edge; `None` draws the
 /// hatched-fill motif across the whole trough - working, but with nothing to measure.
 /// Never animated, so a still render is a faithful picture of it.
@@ -310,10 +607,19 @@ pub fn progress(ui: &mut egui::Ui, fraction: Option<f32>) {
     let (rect, _) = ui.allocate_exact_size(vec2(width, 14.0), egui::Sense::hover());
     let painter = ui.painter();
 
+    let outline = chamfered(rect, 3.0);
     painter.add(Shape::convex_polygon(
-        chamfered(rect, 3.0),
+        outline.clone(),
         theme::WELL_NAVY,
-        Stroke::new(1.0, theme::GOLD_DARK),
+        Stroke::NONE,
+    ));
+    painter.extend(rim(
+        &outline,
+        true,
+        rect.center(),
+        theme::GOLD_DARK,
+        Relief::Sunken,
+        pixel_of(ui),
     ));
 
     let trough = rect.shrink(FRAME_INSET);
@@ -379,7 +685,7 @@ const WIDGET_CHAMFER: f32 = 4.0;
 /// egui draws every widget frame as a rounded rectangle and offers no chamfer, so the frame
 /// is drawn here instead: the widget is added with its own fill and border suppressed, and
 /// this paints the cut-cornered plate underneath. Reserved *before* the widget so it lands
-/// behind it - the same order [`stepped_frame`] is put under a panel.
+/// behind it - the same order [`rimmed_plate`] is put under a panel.
 #[must_use = "a plate that is never settled leaves its widget with no frame at all"]
 pub struct Plate(egui::layers::ShapeIdx);
 
@@ -393,21 +699,50 @@ impl Plate {
     /// have used for the state the widget is actually in, on a chamfered outline.
     pub fn settle(self, ui: &egui::Ui, response: &egui::Response) {
         let visuals = ui.style().interact(response);
-        self.paint(ui, response.rect, visuals.weak_bg_fill, visuals.bg_stroke);
+        // Raised until it is pressed, when it sinks into the panel under the pointer.
+        let relief = if response.is_pointer_button_down_on() {
+            Relief::Sunken
+        } else {
+            Relief::Raised
+        };
+        self.paint(
+            ui,
+            response.rect,
+            visuals.weak_bg_fill,
+            visuals.bg_stroke.color,
+            relief,
+        );
     }
 
     /// The plate for a sunken well - a text box, whose ground stays the same whether or not
     /// the pointer is over it. Only its border answers.
     pub fn settle_well(self, ui: &egui::Ui, response: &egui::Response) {
         let visuals = ui.style().interact(response);
-        self.paint(ui, response.rect, theme::WELL_NAVY, visuals.bg_stroke);
+        self.paint(
+            ui,
+            response.rect,
+            theme::WELL_NAVY,
+            visuals.bg_stroke.color,
+            Relief::Sunken,
+        );
     }
 
-    fn paint(self, ui: &egui::Ui, rect: Rect, fill: Color32, stroke: Stroke) {
-        ui.painter().set(
-            self.0,
-            Shape::convex_polygon(chamfered(rect, WIDGET_CHAMFER), fill, stroke),
-        );
+    /// The fill under a chamfered rim in the metal the widget's state calls for: dark gold
+    /// at rest, bright when the pointer is on it.
+    fn paint(self, ui: &egui::Ui, rect: Rect, fill: Color32, metal: Color32, relief: Relief) {
+        let outline = chamfered(rect, WIDGET_CHAMFER);
+        let mut shapes = vec![Shape::convex_polygon(outline.clone(), fill, Stroke::NONE)];
+        if metal != Color32::TRANSPARENT {
+            shapes.extend(rim(
+                &outline,
+                true,
+                rect.center(),
+                metal,
+                relief,
+                pixel_of(ui),
+            ));
+        }
+        ui.painter().set(self.0, Shape::Vec(shapes));
     }
 }
 
@@ -469,12 +804,11 @@ pub fn text_field(ui: &mut egui::Ui, field: egui::TextEdit<'_>) -> egui::Respons
 /// the ends of the box, and a path that started in the cut would look clipped.
 const TEXT_FIELD_MARGIN: (i8, i8) = (8, 4);
 
-/// A radio button drawn as a diamond: a square on its point, with a smaller filled diamond
-/// inside it when it is the one chosen.
+/// A radio button drawn as a hex tile, pointy-top as the game's map tiles stand, with a
+/// smaller filled tile inside it when it is the one chosen.
 ///
-/// egui's own is a circle, and a circle is the one shape this skin does not have - every
-/// corner in the window is either square or cut at 45°, and a diamond *is* that cut, taken
-/// all the way. Everything except the mark is egui's: the sizing, the click sense, and the
+/// egui's own is a circle, and a circle is the one shape this skin does not have. A hex is
+/// the game's own unit of space, and the same tile the header's emblem sits in. Everything except the mark is egui's: the sizing, the click sense, and the
 /// accessibility information a screen reader and the shell tests both read.
 pub fn radio_value<T: PartialEq>(
     ui: &mut egui::Ui,
@@ -523,13 +857,13 @@ fn radio(ui: &mut egui::Ui, selected: bool, label: &str) -> egui::Response {
             egui::Vec2::splat(mark_size),
         );
         ui.painter().add(Shape::convex_polygon(
-            diamond_points(mark.center(), mark_size / 2.0),
+            hexagon_points(mark.center(), mark_size / 2.0),
             visuals.bg_fill,
             visuals.bg_stroke,
         ));
         if selected {
             ui.painter().add(Shape::convex_polygon(
-                diamond_points(mark.center(), mark_size * MARK_HALF),
+                hexagon_points(mark.center(), mark_size * MARK_HALF),
                 visuals.fg_stroke.color,
                 Stroke::NONE,
             ));
@@ -546,7 +880,7 @@ fn radio(ui: &mut egui::Ui, selected: bool, label: &str) -> egui::Response {
     response
 }
 
-/// Half-width of the filled mark, as a fraction of the outline's width.
+/// Centre-to-point of the filled mark, as a fraction of the outline's height.
 const MARK_HALF: f32 = 0.3;
 
 /// A separator drawn inside a panel: a single recessed hairline.

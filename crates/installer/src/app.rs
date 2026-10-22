@@ -593,7 +593,7 @@ impl InstallerApp {
         // newer-version notice below, or while writing a bug report.
         deco::header(
             ui,
-            "Civ 5 VP Installer",
+            ["Civilization 5", "VP", "Installer"],
             Some(&format!("v{}", crate::update::CURRENT_VERSION)),
         );
         ui.label(

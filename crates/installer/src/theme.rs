@@ -35,7 +35,7 @@ pub const PARCHMENT_DIM: Color32 = Color32::from_rgb(0xAC, 0x9F, 0x7C);
 
 /// Emphasis lines: hovered borders, panel captions, progress highlights.
 pub const GOLD_BRIGHT: Color32 = Color32::from_rgb(0xE7, 0xC5, 0x65);
-/// The standard trim line: outer frames, progress fill, divider diamonds.
+/// The standard trim line: outer frames, progress fill, the lit span of a rule.
 pub const GOLD: Color32 = Color32::from_rgb(0xC3, 0x96, 0x3C);
 /// Recessed trim: inner frame lines, resting widget borders.
 pub const GOLD_DARK: Color32 = Color32::from_rgb(0x7E, 0x62, 0x26);
