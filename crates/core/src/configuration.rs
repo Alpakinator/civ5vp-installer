@@ -197,6 +197,21 @@ pub enum MenuTheme {
     Silent,
 }
 
+/// Which intro the game plays at startup.
+///
+/// `VoxPopuli` replaces Brave New World's opening movie with the Vox Populi intro the
+/// installer carries - the third Replaced File of ADR-0006. Independent of the Install Mode:
+/// the game finds its movie by a fixed path in the Game Installation, never through a mod or
+/// the Modpack, so either way of installing reaches it the same way.
+///
+/// The default leaves the game alone, as [`MenuTheme`] does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OpeningMovie {
+    #[default]
+    Stock,
+    VoxPopuli,
+}
+
 /// The complete user selection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstallConfiguration {
@@ -221,6 +236,9 @@ pub struct InstallConfiguration {
     /// Unlike [`Self::luajit`] this needs nothing built: the replacement is a few constants
     /// and a run of zeros, so it never pulls in the Toolchain.
     pub menu_theme: MenuTheme,
+    /// Whether to play the Vox Populi intro at startup. Opt-in; see ADR-0006. Like
+    /// [`Self::menu_theme`] it builds nothing.
+    pub opening_movie: OpeningMovie,
     /// Whether a current Shipped DLL may be deployed instead of compiling one.
     pub dll_source: DllSource,
 }

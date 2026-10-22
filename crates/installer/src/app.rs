@@ -15,9 +15,9 @@ use std::time::{Duration, Instant};
 use civ5vp_core::{
     AppDataStore, BrowseField, BrowseRequest, BuildConfiguration, CheckoutRef, Core, DllSource,
     Eui, Flavor, FolderRejected, FortyThreeCivs, GameFolders, InstallConfiguration, InstallError,
-    InstallMode, InstallationSource, LuaJitEngine, MenuTheme, ProgressEvent, ProgressReporter,
-    SaveCompatibility, SearchLocations, Settings, Version, VersionCatalog, browse_start,
-    home_directory, resolve_game_folders, start_up,
+    InstallMode, InstallationSource, LuaJitEngine, MenuTheme, OpeningMovie, ProgressEvent,
+    ProgressReporter, SaveCompatibility, SearchLocations, Settings, Version, VersionCatalog,
+    browse_start, home_directory, resolve_game_folders, start_up,
 };
 
 use crate::browse::{Browsing, FileSystemChoice};
@@ -173,6 +173,7 @@ pub struct InstallerApp {
     /// be set without a click - the tests prefer clicking, but nothing here needs hiding.
     pub luajit: bool,
     pub silent_menu: bool,
+    pub vp_intro: bool,
     build_configuration: BuildConfiguration,
     /// Whether the player asked for the DLL to be compiled even where a Release ships a
     /// ready-made one. Off by default: the shipped DLL is the same file, minutes sooner, and
@@ -324,6 +325,7 @@ impl InstallerApp {
             forty_three_civs,
             luajit,
             silent_menu,
+            vp_intro,
             build_configuration,
             compile_dll,
             install_mode,
@@ -334,6 +336,7 @@ impl InstallerApp {
                 configuration.forty_three_civs,
                 configuration.luajit == LuaJitEngine::LuaJit,
                 configuration.menu_theme == MenuTheme::Silent,
+                configuration.opening_movie == OpeningMovie::VoxPopuli,
                 configuration.build_configuration,
                 configuration.dll_source == DllSource::AlwaysCompile,
                 configuration.install_mode,
@@ -342,6 +345,7 @@ impl InstallerApp {
             None => (
                 Flavor::suggested(),
                 FortyThreeCivs::Disabled,
+                false,
                 false,
                 false,
                 BuildConfiguration::Release,
@@ -383,6 +387,7 @@ impl InstallerApp {
             forty_three_civs,
             luajit,
             silent_menu,
+            vp_intro,
             build_configuration,
             compile_dll,
             install_mode,
@@ -449,6 +454,7 @@ impl InstallerApp {
             // A picture of a first run, and a first run never replaces the game's engine.
             luajit: false,
             silent_menu: false,
+            vp_intro: false,
             build_configuration: BuildConfiguration::Release,
             // A picture of the ordinary case: a Release install takes the DLL it ships.
             compile_dll: false,
@@ -748,6 +754,17 @@ impl InstallerApp {
                      and put back if you clear this box or uninstall.",
                 );
             if theme.changed() {
+                chosen = true;
+            }
+            // The third file the game owns, on the same promise as the two above.
+            let intro = ui
+                .checkbox(&mut self.vp_intro, "Swap the intro for the Vox Populi one")
+                .on_hover_text(
+                    "Replaces Brave New World's opening movie with a short Vox Populi intro \
+                     ending on the Civilization V logo. Your original file is saved, and put \
+                     back if you clear this box or uninstall.",
+                );
+            if intro.changed() {
                 chosen = true;
             }
             ui.add_space(4.0);
@@ -1712,6 +1729,11 @@ impl InstallerApp {
                 MenuTheme::Silent
             } else {
                 MenuTheme::Stock
+            },
+            opening_movie: if self.vp_intro {
+                OpeningMovie::VoxPopuli
+            } else {
+                OpeningMovie::Stock
             },
             // Sent as chosen, even when Dev mode is off and the checkbox is not drawn:
             // which Build Configurations are legal with which sources is the Core's ruling,

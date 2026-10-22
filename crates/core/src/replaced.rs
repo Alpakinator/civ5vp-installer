@@ -25,6 +25,12 @@ pub enum ReplacedFile {
     /// menu actually plays; the base game's and Gods & Kings' copies are never reached and
     /// are left alone rather than replaced on the off chance.
     MenuTheme,
+    /// Brave New World's opening movie, the intro the game plays at startup.
+    ///
+    /// Only the English video. The executable names that one file by its full path and plays
+    /// it whatever the game's language; the other languages ship only an audio track beside
+    /// it, which is left alone.
+    OpeningMovie,
 }
 
 impl ReplacedFile {
@@ -32,6 +38,7 @@ impl ReplacedFile {
         match self {
             Self::LuaEngine => "lua51_Win32.dll",
             Self::MenuTheme => "OpeningMenu_Exp2.wav",
+            Self::OpeningMovie => "Civ5XP2_Opening_Movie_en_US.wmv",
         }
     }
 
@@ -40,6 +47,7 @@ impl ReplacedFile {
         match self {
             Self::LuaEngine => "Lua engine",
             Self::MenuTheme => "main menu theme",
+            Self::OpeningMovie => "opening movie",
         }
     }
 
@@ -54,18 +62,25 @@ impl ReplacedFile {
                 .game_root
                 .join("Assets/DLC/Expansion2/Sounds/Streamed/Music")
                 .join(self.file_name()),
+            Self::OpeningMovie => folders
+                .game_root
+                .join("Assets/DLC/Expansion2")
+                .join(self.file_name()),
         }
     }
 
     /// Whether `bytes` are the installer's own replacement rather than the game's file.
     ///
-    /// Each Replaced File needs its own answer, and both are structural rather than a hash: a
-    /// hash would have to be pinned per game patch and would go stale, while these are true of
-    /// any build of the replacement the installer could produce.
+    /// Each Replaced File needs its own answer. The engine's and the theme's are structural
+    /// rather than a hash: a hash would have to be pinned per game patch and would go stale,
+    /// while these are true of any build of the replacement the installer could produce. The
+    /// movie is the exception, because it is not produced at all - the installer carries the
+    /// one replacement it can write, so "is it ours" is "is it that file".
     fn is_a_replacement(self, bytes: &[u8]) -> bool {
         match self {
             Self::LuaEngine => looks_like_luajit(bytes),
             Self::MenuTheme => is_silent_wav(bytes),
+            Self::OpeningMovie => bytes == VOX_POPULI_INTRO,
         }
     }
 }
@@ -140,13 +155,28 @@ pub fn silent_theme() -> Vec<u8> {
     wav
 }
 
+/// The Vox Populi intro: about 21 seconds closing on the Civilization V logo with "Vox Populi"
+/// beneath the gold V, encoded as the game's own movie is (ASF, WMV2 video, WMA2 audio).
+///
+/// Carried in the binary rather than generated like the silent theme, because a video cannot
+/// be. That also makes it the one Replaced File recognised by its exact bytes - and why a
+/// re-edited intro should be checked against what [`BackupStore::back_up_once`] would make of
+/// the old one: a game still holding the previous edit, with no backup taken, would have it
+/// banked as the original.
+pub(crate) static VOX_POPULI_INTRO: &[u8] =
+    include_bytes!("../../../assets/intro/Civ5XP2_Opening_Movie_en_US.wmv");
+
 /// Symbols only a LuaJIT build exports.
 ///
 /// The stock Lua 5.1.4 the game ships exports none of them - they are LuaJIT's own additions
 /// to the Lua 5.1 API. Their presence in a file is therefore proof that the file is a LuaJIT,
 /// not the engine the game came with. Verified against both artifacts: the game's own
 /// `lua51_Win32.dll` exports zero of these, a built LuaJIT exports all five.
-const LUAJIT_MARKERS: [&[u8]; 3] = [b"luaJIT_setmode", b"luaJIT_profile_start", b"luaJIT_version"];
+const LUAJIT_MARKERS: [&[u8]; 3] = [
+    b"luaJIT_setmode",
+    b"luaJIT_profile_start",
+    b"luaJIT_version",
+];
 
 /// Whether `bytes` look like a LuaJIT build rather than the game's stock engine.
 ///
@@ -166,6 +196,13 @@ fn looks_like_luajit(bytes: &[u8]) -> bool {
 /// make and reports that failure properly, rather than this check turning an I/O problem into
 /// a silent refusal that looks like success.
 fn file_is_a_replacement(file: ReplacedFile, path: &Path) -> bool {
+    // The game's own movie is 86 MB and the intro is 10; reading the first only to find it is
+    // the wrong length would cost every Deployment a pointless read of the largest file here.
+    if file == ReplacedFile::OpeningMovie
+        && std::fs::metadata(path).is_ok_and(|meta| meta.len() != VOX_POPULI_INTRO.len() as u64)
+    {
+        return false;
+    }
     std::fs::read(path).is_ok_and(|bytes| file.is_a_replacement(&bytes))
 }
 
@@ -292,9 +329,8 @@ mod tests {
         assert_eq!(&wav[36..40], b"data");
 
         let u16_at = |at: usize| u16::from_le_bytes([wav[at], wav[at + 1]]);
-        let u32_at = |at: usize| {
-            u32::from_le_bytes([wav[at], wav[at + 1], wav[at + 2], wav[at + 3]])
-        };
+        let u32_at =
+            |at: usize| u32::from_le_bytes([wav[at], wav[at + 1], wav[at + 2], wav[at + 3]]);
 
         assert_eq!(u32_at(16), 16, "PCM fmt chunk length");
         assert_eq!(u16_at(20), 1, "1 = PCM, uncompressed");
@@ -306,7 +342,11 @@ mod tests {
         // either one reads off the end.
         let data_len = u32_at(40) as usize;
         assert_eq!(data_len, wav.len() - WAV_HEADER_LEN);
-        assert_eq!(u32_at(4) as usize, wav.len() - 8, "RIFF size counts all but its own header");
+        assert_eq!(
+            u32_at(4) as usize,
+            wav.len() - 8,
+            "RIFF size counts all but its own header"
+        );
 
         // Byte rate and block align must match the other fields; players' audio drivers do
         // trust these.
@@ -351,13 +391,45 @@ mod tests {
         let path = ReplacedFile::MenuTheme.path_in(&folders);
 
         assert!(path.starts_with(&folders.game_root));
-        assert_eq!(path.file_name().and_then(|n| n.to_str()), Some("OpeningMenu_Exp2.wav"));
+        assert_eq!(
+            path.file_name().and_then(|n| n.to_str()),
+            Some("OpeningMenu_Exp2.wav")
+        );
         let shown = path.display().to_string().replace('\\', "/");
         assert!(
             shown.contains("Assets/DLC/Expansion2/Sounds/Streamed/Music"),
             "unexpected location: {shown}"
         );
-        assert!(!shown.contains("DLC/Expansion/"), "Gods & Kings is left alone");
+        assert!(
+            !shown.contains("DLC/Expansion/"),
+            "Gods & Kings is left alone"
+        );
+    }
+
+    /// The movie lands where the executable looks for it - Brave New World's English video, by
+    /// its full name - and only the intro itself counts as the installer's own.
+    #[test]
+    fn the_opening_movie_is_brave_new_worlds_and_only_the_intro_is_ours() {
+        let folders = GameFolders {
+            mods: PathBuf::from("/documents/MODS"),
+            dlc: PathBuf::from("/game/Assets/DLC"),
+            text: PathBuf::from("/documents/Text"),
+            game_root: PathBuf::from("/game"),
+        };
+        assert_eq!(
+            ReplacedFile::OpeningMovie.path_in(&folders),
+            PathBuf::from("/game/Assets/DLC/Expansion2/Civ5XP2_Opening_Movie_en_US.wmv")
+        );
+
+        assert!(ReplacedFile::OpeningMovie.is_a_replacement(VOX_POPULI_INTRO));
+        let mut edited = VOX_POPULI_INTRO.to_vec();
+        edited[VOX_POPULI_INTRO.len() / 2] ^= 0xff;
+        assert!(!ReplacedFile::OpeningMovie.is_a_replacement(&edited));
+        assert!(!ReplacedFile::OpeningMovie.is_a_replacement(&silent_theme()));
+        assert!(!ReplacedFile::MenuTheme.is_a_replacement(VOX_POPULI_INTRO));
+
+        // The intro is the format the game's movie is in: an ASF container.
+        assert!(VOX_POPULI_INTRO.starts_with(&[0x30, 0x26, 0xb2, 0x75, 0x8e, 0x66, 0xcf, 0x11]));
     }
 
     /// LuaJIT's own export names, as they appear in a real build. Used to make the test
@@ -396,7 +468,10 @@ mod tests {
         let Ok(()) = store.back_up_once(ReplacedFile::LuaEngine, &game_file) else {
             unreachable!("the retry")
         };
-        assert!(store.holds(ReplacedFile::LuaEngine), "the stock engine is banked");
+        assert!(
+            store.holds(ReplacedFile::LuaEngine),
+            "the stock engine is banked"
+        );
     }
 
     /// A store written before the check existed may already hold a LuaJIT. Restoring it would
@@ -429,7 +504,10 @@ mod tests {
         let Ok(after) = std::fs::read(&game_file) else {
             unreachable!("read back")
         };
-        assert_eq!(after, b"whatever is there now", "the game file was not touched");
+        assert_eq!(
+            after, b"whatever is there now",
+            "the game file was not touched"
+        );
     }
 
     /// Discarding a bad backup is what lets a player recover: verify the game's files, run the

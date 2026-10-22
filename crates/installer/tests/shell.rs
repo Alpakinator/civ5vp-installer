@@ -826,6 +826,7 @@ fn a_remembered_development_version_opens_on_the_newest_release() {
         extra_mods: Vec::new(),
         luajit: LuaJitEngine::Stock,
         menu_theme: civ5vp_core::MenuTheme::Stock,
+        opening_movie: civ5vp_core::OpeningMovie::Stock,
         dll_source: civ5vp_core::DllSource::ShippedWhenCurrent,
     });
     store.save(&settings).unwrap();
@@ -865,6 +866,7 @@ fn the_newest_release_is_always_shown_as_the_latest_one() {
         extra_mods: Vec::new(),
         luajit: LuaJitEngine::Stock,
         menu_theme: civ5vp_core::MenuTheme::Stock,
+        opening_movie: civ5vp_core::OpeningMovie::Stock,
         dll_source: civ5vp_core::DllSource::ShippedWhenCurrent,
     });
     store.save(&settings).unwrap();

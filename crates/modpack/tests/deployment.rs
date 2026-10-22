@@ -65,6 +65,7 @@ fn a_distributed_modpack_carries_vpui_text_from_the_selected_source() {
             extra_mods: Vec::new(),
             luajit: LuaJitEngine::Stock,
             menu_theme: MenuTheme::Stock,
+            opening_movie: civ5vp_core::OpeningMovie::Stock,
             dll_source: DllSource::ShippedWhenCurrent,
         };
         let plan = core.plan(&configuration, &game.folders()).unwrap();

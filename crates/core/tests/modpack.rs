@@ -30,6 +30,7 @@ fn vox_populi_modpack() -> InstallConfiguration {
         extra_mods: Vec::new(),
         luajit: LuaJitEngine::Stock,
         menu_theme: civ5vp_core::MenuTheme::Stock,
+        opening_movie: civ5vp_core::OpeningMovie::Stock,
         dll_source: DllSource::ShippedWhenCurrent,
     }
 }
@@ -226,6 +227,30 @@ fn a_mods_deployment_removes_a_modpack() {
     assert!(!game.game_root().join("DLC/VP_MODPACK").exists());
     assert!(outcome.removed.contains(&ClaimedFolder::Modpack));
     assert!(game.game_root().join("MODS/(2) Vox Populi").is_dir());
+}
+
+/// The Vox Populi intro is not part of the pack: the game finds its opening movie by a fixed
+/// path in the Game Installation. A Modpack Deployment has to put it there all the same.
+#[test]
+fn a_modpack_deployment_installs_the_vox_populi_intro_too() {
+    let game = modpack_game();
+    let movie = "Assets/DLC/Expansion2/Civ5XP2_Opening_Movie_en_US.wmv";
+    game.plant(movie, "Brave New World's own opening movie");
+    let core = core_over(&game, FixtureModpackAssembler::ignored());
+
+    let configuration = InstallConfiguration {
+        opening_movie: civ5vp_core::OpeningMovie::VoxPopuli,
+        ..vox_populi_modpack()
+    };
+    let plan = core.plan(&configuration, &game.folders()).unwrap();
+    core.execute(&plan, &ProgressReporter::silent()).unwrap();
+
+    let intro = std::fs::read(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../assets/intro/Civ5XP2_Opening_Movie_en_US.wmv"),
+    )
+    .unwrap();
+    assert!(std::fs::read(game.game_root().join(movie)).unwrap() == intro);
 }
 
 /// No pristine cache, no Modpack - and the game untouched, with a sentence telling the

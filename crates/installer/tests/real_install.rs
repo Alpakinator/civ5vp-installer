@@ -104,6 +104,7 @@ fn a_fresh_machine_installs_the_newest_release_from_github() {
         extra_mods: Vec::new(),
         luajit: LuaJitEngine::Stock,
         menu_theme: civ5vp_core::MenuTheme::Stock,
+        opening_movie: civ5vp_core::OpeningMovie::Stock,
         dll_source: DllSource::ShippedWhenCurrent,
     };
     let plan = core.plan(&configuration, &folders).unwrap_or_else(|error| {
@@ -191,6 +192,7 @@ fn a_real_version_installs_end_to_end_with_a_genuinely_built_dll() {
         extra_mods: Vec::new(),
         luajit: LuaJitEngine::Stock,
         menu_theme: civ5vp_core::MenuTheme::Stock,
+        opening_movie: civ5vp_core::OpeningMovie::Stock,
         dll_source: DllSource::ShippedWhenCurrent,
     };
     let plan = core.plan(&configuration, &folders).unwrap_or_else(|error| {
@@ -374,6 +376,7 @@ fn luajit_is_built_deployed_and_restored() {
         extra_mods: Vec::new(),
         luajit: LuaJitEngine::LuaJit,
         menu_theme: civ5vp_core::MenuTheme::Stock,
+        opening_movie: civ5vp_core::OpeningMovie::Stock,
         dll_source: DllSource::ShippedWhenCurrent,
     };
 

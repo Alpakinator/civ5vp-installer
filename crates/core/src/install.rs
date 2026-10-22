@@ -684,6 +684,7 @@ impl Core {
         // (ADR-0006), so it happens only once everything the installer owns is already right.
         let engine = self.settle_engine(plan, built_luajit, progress)?;
         self.settle_menu_theme(plan, progress)?;
+        self.settle_opening_movie(plan, progress)?;
 
         clear_game_cache(&plan.folders, progress)?;
 
@@ -698,34 +699,74 @@ impl Core {
 
     /// Bring the game's main menu theme into line with the configuration.
     ///
-    /// The same shape as [`Self::settle_engine`] and for the same reason - a choice that only
-    /// works one way is not a checkbox - but with nothing to build. The replacement is
-    /// generated here and now: a WAV in the game's own format carrying a minute of zeros.
-    ///
-    /// Only Brave New World's copy is touched. Vox Populi requires Brave New World, so that is
-    /// the theme the menu plays; the base game's and Gods & Kings' copies stay as they are.
+    /// The replacement is generated here and now: a WAV in the game's own format carrying a
+    /// minute of zeros. Only Brave New World's copy is touched. Vox Populi requires Brave New
+    /// World, so that is the theme the menu plays; the base game's and Gods & Kings' copies
+    /// stay as they are.
     fn settle_menu_theme(
         &self,
         plan: &Plan,
         progress: &ProgressReporter,
     ) -> Result<(), InstallError> {
-        let file = ReplacedFile::MenuTheme;
+        let silent = plan.configuration.menu_theme == crate::MenuTheme::Silent;
+        let theme = silent.then(crate::replaced::silent_theme);
+        self.settle_carried_replacement(
+            plan,
+            ReplacedFile::MenuTheme,
+            theme.as_deref(),
+            "Silenced the main menu theme. Your original was saved.",
+            progress,
+        )
+    }
+
+    /// Bring the game's opening movie into line with the configuration.
+    fn settle_opening_movie(
+        &self,
+        plan: &Plan,
+        progress: &ProgressReporter,
+    ) -> Result<(), InstallError> {
+        let wanted = plan.configuration.opening_movie == crate::OpeningMovie::VoxPopuli;
+        self.settle_carried_replacement(
+            plan,
+            ReplacedFile::OpeningMovie,
+            wanted.then_some(crate::replaced::VOX_POPULI_INTRO),
+            "Installed the Vox Populi intro. Your original was saved.",
+            progress,
+        )
+    }
+
+    /// Bring a Replaced File that needs nothing built into line with the configuration:
+    /// write `replacement` over it, or put the original back when there is none.
+    ///
+    /// The same shape as [`Self::settle_engine`] and for the same reason - a choice that only
+    /// works one way is not a checkbox.
+    fn settle_carried_replacement(
+        &self,
+        plan: &Plan,
+        file: ReplacedFile,
+        replacement: Option<&[u8]>,
+        replaced_message: &str,
+        progress: &ProgressReporter,
+    ) -> Result<(), InstallError> {
         let destination = file.path_in(&plan.folders);
         let backups = self.backups();
+        let what = file.describe();
 
-        if plan.configuration.menu_theme != crate::MenuTheme::Silent {
+        let Some(replacement) = replacement else {
             if backups.holds_a_replacement(file) {
                 progress.report(
                     Stage::Sync,
-                    "The saved main menu theme is the silent one, not the game's own, so it \
-                     was not put back. Verify the game's files in Steam to restore it.",
+                    format!(
+                        "The saved {what} is the installer's own, not the game's, so it was \
+                         not put back. Verify the game's files in Steam to restore it."
+                    ),
                 );
             }
             if backups.restore(file, &destination)? == Restored::FromBackup {
-                progress.report(Stage::Sync, "Put the game's main menu theme back.");
+                progress.report(Stage::Sync, format!("Put the game's {what} back."));
             }
             return Ok(());
-        }
+        };
 
         // Nothing to replace. A player without Brave New World cannot be running Vox Populi,
         // so this is a broken installation rather than a choice to act on - and writing a file
@@ -733,8 +774,9 @@ impl Core {
         if !destination.is_file() && !backups.holds(file) {
             progress.report(
                 Stage::Sync,
-                "Skipped silencing the main menu: Brave New World's theme is not where it \
-                 should be.",
+                format!(
+                    "Skipped replacing the {what}: Brave New World's is not where it should be."
+                ),
             );
             return Ok(());
         }
@@ -742,16 +784,15 @@ impl Core {
         if backups.discard_replacement(file)? {
             progress.report(
                 Stage::Sync,
-                "Discarded a saved main menu theme that was really the silent one. Verify \
-                 the game's files in Steam and install again to save the real one.",
+                format!(
+                    "Discarded a saved {what} that was really the installer's own. Verify the \
+                     game's files in Steam and install again to save the real one."
+                ),
             );
         }
         backups.back_up_once(file, &destination)?;
-        tree::write_file(&destination, &crate::replaced::silent_theme())?;
-        progress.report(
-            Stage::Sync,
-            "Silenced the main menu theme. Your original was saved.",
-        );
+        tree::write_file(&destination, replacement)?;
+        progress.report(Stage::Sync, replaced_message);
         Ok(())
     }
 
@@ -873,12 +914,19 @@ impl Core {
         // Unconditional for the same reason, and reported separately: a player who silenced
         // the menu and then uninstalled should hear the theme again without being told to go
         // and find it themselves.
-        if self
-            .backups()
-            .restore(ReplacedFile::MenuTheme, &ReplacedFile::MenuTheme.path_in(folders))?
-            == Restored::FromBackup
+        if self.backups().restore(
+            ReplacedFile::MenuTheme,
+            &ReplacedFile::MenuTheme.path_in(folders),
+        )? == Restored::FromBackup
         {
             progress.report(Stage::Sync, "Restored the game's original main menu theme.");
+        }
+        if self.backups().restore(
+            ReplacedFile::OpeningMovie,
+            &ReplacedFile::OpeningMovie.path_in(folders),
+        )? == Restored::FromBackup
+        {
+            progress.report(Stage::Sync, "Restored the game's original opening movie.");
         }
 
         clear_game_cache(folders, progress)?;

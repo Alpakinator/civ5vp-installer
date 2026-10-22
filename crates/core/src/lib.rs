@@ -22,8 +22,8 @@
     clippy::unimplemented
 )]
 
-mod checkout;
 mod boundaries;
+mod checkout;
 mod claimed;
 mod configuration;
 mod detect;
@@ -43,10 +43,11 @@ pub use boundaries::{
     BoundaryError, BuildRequest, CacheState, LuaJitBuildRequest, MaterializedSource,
     ModpackAssembler, ModpackDatabaseJob, SourceProvider, ToolchainRunner,
 };
+pub use checkout::{CheckoutRef, current_ref};
 pub use claimed::{ClaimedFile, ClaimedFolder, DeploymentTarget, GameFolders};
 pub use configuration::{
     BuildConfiguration, DllSource, Eui, Flavor, FortyThreeCivs, InstallConfiguration, InstallMode,
-    InstallationSource, LuaJitEngine, MenuTheme, Version,
+    InstallationSource, LuaJitEngine, MenuTheme, OpeningMovie, Version,
 };
 pub use detect::{
     BrowseField, BrowseRequest, BrowseStart, DetectedGame, Detection, DocumentsFolder, FolderKind,
@@ -55,7 +56,6 @@ pub use detect::{
     validate_game_installation,
 };
 pub use error::{GameFolderProblem, InstallError, SourceItem};
-pub use checkout::{CheckoutRef, current_ref};
 pub use fingerprint::{DllProvenance, dll_source_identity, label_in_sidecar};
 pub use install::{Core, InstallOutcome, UninstallOutcome};
 pub use modpack::available_extra_mods;

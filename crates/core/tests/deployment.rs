@@ -25,6 +25,7 @@ fn community_patch_only() -> InstallConfiguration {
         extra_mods: Vec::new(),
         luajit: LuaJitEngine::Stock,
         menu_theme: civ5vp_core::MenuTheme::Stock,
+        opening_movie: civ5vp_core::OpeningMovie::Stock,
         dll_source: DllSource::ShippedWhenCurrent,
     }
 }
@@ -517,6 +518,143 @@ fn clearing_the_silence_box_puts_the_menu_theme_back() {
     );
 }
 
+/// Brave New World's opening movie, as a real Game Installation has it. Fake video: any bytes
+/// that are not the Vox Populi intro.
+fn with_a_stock_opening_movie(game: &GameFixture) -> PathBuf {
+    let expansion = game.folders().game_root.join("Assets/DLC/Expansion2");
+    std::fs::create_dir_all(&expansion).expect("the Expansion2 folder");
+    let movie = expansion.join("Civ5XP2_Opening_Movie_en_US.wmv");
+    std::fs::write(&movie, b"Brave New World's own opening movie").expect("the stock movie");
+    movie
+}
+
+/// The intro the installer carries, read from the repository rather than from the Core: the
+/// test is that the game ends up with this file, not with whatever the Core says it is.
+fn the_vox_populi_intro() -> Vec<u8> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../assets/intro/Civ5XP2_Opening_Movie_en_US.wmv");
+    std::fs::read(path).expect("the intro in the repository")
+}
+
+fn with_the_vox_populi_intro() -> InstallConfiguration {
+    InstallConfiguration {
+        opening_movie: civ5vp_core::OpeningMovie::VoxPopuli,
+        ..community_patch_only()
+    }
+}
+
+/// The default leaves the movie alone, as it does the theme and the engine.
+#[test]
+fn the_opening_movie_is_untouched_when_the_intro_is_not_chosen() {
+    let game = GameFixture::new();
+    let movie = with_a_stock_opening_movie(&game);
+    let before = std::fs::read(&movie).expect("the movie");
+    let core = core_over(&game);
+
+    let plan = core
+        .plan(&community_patch_only(), &game.folders())
+        .expect("a plan");
+    core.execute(&plan, &ProgressReporter::silent())
+        .expect("a Deployment");
+
+    assert_eq!(std::fs::read(&movie).expect("the movie"), before);
+}
+
+/// Opting in puts the Vox Populi intro where the game looks for its movie, and Uninstall gives
+/// the original back byte for byte.
+#[test]
+fn the_vox_populi_intro_replaces_the_opening_movie_and_uninstall_puts_it_back() {
+    let game = GameFixture::new();
+    let movie = with_a_stock_opening_movie(&game);
+    let before = std::fs::read(&movie).expect("the movie");
+    let core = core_over(&game);
+
+    let plan = core
+        .plan(&with_the_vox_populi_intro(), &game.folders())
+        .expect("a plan");
+    core.execute(&plan, &ProgressReporter::silent())
+        .expect("a Deployment");
+
+    assert!(
+        std::fs::read(&movie).expect("the movie") == the_vox_populi_intro(),
+        "the game's movie is now the Vox Populi intro"
+    );
+
+    core.uninstall(&game.folders(), &ProgressReporter::silent())
+        .expect("an Uninstall");
+    assert_eq!(
+        std::fs::read(&movie).expect("the movie"),
+        before,
+        "Uninstall restores the game's own movie byte for byte"
+    );
+}
+
+/// Installing twice must not save the intro over the original, and clearing the box puts the
+/// original back without an Uninstall.
+#[test]
+fn clearing_the_intro_box_puts_the_opening_movie_back_after_any_number_of_installs() {
+    let game = GameFixture::new();
+    let movie = with_a_stock_opening_movie(&game);
+    let before = std::fs::read(&movie).expect("the movie");
+    let core = core_over(&game);
+
+    let intro = core
+        .plan(&with_the_vox_populi_intro(), &game.folders())
+        .expect("a plan");
+    for _ in 0..2 {
+        core.execute(&intro, &ProgressReporter::silent())
+            .expect("installing the intro");
+    }
+
+    let stock = core
+        .plan(&community_patch_only(), &game.folders())
+        .expect("a plan");
+    core.execute(&stock, &ProgressReporter::silent())
+        .expect("restoring");
+
+    assert_eq!(
+        std::fs::read(&movie).expect("the movie"),
+        before,
+        "clearing the box restores the game's own movie"
+    );
+}
+
+/// A player who cleared the App Data Store while the intro was in the game has no original
+/// left. The intro must not be banked as one in its place, or once Steam has put the real movie
+/// back, an Uninstall would "restore" the intro over it.
+#[test]
+fn the_vox_populi_intro_is_never_saved_as_the_original() {
+    let game = GameFixture::new();
+    let movie = with_a_stock_opening_movie(&game);
+    let before = std::fs::read(&movie).expect("the movie");
+    let core = core_over(&game);
+    let plan = core
+        .plan(&with_the_vox_populi_intro(), &game.folders())
+        .expect("a plan");
+    core.execute(&plan, &ProgressReporter::silent())
+        .expect("a Deployment");
+
+    std::fs::remove_dir_all(game.work_dir()).expect("the player clears the App Data Store");
+    let core = core_over(&game);
+    let plan = core
+        .plan(&with_the_vox_populi_intro(), &game.folders())
+        .expect("a plan");
+    core.execute(&plan, &ProgressReporter::silent())
+        .expect("installing again, with the intro already in the game");
+
+    std::fs::write(&movie, &before).expect("Steam verifies the game's files");
+    core.execute(&plan, &ProgressReporter::silent())
+        .expect("installing again, with the real movie back");
+    core.uninstall(&game.folders(), &ProgressReporter::silent())
+        .expect("an Uninstall");
+
+    assert_eq!(
+        std::fs::read(&movie).expect("the movie"),
+        before,
+        "the game's own movie was banked once it was back, not the intro before it"
+    );
+}
+
 /// The stock engine, as a real Game Installation has it before anything is installed.
 fn with_a_stock_engine(game: &GameFixture) -> PathBuf {
     let engine = game.folders().game_root.join("lua51_Win32.dll");
@@ -528,6 +666,7 @@ fn with_luajit() -> InstallConfiguration {
     InstallConfiguration {
         luajit: LuaJitEngine::LuaJit,
         menu_theme: civ5vp_core::MenuTheme::Stock,
+        opening_movie: civ5vp_core::OpeningMovie::Stock,
         ..community_patch_only()
     }
 }

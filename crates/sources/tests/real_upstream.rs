@@ -226,6 +226,7 @@ fn a_real_release_installs_end_to_end() {
         extra_mods: Vec::new(),
         luajit: LuaJitEngine::Stock,
         menu_theme: civ5vp_core::MenuTheme::Stock,
+        opening_movie: civ5vp_core::OpeningMovie::Stock,
         dll_source: DllSource::ShippedWhenCurrent,
     };
 

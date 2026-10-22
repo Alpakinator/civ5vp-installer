@@ -20,3 +20,4 @@ crates/core/tests/fixtures/** -text
 *.ico binary
 *.ttf binary
 *.dll binary
+*.wmv binary

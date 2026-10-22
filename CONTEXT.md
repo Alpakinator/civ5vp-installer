@@ -48,7 +48,7 @@ A folder that upstream has renamed is Claimed under **every** name it has gone b
 
 **Claimed Files** - the exact set of individual files the installer owns, in folders it does not own: `VPUI_tips_en_us.xml` in the Text Folder. A Claimed Folder is replaced wholesale, which is what makes Sync exact; that is not available in a folder the game and other mods also write to, so those files are named one by one instead.
 
-**Replaced File** - a file belonging to the *game* that the installer overwrites, having first copied the original into the App Data Store; Uninstall puts that copy back. The only one is `lua51_Win32.dll`, the game's Lua engine, in the Game Installation root. Always opt-in, never the default, and the backup is taken once so that a second Deployment cannot save the replacement over the original (ADR-0006).
+**Replaced File** - a file belonging to the *game* that the installer overwrites, having first copied the original into the App Data Store; Uninstall puts that copy back. There are three: `lua51_Win32.dll`, the game's Lua engine, in the Game Installation root; `OpeningMenu_Exp2.wav`, Brave New World's main menu theme, replaced with silence; and `Civ5XP2_Opening_Movie_en_US.wmv`, Brave New World's opening movie, replaced with the Vox Populi intro the installer carries. Each is always opt-in, never the default, and the backup is taken once so that a second Deployment cannot save the replacement over the original (ADR-0006).
 
 Together the Claimed Folders and Claimed Files are everything the installer may write, move, or delete, with two exceptions: the game's `cache` folder, which is cleared after every Deployment, and the Replaced File.
 

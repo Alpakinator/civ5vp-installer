@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 
 use crate::configuration::{
     BuildConfiguration, DllSource, Eui, Flavor, FortyThreeCivs, InstallConfiguration, InstallMode,
-    InstallationSource, LuaJitEngine, MenuTheme, Version,
+    InstallationSource, LuaJitEngine, MenuTheme, OpeningMovie, Version,
 };
 use crate::detect::{self, Detection, FolderRejected, SearchLocations};
 
@@ -298,6 +298,11 @@ impl Settings {
             "menu-theme-silent",
             on_off(configuration.menu_theme == MenuTheme::Silent),
         );
+        write_line(
+            &mut text,
+            "opening-movie-vp",
+            on_off(configuration.opening_movie == OpeningMovie::VoxPopuli),
+        );
         write_line(&mut text, "dll-source", configuration.dll_source.token());
         if !configuration.extra_mods.is_empty() {
             // `|` cannot appear in a folder name the game accepts (Windows forbids it),
@@ -531,6 +536,12 @@ fn read_configuration(values: &Values) -> Option<InstallConfiguration> {
     } else {
         MenuTheme::Stock
     };
+    // Absent means Stock, for the same reason.
+    let opening_movie = if values.get("opening-movie-vp") == Some("on") {
+        OpeningMovie::VoxPopuli
+    } else {
+        OpeningMovie::Stock
+    };
     // Anything but an explicit "always-compile" - including a file written before the line
     // existed - reads as the default. That is the right way round: an older file records an
     // installer that always compiled, and reading it as "compile always" would keep a
@@ -559,6 +570,7 @@ fn read_configuration(values: &Values) -> Option<InstallConfiguration> {
         extra_mods,
         luajit,
         menu_theme,
+        opening_movie,
         dll_source,
     })
 }
@@ -628,6 +640,7 @@ const KNOWN_KEYS: &[&str] = &[
     "install-mode",
     "luajit",
     "menu-theme-silent",
+    "opening-movie-vp",
     "dll-source",
     "extra-mods",
 ];

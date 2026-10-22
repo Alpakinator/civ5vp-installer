@@ -33,6 +33,12 @@ backup is the only trustworthy evidence that an engine was replaced and still ne
 
 The only Replaced File is `lua51_Win32.dll`.
 
+*Later additions, on the same four rules:* Brave New World's main menu theme
+(`OpeningMenu_Exp2.wav`, replaced with generated silence) and its opening movie
+(`Civ5XP2_Opening_Movie_en_US.wmv`, replaced with the Vox Populi intro carried in the binary).
+The movie cannot be overridden from a mod or the Modpack: `CivilizationV.exe` names it by its
+full path under `Assets\DLC\Expansion2`, so replacing the game's file is the only way in.
+
 LuaJIT is built from source with the bootstrapped toolchain rather than shipped as a prebuilt
 DLL, for the reasons already given in ADR-0001: the installer does not deploy binaries it did not
 compile. The pin is in `docs/pinned-artifacts.md`.

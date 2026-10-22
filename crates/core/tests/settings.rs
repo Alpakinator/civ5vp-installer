@@ -130,6 +130,7 @@ fn the_remembered_state_survives_the_round_trip() {
             extra_mods: Vec::new(),
             luajit: LuaJitEngine::Stock,
             menu_theme: civ5vp_core::MenuTheme::Stock,
+            opening_movie: civ5vp_core::OpeningMovie::Stock,
             dll_source: DllSource::ShippedWhenCurrent,
         },
         InstallConfiguration {
@@ -145,6 +146,8 @@ fn the_remembered_state_survives_the_round_trip() {
             // must survive a relaunch, or the next Deployment would quietly revert it.
             luajit: LuaJitEngine::LuaJit,
             menu_theme: civ5vp_core::MenuTheme::Stock,
+            // The intro too, for the same reason.
+            opening_movie: civ5vp_core::OpeningMovie::VoxPopuli,
             dll_source: DllSource::ShippedWhenCurrent,
         },
         InstallConfiguration {
@@ -158,6 +161,7 @@ fn the_remembered_state_survives_the_round_trip() {
             extra_mods: Vec::new(),
             luajit: LuaJitEngine::Stock,
             menu_theme: civ5vp_core::MenuTheme::Stock,
+            opening_movie: civ5vp_core::OpeningMovie::Stock,
             dll_source: DllSource::ShippedWhenCurrent,
         },
         InstallConfiguration {
@@ -171,6 +175,7 @@ fn the_remembered_state_survives_the_round_trip() {
             extra_mods: Vec::new(),
             luajit: LuaJitEngine::Stock,
             menu_theme: civ5vp_core::MenuTheme::Stock,
+            opening_movie: civ5vp_core::OpeningMovie::Stock,
             dll_source: DllSource::ShippedWhenCurrent,
         },
         // An unofficial build: the label and the commit both survive.
@@ -188,6 +193,7 @@ fn the_remembered_state_survives_the_round_trip() {
             extra_mods: Vec::new(),
             luajit: LuaJitEngine::Stock,
             menu_theme: civ5vp_core::MenuTheme::Stock,
+            opening_movie: civ5vp_core::OpeningMovie::Stock,
             dll_source: DllSource::ShippedWhenCurrent,
         },
         // Compiling a release by choice: the one setting that costs a multi-gigabyte
@@ -204,6 +210,7 @@ fn the_remembered_state_survives_the_round_trip() {
             extra_mods: Vec::new(),
             luajit: LuaJitEngine::Stock,
             menu_theme: civ5vp_core::MenuTheme::Stock,
+            opening_movie: civ5vp_core::OpeningMovie::Stock,
             dll_source: DllSource::AlwaysCompile,
         },
         // Modpack mode with extra picks - names with spaces and parentheses, like real
@@ -219,6 +226,7 @@ fn the_remembered_state_survives_the_round_trip() {
             extra_mods: vec!["Even More Bonuses (v 3)".to_owned(), "My Modmod".to_owned()],
             luajit: LuaJitEngine::Stock,
             menu_theme: civ5vp_core::MenuTheme::Stock,
+            opening_movie: civ5vp_core::OpeningMovie::Stock,
             dll_source: DllSource::ShippedWhenCurrent,
         },
     ];
@@ -298,6 +306,7 @@ fn remembered_folders_pre_fill_the_next_launch() {
         extra_mods: Vec::new(),
         luajit: LuaJitEngine::Stock,
         menu_theme: civ5vp_core::MenuTheme::Stock,
+        opening_movie: civ5vp_core::OpeningMovie::Stock,
         dll_source: DllSource::ShippedWhenCurrent,
     };
 
@@ -457,6 +466,7 @@ fn a_configuration_with_no_installation_source_still_remembers_its_flavor() {
                 extra_mods: Vec::new(),
                 luajit: LuaJitEngine::Stock,
                 menu_theme: civ5vp_core::MenuTheme::Stock,
+                opening_movie: civ5vp_core::OpeningMovie::Stock,
                 dll_source: DllSource::ShippedWhenCurrent,
             }),
             dev_checkout: None,
@@ -495,6 +505,7 @@ fn a_remembered_upstream_version_survives_a_round_trip() {
                 extra_mods: Vec::new(),
                 luajit: LuaJitEngine::Stock,
                 menu_theme: civ5vp_core::MenuTheme::Stock,
+                opening_movie: civ5vp_core::OpeningMovie::Stock,
                 dll_source: DllSource::ShippedWhenCurrent,
             }),
             dev_checkout: None,
@@ -529,6 +540,7 @@ fn the_dev_checkout_outlives_a_switch_back_to_github() {
                 extra_mods: Vec::new(),
                 luajit: LuaJitEngine::Stock,
                 menu_theme: civ5vp_core::MenuTheme::Stock,
+                opening_movie: civ5vp_core::OpeningMovie::Stock,
                 dll_source: DllSource::ShippedWhenCurrent,
             }),
             dev_checkout: Some(PathBuf::from("/home/player/src/Community-Patch-DLL")),
@@ -605,6 +617,7 @@ fn a_known_key_left_out_this_time_is_not_resurrected() {
                 extra_mods: Vec::new(),
                 luajit: LuaJitEngine::Stock,
                 menu_theme: civ5vp_core::MenuTheme::Stock,
+                opening_movie: civ5vp_core::OpeningMovie::Stock,
                 dll_source: DllSource::ShippedWhenCurrent,
             }),
             ..Settings::default()
