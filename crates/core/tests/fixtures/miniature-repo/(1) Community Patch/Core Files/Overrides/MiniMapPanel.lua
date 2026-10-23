@@ -1,0 +1,1 @@
+-- fixture: the Community Patch's own MiniMapPanel.lua, where upstream ships it

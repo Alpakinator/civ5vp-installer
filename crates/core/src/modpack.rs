@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 use crate::BUILT_DLL_FILE_NAME;
 use crate::boundaries::{CacheState, LocalizedText, ModpackAssembler, ModpackDatabaseJob};
 use crate::claimed::{ClaimedFolder, GameFolders};
+use crate::configuration::InstallConfiguration;
 use crate::error::InstallError;
 use crate::modinfo;
 use crate::plan::Plan;
@@ -86,38 +87,121 @@ const MAP_SCRIPT_ADDIN: &str = "MapScript";
 /// dead weight inside one.
 const MODPACK_MAKER_ID: &str = "eb8f6ed3-109d-4f2f-a81d-516c8d2f91c1";
 
-/// The player's own mods in the MODS folder, as the extra-mod picker shows them: every
-/// folder holding a mod - its `.modinfo` at the top or further down - minus the Claimed
-/// Folders, which are the managed set governed by the configuration.
+/// The hook targets the Community Patch brings into a Modpack, as upstream ships it:
+/// `Core Files/Overrides/MiniMapPanel.lua` and `Core Files/Overrides/Includes/MapGenerator.lua`.
 ///
-/// Only the `offered` ones can be picked. A player must never believe a mod is in their
-/// Modpack when part of it is not, so a mod [`bakeable_mod_roots`] refuses is never offered
-/// - but it is listed, with the reason, so it does not just vanish from the list.
-pub fn extra_mod_offer(mods_folder: &Path) -> ExtraModOffer {
-    let mut offer = ExtraModOffer::default();
-    let Ok(entries) = std::fs::read_dir(mods_folder) else {
-        return offer;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
-            continue;
-        };
-        if !path.is_dir() || is_claimed_name(&name) {
-            continue;
-        }
-        match bakeable_mod_roots(&path) {
-            Ok(_) => offer.offered.push(name),
-            Err(Unbakeable::Refused(reason)) => offer.refused.push(RefusedMod { name, reason }),
-            Err(Unbakeable::NotOffered(_)) => {}
-        }
-    }
-    offer.offered.sort_unstable();
-    offer.refused.sort_unstable_by(|a, b| a.name.cmp(&b.name));
-    offer
+/// What the offer counts on for the managed set, because it is shown before the sources are
+/// in hand - a first run has fetched nothing yet. The build does not trust it: it counts what
+/// is really staged, so a Version that lacks either file stops the build with the reason
+/// rather than baking in a mod whose hook has nowhere to go.
+const COMMUNITY_PATCH_BRINGS: [&str; 2] = ["MiniMapPanel.lua", "MapGenerator.lua"];
+
+/// The UI entry files a hook can target that the game itself does not supply: a Modpack has
+/// them only when something in it brings them.
+fn brought_ui_files() -> Vec<&'static str> {
+    UI_ENTRY_FILES
+        .iter()
+        .map(|(file, _)| *file)
+        .filter(|file| !BASE_UI_FILES.iter().any(|(_, base)| base == file))
+        .collect()
 }
 
-/// What [`extra_mod_offer`] found in the MODS folder.
+/// The player's own mods in the MODS folder, as the extra-mod picker shows them for
+/// `configuration`. One-shot: [`ExtraModScan`] keeps the disk work for a picker that asks
+/// again at every tick.
+pub fn extra_mod_offer(mods_folder: &Path, configuration: &InstallConfiguration) -> ExtraModOffer {
+    ExtraModScan::of(mods_folder).offer(configuration)
+}
+
+/// Everything the extra-mod picker needs to know about the MODS folder, read from disk once:
+/// every folder holding a mod - its `.modinfo` at the top or further down - minus the
+/// Claimed Folders, which are the managed set governed by the configuration. Each comes with
+/// what the per-mod rules said and what the cross-mod rules need.
+///
+/// Reading it means reading every `.modinfo` and walking every mod, so it is kept and
+/// re-read now and then; [`ExtraModScan::offer`] is the cheap part, asked again whenever the
+/// selection changes.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ExtraModScan {
+    /// Sorted by folder name.
+    mods: Vec<ScannedMod>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ScannedMod {
+    name: String,
+    /// What the cross-mod rules need of it, or the per-mod reason it cannot be baked in.
+    facts: Result<ModFacts, String>,
+}
+
+impl ExtraModScan {
+    /// Read the MODS folder.
+    pub fn of(mods_folder: &Path) -> Self {
+        let mut mods = Vec::new();
+        let Ok(entries) = std::fs::read_dir(mods_folder) else {
+            return Self { mods };
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+                continue;
+            };
+            if !path.is_dir() || is_claimed_name(&name) {
+                continue;
+            }
+            let facts = match bakeable_mod_roots(&path) {
+                Ok((_, facts)) => Ok(facts),
+                Err(Unbakeable::Refused(reason)) => Err(reason),
+                Err(Unbakeable::NotOffered(_)) => continue,
+            };
+            mods.push(ScannedMod { name, facts });
+        }
+        mods.sort_unstable_by(|a, b| a.name.cmp(&b.name));
+        Self { mods }
+    }
+
+    /// Which mods `configuration` can bake in, and why not the others.
+    ///
+    /// Only the offered ones can be picked. A player must never believe a mod is in their
+    /// Modpack when part of it is not, so a mod the rules refuse is never offered - but it is
+    /// listed, with the reason, so it does not just vanish from the list.
+    ///
+    /// The answer depends on the whole selection: the managed mods the configuration puts in
+    /// the pack and the ticked ones. A ticked mod that the rest of the selection no longer
+    /// supports - its provider unticked, or the Community Patch dropped - comes back refused,
+    /// which is the picker's cue to untick it.
+    pub fn offer(&self, configuration: &InstallConfiguration) -> ExtraModOffer {
+        let candidates: Vec<(&str, &ModFacts)> = self
+            .mods
+            .iter()
+            .filter_map(|scanned| Some((scanned.name.as_str(), scanned.facts.as_ref().ok()?)))
+            .collect();
+        let managed: &[&str] = if configuration.flavor.includes_community_patch() {
+            &COMMUNITY_PATCH_BRINGS
+        } else {
+            &[]
+        };
+        let settled = settle_selection(&candidates, &configuration.extra_mods, managed);
+
+        let mut offer = ExtraModOffer::default();
+        for scanned in &self.mods {
+            let refusal = match &scanned.facts {
+                Err(reason) => Some(reason.clone()),
+                Ok(facts) => facts.missing(&settled.brought),
+            };
+            match refusal {
+                None => offer.offered.push(scanned.name.clone()),
+                Some(reason) => offer.refused.push(RefusedMod {
+                    name: scanned.name.clone(),
+                    reason,
+                }),
+            }
+        }
+        offer
+    }
+}
+
+/// What [`ExtraModScan::offer`] found for a configuration.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ExtraModOffer {
     /// The mods a Modpack can bake in whole, by folder name. Sorted; that is also the order
@@ -137,6 +221,84 @@ pub struct RefusedMod {
     pub reason: String,
 }
 
+/// What one of the player's mods means to the rules that look across the whole selection,
+/// gathered once from disk so that asking them again costs nothing.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct ModFacts {
+    /// The hook targets it carries ([`brought_ui_files`]), at any depth in any of its mod
+    /// roots - the pack copies such a file into `UI/` from wherever it is.
+    brings: Vec<&'static str>,
+    /// Each entry point whose target only a mod can bring: the entry point's file, and the
+    /// target it plugs into.
+    plugs_into: Vec<(String, &'static str)>,
+}
+
+impl ModFacts {
+    /// Why this mod cannot be carried whole when the rest of the selection brings `brought` -
+    /// `None` when it can. Its own files count too.
+    fn missing(&self, brought: &[&str]) -> Option<String> {
+        self.plugs_into
+            .iter()
+            .find(|(_, target)| !brought.contains(target) && !self.brings.contains(target))
+            .map(|(file, target)| {
+                format!(
+                    "part of it ({file}) plugs into {target}, which none of the selected mods \
+                     has"
+                )
+            })
+    }
+}
+
+/// What a selection settles into under the cross-mod rules.
+struct Settled<'a> {
+    /// The ticked mods the pack can carry whole beside each other, in `candidates` order.
+    kept: Vec<&'a str>,
+    /// Every hook target the managed set and the kept mods bring between them.
+    brought: Vec<&'static str>,
+}
+
+/// The cross-mod rules, applied to a whole selection: which of the `ticked` mods the pack can
+/// carry whole beside the managed set (which brings `managed`), and what they bring.
+///
+/// Only a mod that is kept brings anything, so dropping one can drop another that leant on
+/// it: repeated until nothing changes. What is left is the largest set that holds together -
+/// two mods that each bring what the other plugs into are both kept, because both files will
+/// be in the pack. `candidates` are the mods the per-mod rules let through; a ticked mod they
+/// refused is not among them and brings nothing.
+///
+/// The offer and the build both go by this, so a pick the offer showed as whole is one the
+/// build will carry whole. Hook targets are the one cross-mod rule today; another would join
+/// [`ModFacts`] and [`ModFacts::missing`].
+fn settle_selection<'a>(
+    candidates: &[(&'a str, &'a ModFacts)],
+    ticked: &[String],
+    managed: &[&'static str],
+) -> Settled<'a> {
+    let mut kept: Vec<(&str, &ModFacts)> = candidates
+        .iter()
+        .filter(|(name, _)| ticked.iter().any(|picked| picked == name))
+        .copied()
+        .collect();
+    loop {
+        let mut brought = managed.to_vec();
+        for (_, facts) in &kept {
+            for file in &facts.brings {
+                if !brought.contains(file) {
+                    brought.push(file);
+                }
+            }
+        }
+        let before = kept.len();
+        kept.retain(|(_, facts)| facts.missing(&brought).is_none());
+        if kept.len() == before {
+            return Settled {
+                kept: kept.into_iter().map(|(name, _)| name).collect(),
+                brought,
+            };
+        }
+    }
+}
+
 /// Why a folder in MODS cannot be baked into a Modpack.
 enum Unbakeable {
     /// Not a mod to show the player at all: a folder with no `.modinfo`, or the Modpack Maker.
@@ -153,27 +315,38 @@ impl Unbakeable {
     }
 }
 
-/// The mod roots inside one of the player's MODS folders, if every one of them bakes into
-/// a Modpack whole; otherwise why not. The offer and the build both go by this, so what
-/// the picker shows is exactly what the build can deliver.
-fn bakeable_mod_roots(folder: &Path) -> Result<Vec<PathBuf>, Unbakeable> {
+/// The mod roots inside one of the player's MODS folders and what the cross-mod rules need
+/// of them, if every one of them passes the per-mod rules; otherwise why not. The offer and
+/// the build both go by this, so what the picker shows is exactly what the build can deliver.
+fn bakeable_mod_roots(folder: &Path) -> Result<(Vec<PathBuf>, ModFacts), Unbakeable> {
     let roots =
         modinfo::mod_roots(folder).map_err(|error| Unbakeable::Refused(error.user_message()))?;
     if roots.is_empty() {
         return Err(Unbakeable::NotOffered("it holds no .modinfo".to_owned()));
     }
+    let mut facts = ModFacts::default();
     for root in &roots {
-        why_not_bakeable(root)?;
+        let root_facts = why_not_bakeable(root)?;
+        for file in root_facts.brings {
+            if !facts.brings.contains(&file) {
+                facts.brings.push(file);
+            }
+        }
+        facts.plugs_into.extend(root_facts.plugs_into);
     }
-    Ok(roots)
+    Ok((roots, facts))
 }
 
-/// Why this mod root cannot be baked in whole, if it cannot. A Modpack has no Mods menu:
-/// only the database updates and the UI addins the pack hooks reach the game, so a mod
-/// asking for anything else - or naming a file it does not carry - would arrive partly.
+/// The per-mod rules for one mod root: why it cannot be baked in whole, if it cannot, and
+/// otherwise what the cross-mod rules need of it. A Modpack has no Mods menu: only the
+/// database updates and the UI addins the pack hooks reach the game, so a mod asking for
+/// anything else - or naming a file it does not carry - would arrive partly.
+///
+/// Whether a hook's target will be in the pack is not decided here: that depends on the rest
+/// of the selection ([`settle_selection`]).
 ///
 /// The reasons are shown to the player beside the mod, so they are in a player's words.
-fn why_not_bakeable(root: &Path) -> Result<(), Unbakeable> {
+fn why_not_bakeable(root: &Path) -> Result<ModFacts, Unbakeable> {
     use Unbakeable::{NotOffered, Refused};
     let modinfo = match modinfo::find(root) {
         Ok(Some(modinfo)) => modinfo,
@@ -194,11 +367,12 @@ fn why_not_bakeable(root: &Path) -> Result<(), Unbakeable> {
             "it needs the Mods menu to run its {action} step when it is activated"
         )));
     }
-    // The game loads one game DLL, and in a Modpack that is the Built DLL.
+    // The game loads one game DLL, and in a Modpack that is the installer's or the game's
+    // own, never one a baked-in mod brings.
     let mut own_dll = Vec::new();
     if find_files_named(root, &[BUILT_DLL_FILE_NAME], &mut own_dll).is_ok() && !own_dll.is_empty() {
         return Err(Refused(
-            "it brings its own game DLL, and a modpack runs Vox Populi's".to_owned(),
+            "it brings its own game DLL, and a modpack cannot carry one from a mod".to_owned(),
         ));
     }
     let carries = |relative: &str| modinfo::resolve_case_insensitive(root, relative).is_some();
@@ -214,6 +388,8 @@ fn why_not_bakeable(root: &Path) -> Result<(), Unbakeable> {
     {
         return Err(missing(&absent));
     }
+    let brought = brought_ui_files();
+    let mut facts = ModFacts::default();
     for point in modinfo::entry_points(&text) {
         if point.addin_type.eq_ignore_ascii_case(MAP_SCRIPT_ADDIN) {
             if !carries(&point.file) {
@@ -234,19 +410,45 @@ fn why_not_bakeable(root: &Path) -> Result<(), Unbakeable> {
             return Err(missing(&point.file));
         }
         // InGame, CityView and LeaderHeadRoot come from the game; the other entry files
-        // exist in a Modpack only if a mod brings them.
-        let hook_target_exists = BASE_UI_FILES.iter().any(|(_, base)| base == ui_file) || {
-            let mut found = Vec::new();
-            find_files_named(root, &[ui_file], &mut found).is_ok() && !found.is_empty()
-        };
-        if !hook_target_exists {
-            return Err(Refused(format!(
-                "part of it ({}) plugs into {ui_file}, which nothing in the modpack has",
-                point.file
-            )));
+        // exist in a Modpack only if something in it brings them.
+        if brought.contains(ui_file) {
+            facts.plugs_into.push((point.file.clone(), ui_file));
         }
     }
-    Ok(())
+    facts.brings = ui_files_brought_by(root, &brought);
+    Ok(facts)
+}
+
+/// Which of `wanted` (canonical names) are somewhere under `dir`, matched the way the pack
+/// copies them into `UI/`: at any depth, ignoring case.
+fn ui_files_brought_by(dir: &Path, wanted: &[&'static str]) -> Vec<&'static str> {
+    let mut found = Vec::new();
+    if find_files_named(dir, wanted, &mut found).is_err() {
+        return Vec::new();
+    }
+    wanted
+        .iter()
+        .copied()
+        .filter(|name| {
+            found.iter().any(|path| {
+                path.file_name()
+                    .and_then(|file| file.to_str())
+                    .is_some_and(|file| file.eq_ignore_ascii_case(name))
+            })
+        })
+        .collect()
+}
+
+/// The sentence for a pick the build cannot carry whole. The game is untouched when it is
+/// said: every pick is checked before anything is staged for Sync.
+fn not_bakeable(name: &str, from: &Path, reason: &str) -> InstallError {
+    InstallError::UnsupportedConfiguration {
+        message: format!(
+            "The mod \"{name}\" cannot be baked into the Modpack: {reason}. Untick it and try \
+             again. Your game is unchanged."
+        ),
+        detail: format!("extra mod not bakeable at {}: {reason}", from.display()),
+    }
 }
 
 /// Is this folder name one of the Claimed Folders, under any of its spellings?
@@ -321,6 +523,12 @@ pub(crate) fn assemble(
     // The player's own picks from MODS, staged after the managed set so their
     // database changes land on top of Vox Populi's, the way a modmod expects. MODS is only
     // read - the copies live inside the pack.
+    //
+    // Every pick is checked again here, not only when offered: the mod may have changed
+    // since it was picked, and a pick the pack cannot carry whole must stop the build, not
+    // shrink. First by the per-mod rules, then by the cross-mod ones against the whole
+    // selection - with what the managed set really brings, now that it is staged.
+    let mut picks = Vec::new();
     for name in &plan.configuration.extra_mods {
         if is_claimed_name(name) {
             // A hand-edited configuration could name a managed folder; staging it twice
@@ -341,18 +549,32 @@ pub(crate) fn assemble(
                 detail: format!("extra mod missing at {}", from.display()),
             });
         }
-        // Checked again here, not only when offered: the mod may have changed since it was
-        // picked, and a pick the pack cannot carry whole must stop the build, not shrink.
-        let roots = bakeable_mod_roots(&from).map_err(|unbakeable| {
-            let reason = unbakeable.reason();
-            InstallError::UnsupportedConfiguration {
-                message: format!(
-                    "The mod \"{name}\" cannot be baked into the Modpack: {reason}. Untick \
-                     it and try again. Your game is unchanged."
-                ),
-                detail: format!("extra mod not bakeable at {}: {reason}", from.display()),
+        let (roots, facts) = bakeable_mod_roots(&from)
+            .map_err(|unbakeable| not_bakeable(name, &from, unbakeable.reason()))?;
+        picks.push((name, from, roots, facts));
+    }
+    let brought = brought_ui_files();
+    let mut managed_brings = Vec::new();
+    for staged in &staged_mods {
+        for file in ui_files_brought_by(staged, &brought) {
+            if !managed_brings.contains(&file) {
+                managed_brings.push(file);
             }
-        })?;
+        }
+    }
+    let candidates: Vec<(&str, &ModFacts)> = picks
+        .iter()
+        .map(|(name, _, _, facts)| (name.as_str(), facts))
+        .collect();
+    let settled = settle_selection(&candidates, &plan.configuration.extra_mods, &managed_brings);
+    for (name, from, _, facts) in &picks {
+        if !settled.kept.contains(&name.as_str()) {
+            let reason = facts.missing(&settled.brought).unwrap_or_default();
+            return Err(not_bakeable(name, from, &reason));
+        }
+    }
+
+    for (name, from, roots, _) in picks {
         let destination = mods_dir.join(name);
         tree::copy_selected(
             &from,

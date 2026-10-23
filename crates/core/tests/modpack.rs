@@ -382,7 +382,7 @@ fn the_extra_mod_offer_lists_the_players_own_mods_only() {
         "<Mod id=\"x\"/>",
     );
 
-    let offer = civ5vp_core::extra_mod_offer(&game.folders().mods);
+    let offer = civ5vp_core::extra_mod_offer(&game.folders().mods, &vox_populi_modpack());
 
     assert_eq!(offer.offered, vec!["Even More Bonuses".to_owned()]);
     // Neither the picture folder nor the Modpack Maker is a mod to explain away either.
@@ -413,7 +413,7 @@ fn a_mod_nested_inside_its_folder_is_offered_and_baked_in() {
         "<Context/>",
     );
 
-    let offered = civ5vp_core::extra_mod_offer(&game.folders().mods).offered;
+    let offered = civ5vp_core::extra_mod_offer(&game.folders().mods, &vox_populi_modpack()).offered;
     assert_eq!(offered, vec!["Trade_Scanner_v25".to_owned()]);
 
     let (assembler, jobs) = FixtureModpackAssembler::new();
@@ -484,7 +484,8 @@ fn a_mod_the_pack_cannot_carry_whole_is_listed_as_refused_with_the_reason() {
     game.plant("MODS/Overlay With Panel/Overlay.lua", "-- fixture");
     game.plant("MODS/Overlay With Panel/UI/MiniMapPanel.lua", "-- fixture");
 
-    let offer = civ5vp_core::extra_mod_offer(&game.folders().mods);
+    // A pack of the player's own mods: no Community Patch to bring a MiniMapPanel.lua.
+    let offer = civ5vp_core::extra_mod_offer(&game.folders().mods, &own_mods_only_modpack());
 
     assert_eq!(
         offer.offered,
@@ -512,14 +513,181 @@ fn a_mod_the_pack_cannot_carry_whole_is_listed_as_refused_with_the_reason() {
             ),
             (
                 "Overlay",
-                "part of it (Overlay.lua) plugs into MiniMapPanel.lua, which nothing in the \
-                 modpack has"
+                "part of it (Overlay.lua) plugs into MiniMapPanel.lua, which none of the \
+                 selected mods has"
             ),
             (
                 "Own DLL Mod",
-                "it brings its own game DLL, and a modpack runs Vox Populi's"
+                "it brings its own game DLL, and a modpack cannot carry one from a mod"
             ),
         ]
+    );
+}
+
+/// Three of the player's mods for the cross-mod tests: a minimap overlay and a map-generation
+/// hook, neither bringing the file it plugs into, and a mod that brings MiniMapPanel.lua.
+fn plant_hooks_and_a_provider(game: &GameFixture) {
+    game.plant(
+        "MODS/Overlay/Overlay.modinfo",
+        "<Mod id=\"overlay\" version=\"1\"><EntryPoints>\
+         <EntryPoint type=\"MiniMapOverlayAddin\" file=\"Overlay.lua\"/></EntryPoints></Mod>",
+    );
+    game.plant("MODS/Overlay/Overlay.lua", "-- fixture");
+    game.plant(
+        "MODS/Map Hook/Map Hook.modinfo",
+        "<Mod id=\"map-hook\" version=\"1\"><EntryPoints>\
+         <EntryPoint type=\"PreMapGenScript\" file=\"Hook.lua\"/></EntryPoints></Mod>",
+    );
+    game.plant("MODS/Map Hook/Hook.lua", "-- fixture");
+    game.plant(
+        "MODS/Panel Provider/Panel Provider.modinfo",
+        "<Mod id=\"panel-provider\" version=\"1\"/>",
+    );
+    game.plant(
+        "MODS/Panel Provider/Deep/Inside/minimappanel.lua",
+        "-- a whole MiniMapPanel\n",
+    );
+}
+
+/// Names of the offered mods, and of the refused ones with the file each one misses.
+fn offer_for(
+    game: &GameFixture,
+    configuration: &InstallConfiguration,
+) -> (Vec<String>, Vec<String>) {
+    let offer = civ5vp_core::extra_mod_offer(&game.folders().mods, configuration);
+    let refused = offer
+        .refused
+        .iter()
+        .map(|refused| format!("{}: {}", refused.name, refused.reason))
+        .collect();
+    (offer.offered, refused)
+}
+
+/// A hook target counts wherever in the selection it comes from - the Community Patch, or
+/// any ticked mod, at any depth and in any case, the way the pack copies it into `UI/` - and
+/// the offer follows the ticks: ticking a provider makes the mod that needs it offerable,
+/// and unticking it takes that away again.
+#[test]
+fn a_hook_target_counts_wherever_in_the_selection_it_comes_from() {
+    let game = modpack_game();
+    plant_hooks_and_a_provider(&game);
+    let all = ["Map Hook", "Overlay", "Panel Provider"]
+        .map(str::to_owned)
+        .to_vec();
+
+    // The Community Patch brings both MiniMapPanel.lua and MapGenerator.lua.
+    let (offered, refused) = offer_for(&game, &modpack_with(&[]));
+    assert_eq!(offered, all);
+    assert_eq!(refused, Vec::<String>::new());
+
+    // Without it, nothing selected brings either - until the provider is ticked.
+    let own_mods = |ticked: &[&str]| InstallConfiguration {
+        extra_mods: ticked.iter().map(|name| (*name).to_owned()).collect(),
+        ..own_mods_only_modpack()
+    };
+    let (offered, refused) = offer_for(&game, &own_mods(&[]));
+    assert_eq!(offered, ["Panel Provider"]);
+    assert_eq!(
+        refused,
+        [
+            "Map Hook: part of it (Hook.lua) plugs into MapGenerator.lua, which none of the \
+             selected mods has",
+            "Overlay: part of it (Overlay.lua) plugs into MiniMapPanel.lua, which none of the \
+             selected mods has",
+        ]
+    );
+
+    let (offered, _) = offer_for(&game, &own_mods(&["Panel Provider"]));
+    assert_eq!(offered, ["Overlay", "Panel Provider"]);
+    let (offered, _) = offer_for(&game, &own_mods(&["Overlay", "Panel Provider"]));
+    assert_eq!(offered, ["Overlay", "Panel Provider"]);
+
+    // The provider unticked: the overlay, still ticked, can no longer be carried whole.
+    let (offered, refused) = offer_for(&game, &own_mods(&["Overlay"]));
+    assert_eq!(offered, ["Panel Provider"]);
+    assert!(
+        refused.iter().any(|line| line.starts_with("Overlay:")),
+        "{refused:?}"
+    );
+}
+
+/// Only a ticked mod the pack can carry whole provides anything: one refused for a reason of
+/// its own brings nothing into the pack, so nothing may lean on it.
+#[test]
+fn a_refused_mod_provides_nothing() {
+    let game = modpack_game();
+    plant_hooks_and_a_provider(&game);
+    game.plant(
+        "MODS/Panel Provider/Panel Provider.modinfo",
+        "<Mod id=\"panel-provider\" version=\"1\"><Actions><OnModActivated>\
+         <UpdateDatabase>Gone.sql</UpdateDatabase></OnModActivated></Actions></Mod>",
+    );
+
+    let configuration = InstallConfiguration {
+        extra_mods: vec!["Overlay".to_owned(), "Panel Provider".to_owned()],
+        ..own_mods_only_modpack()
+    };
+    let (offered, _) = offer_for(&game, &configuration);
+
+    assert!(!offered.contains(&"Overlay".to_owned()), "{offered:?}");
+}
+
+/// The build goes by the same rule as the offer, against what is really staged: a pick whose
+/// hook target nothing selected brings stops it before the game is touched, and the same pick
+/// beside a provider is baked in with its hook in place.
+#[test]
+fn the_build_checks_hook_targets_against_the_whole_selection() {
+    let game = modpack_game();
+    plant_hooks_and_a_provider(&game);
+    let core = core_over(&game, FixtureModpackAssembler::ignored());
+
+    let alone = InstallConfiguration {
+        extra_mods: vec!["Overlay".to_owned()],
+        ..own_mods_only_modpack()
+    };
+    let before = game.files();
+    let plan = core.plan(&alone, &game.folders()).unwrap();
+    let error = core
+        .execute(&plan, &ProgressReporter::silent())
+        .expect_err("an overlay with nothing to hook into cannot be baked in whole");
+    assert!(
+        error.user_message().contains("MiniMapPanel.lua"),
+        "got: {}",
+        error.user_message()
+    );
+    assert_eq!(game.files(), before, "rule 7: the game is untouched");
+
+    let with_provider = InstallConfiguration {
+        extra_mods: vec!["Overlay".to_owned(), "Panel Provider".to_owned()],
+        ..own_mods_only_modpack()
+    };
+    let plan = core.plan(&with_provider, &game.folders()).unwrap();
+    core.execute(&plan, &ProgressReporter::silent()).unwrap();
+    let panel = game.read("DLC/VP_MODPACK/UI/MiniMapPanel.lua");
+    assert!(panel.starts_with("-- a whole MiniMapPanel"));
+    assert!(panel.contains("g_uiAddins[#g_uiAddins + 1] = \"Overlay\";"));
+}
+
+/// With Vox Populi the Community Patch brings the hook targets, so the overlay and the
+/// map-generation hook are baked in on their own, hooked into its copies.
+#[test]
+fn the_community_patch_brings_the_hook_targets_for_the_players_mods() {
+    let game = modpack_game();
+    plant_hooks_and_a_provider(&game);
+    let core = core_over(&game, FixtureModpackAssembler::ignored());
+
+    let plan = core
+        .plan(&modpack_with(&["Map Hook", "Overlay"]), &game.folders())
+        .unwrap();
+    core.execute(&plan, &ProgressReporter::silent()).unwrap();
+
+    assert!(
+        game.read("DLC/VP_MODPACK/UI/MiniMapPanel.lua")
+            .contains("g_uiAddins[#g_uiAddins + 1] = \"Overlay\";")
+    );
+    assert!(
+        game.read("DLC/VP_MODPACK/UI/MapGenerator.lua")
+            .contains("g_uiAddins[#g_uiAddins + 1] = \"Hook\";")
     );
 }
 
@@ -663,7 +831,7 @@ fn a_modpack_lists_its_map_scripts_where_the_game_finds_them() {
     let core = core_over(&game, assembler);
 
     assert!(
-        civ5vp_core::extra_mod_offer(&game.folders().mods)
+        civ5vp_core::extra_mod_offer(&game.folders().mods, &vox_populi_modpack())
             .offered
             .contains(&"Tectonic Map Script (v 6)".to_owned()),
         "a mod carrying its map scripts bakes in whole"

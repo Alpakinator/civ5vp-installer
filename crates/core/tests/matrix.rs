@@ -39,6 +39,10 @@ const COMMUNITY_PATCH: &[&str] = &[
     "MODS/(1) Community Patch/(1) Community Patch.modinfo",
     "MODS/(1) Community Patch/Core Files/Core Values/DefinesChanges.sql",
     "MODS/(1) Community Patch/Core Files/LUA/CoreHelper.lua",
+    // The UI entry files upstream's Community Patch brings, which a Modpack's mods can hook
+    // into. Not under the top-level `LUA`, so EUI keeps them too.
+    "MODS/(1) Community Patch/Core Files/Overrides/Includes/MapGenerator.lua",
+    "MODS/(1) Community Patch/Core Files/Overrides/MiniMapPanel.lua",
     "MODS/(1) Community Patch/CvGameCore_Expansion2.dll",
     // The Build Fingerprint sidecar, recorded beside the deployed DLL - inside a Claimed
     // Folder, and part of every configuration's expected tree.

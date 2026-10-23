@@ -5,6 +5,8 @@
   <Files>
     <File md5="00000000000000000000000000000000" import="0">Core Files\Core Values\DefinesChanges.sql</File>
     <File md5="00000000000000000000000000000000" import="0">Core Files\LUA\CoreHelper.lua</File>
+    <File md5="00000000000000000000000000000000" import="1">Core Files\Overrides\Includes\MapGenerator.lua</File>
+    <File md5="00000000000000000000000000000000" import="1">Core Files\Overrides\MiniMapPanel.lua</File>
     <File md5="00000000000000000000000000000000" import="0">CvGameCore_Expansion2.dll</File>
     <File md5="00000000000000000000000000000000" import="0">Kit\ReadMe.txt</File>
     <File md5="00000000000000000000000000000000" import="1">LUA\CityView.lua</File>

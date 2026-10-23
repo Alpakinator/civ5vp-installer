@@ -420,6 +420,85 @@ fn a_mod_the_modpack_cannot_carry_is_shown_greyed_out_with_the_reason() {
     assert!(!is_ticked(&mut harness, "Giant Earth"));
 }
 
+/// Whether a mod can be baked in depends on the rest of the selection, and the list follows
+/// it as it changes: a minimap overlay is refused while nothing ticked brings the panel it
+/// hooks into, becomes tickable the frame a mod that brings one is ticked, and is unticked
+/// and refused again the frame that mod is unticked - never left ticked with nowhere to go.
+#[test]
+fn a_mod_is_offered_while_the_selection_brings_what_it_plugs_into() {
+    use egui_kittest::kittest::NodeT as _;
+    let game = TempGame::new();
+    let mods = game.mods_folder();
+    fs::create_dir_all(mods.join("Overlay")).unwrap();
+    fs::write(
+        mods.join("Overlay/Overlay.modinfo"),
+        "<Mod id=\"overlay\" version=\"1\"><EntryPoints>\
+         <EntryPoint type=\"MiniMapOverlayAddin\" file=\"Overlay.lua\"/></EntryPoints></Mod>",
+    )
+    .unwrap();
+    fs::write(mods.join("Overlay/Overlay.lua"), "-- overlay").unwrap();
+    fs::create_dir_all(mods.join("Panel Provider/UI")).unwrap();
+    fs::write(
+        mods.join("Panel Provider/Panel Provider.modinfo"),
+        "<Mod id=\"panel-provider\" version=\"1\"/>",
+    )
+    .unwrap();
+    fs::write(mods.join("Panel Provider/UI/MiniMapPanel.lua"), "-- panel").unwrap();
+    let reason = "Part of it (Overlay.lua) plugs into MiniMapPanel.lua, which none of the \
+                  selected mods has";
+
+    let mut harness = harness_over(game.launch(&game.locations()));
+    harness.step();
+    harness
+        .get_by_label("Install as a modpack - loads automatically, works in multiplayer")
+        .click();
+    harness.step();
+    // With the Community Patch in the pack, its own MiniMapPanel.lua is there to hook into.
+    assert!(
+        !harness
+            .get_by_label("Overlay")
+            .accesskit_node()
+            .is_disabled()
+    );
+
+    harness
+        .get_by_label("Neither - only your own mods, as a modpack")
+        .click();
+    harness.step();
+    assert!(
+        harness
+            .get_by_label("Overlay")
+            .accesskit_node()
+            .is_disabled()
+    );
+    harness.get_by_label(reason);
+
+    harness.get_by_label("Panel Provider").click_accesskit();
+    harness.step();
+    assert!(
+        !harness
+            .get_by_label("Overlay")
+            .accesskit_node()
+            .is_disabled()
+    );
+    assert!(harness.query_by_label(reason).is_none());
+    harness.get_by_label("Overlay").click_accesskit();
+    harness.step();
+    harness.step();
+    assert!(is_ticked(&mut harness, "Overlay"));
+
+    harness.get_by_label("Panel Provider").click_accesskit();
+    harness.step();
+    assert!(
+        harness
+            .get_by_label("Overlay")
+            .accesskit_node()
+            .is_disabled()
+    );
+    assert!(!is_ticked(&mut harness, "Overlay"));
+    harness.get_by_label(reason);
+}
+
 /// What a Modpack build needs of the game: the base UI entry files and a pristine cache
 /// (the placeholder assembler reads the marker, exactly like the Core-seam fixture).
 fn plant_what_a_modpack_build_needs(game: &TempGame) {
@@ -1423,6 +1502,11 @@ fn every_screen_matches_its_baseline() {
     let mut results = SnapshotResults::new();
     for screen in Screen::ALL {
         let mut harness = harness_over(InstallerApp::preview(screen));
+        // The own-mods modpack's point is the mod list, which sits below the fold at the
+        // design-minimum size: rendered tall enough to hold it.
+        if screen == Screen::OwnModsModpack {
+            harness.set_size(egui::vec2(WINDOW[0], 1360.0));
+        }
         harness.run();
         results.add(harness.try_snapshot_options(screen.file_stem(), &options));
     }

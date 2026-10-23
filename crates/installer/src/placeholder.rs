@@ -277,6 +277,75 @@ impl ModpackAssembler for PlaceholderModpackAssembler {
     }
 }
 
+/// The player's own mods a preview's extra-mod list shows, as `(folder, files)`: a plain
+/// database mod, a minimap overlay and a reworked minimap panel that it hooks into, and a
+/// map-generation hook with nothing in the selection to hook into.
+const PREVIEW_MODS: [(&str, &[(&str, &str)]); 4] = [
+    (
+        "Better Minimap Overlay",
+        &[
+            (
+                "Overlay.modinfo",
+                "<Mod id=\"preview-overlay\" version=\"1\"><EntryPoints>\
+                 <EntryPoint type=\"MiniMapOverlayAddin\" file=\"Overlay.lua\"/></EntryPoints></Mod>",
+            ),
+            ("Overlay.lua", ""),
+        ],
+    ),
+    (
+        "Even More Bonuses",
+        &[(
+            "Even More Bonuses.modinfo",
+            "<Mod id=\"preview-bonuses\" version=\"1\"/>",
+        )],
+    ),
+    (
+        "Map Generation Hook",
+        &[
+            (
+                "Hook.modinfo",
+                "<Mod id=\"preview-hook\" version=\"1\"><EntryPoints>\
+                 <EntryPoint type=\"PreMapGenScript\" file=\"Hook.lua\"/></EntryPoints></Mod>",
+            ),
+            ("Hook.lua", ""),
+        ],
+    ),
+    (
+        "Minimap Panel Rework",
+        &[
+            ("Panel.modinfo", "<Mod id=\"preview-panel\" version=\"1\"/>"),
+            ("UI/MiniMapPanel.lua", ""),
+        ],
+    ),
+];
+
+/// The extra-mod scan a preview states: [`PREVIEW_MODS`], read by the Core exactly as a real
+/// MODS folder is, so the list a preview draws is the Core's ruling on it and not a guess.
+///
+/// The mods are written to a scratch folder for the read and removed straight after. The
+/// scan keeps folder names and reasons, never paths, so the picture is the same wherever the
+/// scratch folder was. Empty if the scratch folder cannot be written - a preview without its
+/// list is still a preview.
+pub fn preview_extra_mods() -> civ5vp_core::ExtraModScan {
+    let scratch =
+        std::env::temp_dir().join(format!("civ5vp-installer-preview-{}", std::process::id()));
+    let written = PREVIEW_MODS.iter().all(|(folder, files)| {
+        files.iter().all(|(file, contents)| {
+            let path = scratch.join(folder).join(file);
+            path.parent()
+                .is_some_and(|parent| std::fs::create_dir_all(parent).is_ok())
+                && std::fs::write(&path, contents).is_ok()
+        })
+    });
+    let scan = if written {
+        civ5vp_core::ExtraModScan::of(&scratch)
+    } else {
+        civ5vp_core::ExtraModScan::default()
+    };
+    let _ = std::fs::remove_dir_all(&scratch);
+    scan
+}
+
 /// The Proton prefix a preview's file browser is opened in, as the Core's ladder would have
 /// worked it out on a real Linux machine. Kept here beside the tree it names.
 pub const PREVIEW_BROWSER_DIRECTORY: &str = "/home/player/.local/share/Steam/steamapps/compatdata/8930/pfx/drive_c/users/steamuser\

@@ -17,6 +17,14 @@ publishes binaries for.
 - The header's hex tile names what you are installing, and changes the moment you choose:
   "VP" for Vox Populi, "CBP" for Community Patch alone, "MOD" for a pack of your own mods.
 
+### Fixed
+
+- Modpack: minimap overlays and map-generation hooks (`MiniMapOverlayAddin`,
+  `PreMapGenScript`) can be baked in whenever something in the pack brings the file they plug
+  into - the Community Patch, or another mod you tick. They were refused unless they carried
+  that file themselves. The list follows your ticks: untick the mod a hook needs and the hook
+  is unticked and listed among the mods that cannot be baked in, with the missing file named.
+
 ## 0.1.8 - 2026-10-22
 
 ### Added

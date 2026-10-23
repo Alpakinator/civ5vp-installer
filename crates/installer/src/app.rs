@@ -190,11 +190,19 @@ pub struct InstallerApp {
     /// without the Toolchain Bootstrap's download.
     compile_dll: bool,
     install_mode: InstallMode,
-    /// The player's own MODS-folder mods: the ones a Modpack could bake in and the ones it
-    /// cannot, as the Core found them, and which of the first are ticked. Recomputed on a
-    /// timer - listing means reading every modinfo, not a per-frame job.
+    /// The player's own MODS-folder mods as the Core read them. Re-read on a timer - that
+    /// means reading every modinfo and walking every mod, not a per-frame job.
+    extra_mods_scan: civ5vp_core::ExtraModScan,
+    /// The ones a Modpack could bake in and the ones it cannot, as the Core rules for the
+    /// current selection, and which of the first are ticked. Asked again whenever the list is
+    /// drawn: which mods can be baked in depends on the Flavor and on the other ticks, and
+    /// asking is cheap once the scan is in hand.
     extra_mods: civ5vp_core::ExtraModOffer,
     extra_mods_picked: Vec<String>,
+    /// Whether the scan above is stated rather than read - a preview's, whose MODS path is
+    /// illustrative - so the timer must not replace it with the empty listing of a folder that
+    /// does not exist.
+    extra_mods_stated: bool,
     activity: Vec<String>,
     status: Status,
     running: Option<RunningInstall>,
@@ -418,8 +426,10 @@ impl InstallerApp {
             build_configuration,
             compile_dll,
             install_mode,
+            extra_mods_scan: civ5vp_core::ExtraModScan::default(),
             extra_mods: civ5vp_core::ExtraModOffer::default(),
             extra_mods_picked,
+            extra_mods_stated: false,
             activity: Vec::new(),
             status: Status::Ready,
             running: None,
@@ -486,8 +496,10 @@ impl InstallerApp {
             // A picture of the ordinary case: a Release install takes the DLL it ships.
             compile_dll: false,
             install_mode: InstallMode::Mods,
+            extra_mods_scan: civ5vp_core::ExtraModScan::default(),
             extra_mods: civ5vp_core::ExtraModOffer::default(),
             extra_mods_picked: Vec::new(),
+            extra_mods_stated: false,
             activity: Vec::new(),
             status: Status::Ready,
             running: None,
@@ -513,6 +525,14 @@ impl InstallerApp {
             Screen::OwnModsModpack => {
                 app.flavor = Flavor::OwnModsOnly;
                 app.install_mode = InstallMode::Modpack;
+                // The overlay is tickable only because the panel rework beside it is ticked;
+                // the map hook has nothing in the selection to plug into.
+                app.extra_mods_scan = placeholder::preview_extra_mods();
+                app.extra_mods_stated = true;
+                app.extra_mods_picked = vec![
+                    "Better Minimap Overlay".to_owned(),
+                    "Minimap Panel Rework".to_owned(),
+                ];
             }
             // The native Aspyr port: the refusal a player is most likely to meet and least
             // likely to work out unaided. The wording is the Core's, quoted.
@@ -863,6 +883,9 @@ impl InstallerApp {
                     .color(theme::PARCHMENT_DIM),
                 );
                 self.poll_extra_mods(ui);
+                // Every frame, after the choices above have been read: a Flavor or a tick
+                // changes what can be baked in.
+                self.settle_extra_mods();
                 if !self.extra_mods.offered.is_empty() || !self.extra_mods.refused.is_empty() {
                     ui.add_space(4.0);
                     ui.label(if self.flavor.includes_community_patch() {
@@ -879,6 +902,10 @@ impl InstallerApp {
                             } else {
                                 self.extra_mods_picked.retain(|kept| kept != &name);
                             }
+                            // A tick can make another mod bakeable or not; redraw the list
+                            // now rather than when the mouse next moves.
+                            ui.ctx()
+                                .request_discard("which mods can be baked in follows the ticks");
                             chosen = true;
                         }
                     }
@@ -1197,12 +1224,23 @@ impl InstallerApp {
         }
     }
 
-    /// Re-list the player's own MODS-folder mods, and drop picks that no longer exist.
+    /// Re-read the player's own MODS-folder mods, then settle the picks against them.
     fn refresh_extra_mods(&mut self) {
-        self.extra_mods = match &self.resolved {
-            Ok(folders) => civ5vp_core::extra_mod_offer(&folders.mods),
-            Err(_) => civ5vp_core::ExtraModOffer::default(),
-        };
+        if !self.extra_mods_stated {
+            self.extra_mods_scan = match &self.resolved {
+                Ok(folders) => civ5vp_core::ExtraModScan::of(&folders.mods),
+                Err(_) => civ5vp_core::ExtraModScan::default(),
+            };
+        }
+        self.settle_extra_mods();
+    }
+
+    /// Ask the Core which mods the current selection can bake in, and untick any that it
+    /// no longer can - gone from MODS, changed, or left with nothing to plug into now that
+    /// what it leant on is unticked. The Core lists those as refused, with the reason, so
+    /// the player sees why the tick went rather than finding a mod missing from the pack.
+    fn settle_extra_mods(&mut self) {
+        self.extra_mods = self.extra_mods_scan.offer(&self.configuration());
         self.extra_mods_picked
             .retain(|name| self.extra_mods.offered.contains(name));
     }
