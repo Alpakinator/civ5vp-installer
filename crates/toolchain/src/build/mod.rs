@@ -958,7 +958,13 @@ mod tests {
     }
 
     fn fixture() -> Fixture {
-        let dir = tempfile::tempdir().unwrap();
+        // Spaces in the path, because the real one has them on Windows:
+        // `%LOCALAPPDATA%\Civ 5 VP Installer`. Every path the build writes into a response
+        // file has to survive that.
+        let dir = tempfile::Builder::new()
+            .prefix("Civ 5 VP Installer ")
+            .tempdir()
+            .unwrap();
 
         // A Toolchain Cache with the real extraction's directory shape.
         let cache = ToolchainCache::new(dir.path().join("toolchain"));
@@ -1099,6 +1105,74 @@ mod tests {
         let city = response.find("CvCity.obj").unwrap();
         let lua = response.find("CvLuaArea.obj").unwrap();
         assert!(city < lua, "objects keep project-file order");
+    }
+
+    /// lld-link splits a response file on whitespace outside double quotes, so a path with
+    /// a space in it (all of them, on Windows) only arrives whole if it is quoted. Issue #1:
+    /// an unquoted `/DEF:` reached the linker as `...\Civ`, `5`, `VP`, `Installer\...`.
+    #[test]
+    fn every_path_in_the_link_response_file_survives_spaces() {
+        let fixture = fixture();
+        assert!(fixture.source_root.display().to_string().contains(' '));
+        let invoker = FakeInvoker::new();
+
+        run(&fixture, &invoker, &request(&fixture));
+
+        let link = invoker.calls().pop().unwrap();
+        let response_path = link.args[0].strip_prefix('@').unwrap().to_owned();
+        let response = fs::read_to_string(response_path).unwrap();
+        for token in tokenize_response_file(&response) {
+            // `/NAME` or `/NAME:value`; an absolute Linux path starts with `/` too.
+            let is_flag = token.strip_prefix('/').is_some_and(|flag| {
+                let name = flag.split(':').next().unwrap_or_default();
+                !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric())
+            });
+            let path = match token.split_once(':') {
+                Some(("/DEF" | "/LIBPATH", value)) => Path::new(value),
+                Some(("/OUT" | "/PDB", value)) => Path::new(value).parent().unwrap(),
+                _ if is_flag => continue,
+                // A system library, found through `/LIBPATH`.
+                _ if !token.contains(['/', '\\']) && token.ends_with(".lib") => continue,
+                _ => Path::new(&token),
+            };
+            assert!(
+                path.exists(),
+                "the linker would read {token:?} from the response file, which is not a path \
+                 that exists:\n{response}"
+            );
+        }
+    }
+
+    /// How lld-link reads a response file: tokens break at whitespace, double quotes group
+    /// and are dropped. (Backslash escapes before a quote are left out; no path here ends in
+    /// one.)
+    fn tokenize_response_file(text: &str) -> Vec<String> {
+        let mut tokens = Vec::new();
+        let mut current = String::new();
+        let mut quoted = false;
+        let mut in_token = false;
+        for c in text.chars() {
+            match c {
+                '"' => {
+                    quoted = !quoted;
+                    in_token = true;
+                }
+                c if c.is_whitespace() && !quoted => {
+                    if in_token {
+                        tokens.push(std::mem::take(&mut current));
+                        in_token = false;
+                    }
+                }
+                c => {
+                    current.push(c);
+                    in_token = true;
+                }
+            }
+        }
+        if in_token {
+            tokens.push(current);
+        }
+        tokens
     }
 
     /// Nothing changed means nothing recompiled and nothing relinked.

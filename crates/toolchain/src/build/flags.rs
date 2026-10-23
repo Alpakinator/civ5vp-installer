@@ -560,7 +560,9 @@ pub fn linker_args(
     ]
     .map(str::to_owned)
     .to_vec();
-    args.push(format!("/DEF:{}", source_root.join(DEF_FILE).display()));
+    // Quoted: these flags go into the linker's response file, which splits on whitespace,
+    // and the source root sits under `Civ 5 VP Installer` on Windows.
+    args.push(format!("/DEF:\"{}\"", source_root.join(DEF_FILE).display()));
     if configuration == BuildConfiguration::Release {
         match optimisation_override {
             Some(flags) => args.extend(flags.iter().cloned()),
@@ -984,7 +986,7 @@ mod tests {
             "/NODEFAULTLIB:MSVCRT",
             "/NODEFAULTLIB:OLDNAMES",
             "/NODEFAULTLIB:VERSION",
-            "/DEF:/src/CvGameCoreDLL_Expansion2/CvGameCoreDLL.def",
+            "/DEF:\"/src/CvGameCoreDLL_Expansion2/CvGameCoreDLL.def\"",
             "/OPT:REF",
             "/OPT:ICF",
             "/LTCG",
@@ -1003,7 +1005,7 @@ mod tests {
         assert!(args.contains(&"/DEBUG".to_owned()));
         assert_eq!(
             with_forward_slashes(&args).last().unwrap(),
-            "/DEF:/src/CvGameCoreDLL_Expansion2/CvGameCoreDLL.def"
+            "/DEF:\"/src/CvGameCoreDLL_Expansion2/CvGameCoreDLL.def\""
         );
     }
 
