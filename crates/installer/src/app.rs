@@ -68,16 +68,24 @@ pub enum Screen {
     Failed,
     /// The Ready page with the file browser open over it - what a `Browse` click looks like.
     Browsing,
+    /// The Ready page with Community Patch alone chosen: the header's tile reads "CBP".
+    CommunityPatchOnly,
+    /// The Ready page building a modpack of only the player's own mods: the tile reads
+    /// "MOD", and the mod list shows a mod that is offered only because another one ticked
+    /// brings the file it plugs into.
+    OwnModsModpack,
 }
 
 impl Screen {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 8] = [
         Self::FoldersNeeded,
         Self::Ready,
         Self::Installing,
         Self::Installed,
         Self::Failed,
         Self::Browsing,
+        Self::CommunityPatchOnly,
+        Self::OwnModsModpack,
     ];
 
     /// Used to name the PNG this screen renders to.
@@ -89,6 +97,8 @@ impl Screen {
             Self::Installed => "installed",
             Self::Failed => "failed",
             Self::Browsing => "browsing",
+            Self::CommunityPatchOnly => "ready-community-patch",
+            Self::OwnModsModpack => "ready-own-mods-modpack",
         }
     }
 }
@@ -248,11 +258,12 @@ const SPANNED_RELEASES: usize = 2;
 
 /// The Flavor choices, as the player reads them.
 ///
-/// There are three, not two-plus-a-checkbox, and that is the point: EUI is legal only with Vox
-/// Populi, and listing the legal combinations means the shell cannot offer the illegal one
-/// without a rule of its own to enforce. [`Flavor`] makes the same guarantee at the
-/// type level; this is that guarantee drawn.
-fn flavor_choices() -> [(Flavor, &'static str, Option<&'static str>); 3] {
+/// The Vox Populi ones are listed whole, not as two-plus-a-checkbox, and that is the point:
+/// EUI is legal only with Vox Populi, and listing the legal combinations means the shell
+/// cannot offer the illegal one without a rule of its own to enforce. [`Flavor`] makes the
+/// same guarantee at the type level; this is that guarantee drawn. The last one is legal only
+/// as a modpack, which the Core rules on and the panel draws (see [`Flavor::is_legal_with`]).
+fn flavor_choices() -> [(Flavor, &'static str, Option<&'static str>); 4] {
     [
         (Flavor::CommunityPatch, "Community Patch only", None),
         (
@@ -267,7 +278,23 @@ fn flavor_choices() -> [(Flavor, &'static str, Option<&'static str>); 3] {
             // abbreviation, so it gets spelled out once underneath.
             Some("EUI - enhanced user interface"),
         ),
+        (
+            Flavor::OwnModsOnly,
+            "Neither - only your own mods, as a modpack",
+            None,
+        ),
     ]
+}
+
+/// The letters on the header's hex tile: what the selection installs, the way players
+/// abbreviate it. The Community Patch on its own is "CBP", the name players still know it by
+/// from before Vox Populi was split out of it; a pack without either is a pack of mods.
+fn emblem(flavor: &Flavor) -> &'static str {
+    match flavor {
+        Flavor::VoxPopuli { .. } => "VP",
+        Flavor::CommunityPatch => "CBP",
+        Flavor::OwnModsOnly => "MOD",
+    }
 }
 
 impl InstallerApp {
@@ -482,6 +509,11 @@ impl InstallerApp {
         };
         match screen {
             Screen::Ready => {}
+            Screen::CommunityPatchOnly => app.flavor = Flavor::CommunityPatch,
+            Screen::OwnModsModpack => {
+                app.flavor = Flavor::OwnModsOnly;
+                app.install_mode = InstallMode::Modpack;
+            }
             // The native Aspyr port: the refusal a player is most likely to meet and least
             // likely to work out unaided. The wording is the Core's, quoted.
             Screen::FoldersNeeded => {
@@ -591,9 +623,11 @@ impl InstallerApp {
         // The build's own version rides in the header's right corner, just above the
         // rule: the one moment anyone looks for it is while checking it against the
         // newer-version notice below, or while writing a bug report.
+        // The tile follows the Flavor. It is drawn before the choice below is read, so a
+        // click there discards this frame and redraws it at once.
         deco::header(
             ui,
-            ["Civilization 5", "VP", "Installer"],
+            ["Civilization 5", emblem(&self.flavor), "Installer"],
             Some(&format!("v{}", crate::update::CURRENT_VERSION)),
         );
         ui.label(
@@ -697,7 +731,25 @@ impl InstallerApp {
         let mut chosen = false;
         deco::panel(ui, Some("What to install"), |ui| {
             for (choice, label, caption) in flavor_choices() {
-                chosen |= deco::radio_value(ui, &mut self.flavor, choice, label).changed();
+                // Greyed out, not hidden, where the Install Mode below rules it out: the line
+                // itself says how to reach it.
+                let legal = choice.is_legal_with(self.install_mode);
+                let flavor_changed = ui
+                    .add_enabled_ui(legal, |ui| {
+                        deco::radio_value(ui, &mut self.flavor, choice, label)
+                            .on_disabled_hover_text(
+                                "Only as a modpack - pick \"Install as a modpack\" below.",
+                            )
+                            .changed()
+                    })
+                    .inner;
+                if flavor_changed {
+                    // The header above names the Flavor and has been drawn already; redraw
+                    // the frame rather than show the old name until the mouse next moves.
+                    ui.ctx()
+                        .request_discard("the header's emblem follows the Flavor");
+                    chosen = true;
+                }
                 if let Some(caption) = caption {
                     ui.horizontal(|ui| {
                         // Clear of the radio button, so the caption reads as belonging to
@@ -712,16 +764,20 @@ impl InstallerApp {
                 }
             }
             ui.add_space(4.0);
-            // 43 Civs is legal with either Flavor and with or without EUI, so it is the one
-            // genuinely independent toggle.
+            // 43 Civs is legal with every Flavor that has the Community Patch, with or without
+            // EUI. Without it there is no DLL for 43 Civs to change, so it is greyed out -
+            // keeping its tick for when a Flavor that has one comes back.
             let mut enabled = self.forty_three_civs == FortyThreeCivs::Enabled;
-            if deco::checkbox(
-                ui,
-                &mut enabled,
-                "43 Civs - room for 43 civilizations on a map",
-            )
-            .changed()
-            {
+            let forty_three = ui
+                .add_enabled_ui(self.flavor.includes_community_patch(), |ui| {
+                    deco::checkbox(
+                        ui,
+                        &mut enabled,
+                        "43 Civs - room for 43 civilizations on a map",
+                    )
+                })
+                .inner;
+            if forty_three.changed() {
                 self.forty_three_civs = if enabled {
                     FortyThreeCivs::Enabled
                 } else {
@@ -774,13 +830,22 @@ impl InstallerApp {
             ui.add_space(4.0);
             // How the selection reaches the game. Two radios, not a checkbox:
             // "as mods" and "as a modpack" are both real things a player asks for by name.
-            chosen |= deco::radio_value(
-                ui,
-                &mut self.install_mode,
-                InstallMode::Mods,
-                "Install as mods - activate them in the game's Mods menu",
-            )
-            .changed();
+            // Greyed out while the Flavor above has nothing to install as mods.
+            chosen |= ui
+                .add_enabled_ui(self.flavor.is_legal_with(InstallMode::Mods), |ui| {
+                    deco::radio_value(
+                        ui,
+                        &mut self.install_mode,
+                        InstallMode::Mods,
+                        "Install as mods - activate them in the game's Mods menu",
+                    )
+                    .on_disabled_hover_text(
+                        "Your own mods are in the MODS folder already - pick Community Patch \
+                         or Vox Populi above to install them as mods.",
+                    )
+                    .changed()
+                })
+                .inner;
             chosen |= deco::radio_value(
                 ui,
                 &mut self.install_mode,
@@ -800,7 +865,11 @@ impl InstallerApp {
                 self.poll_extra_mods(ui);
                 if !self.extra_mods.offered.is_empty() || !self.extra_mods.refused.is_empty() {
                     ui.add_space(4.0);
-                    ui.label("Also bake in your own mods from the MODS folder:");
+                    ui.label(if self.flavor.includes_community_patch() {
+                        "Also bake in your own mods from the MODS folder:"
+                    } else {
+                        "Bake in your own mods from the MODS folder:"
+                    });
                     for name in self.extra_mods.offered.clone() {
                         let mut picked = self.extra_mods_picked.contains(&name);
                         if deco::checkbox(ui, &mut picked, &name).changed() {
@@ -1616,8 +1685,11 @@ impl InstallerApp {
             return false;
         }
         // "Latest release" must not quietly install something else while the lookup is
-        // still out (or failed) - wait until the catalog says which release that is.
-        !(self.source_choice == SourceChoice::GitHub
+        // still out (or failed) - wait until the catalog says which release that is. Unless
+        // nothing is taken from a release at all: a pack of the player's own mods alone
+        // needs no Version, so it need not wait for one.
+        !(self.flavor.includes_community_patch()
+            && self.source_choice == SourceChoice::GitHub
             && self.picked_version == PickedVersion::NewestRelease
             && !matches!(&self.versions, VersionsState::Ready(_)))
     }

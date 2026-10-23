@@ -250,7 +250,7 @@ fn a_real_release_installs_end_to_end() {
     assert!(game_root.join("DLC/UI_bc1").is_dir());
     assert!(game_root.join("Text/VPUI_tips_en_us.xml").is_file());
     assert_eq!(
-        fs::read_to_string(&outcome.built_dll).unwrap(),
+        fs::read_to_string(outcome.built_dll.unwrap()).unwrap(),
         DLL_MARKER,
         "the deployed DLL is the built one, never the repository's"
     );

@@ -143,6 +143,33 @@ impl Plan {
             });
         }
 
+        // Without the Community Patch, the player's own mods are the whole Deployment - so
+        // there must be a Modpack to bake them into, and at least one of them to bake.
+        if !configuration
+            .flavor
+            .is_legal_with(configuration.install_mode)
+        {
+            return Err(InstallError::UnsupportedConfiguration {
+                message: "Without Community Patch or Vox Populi there is nothing to install as \
+                          mods - your own mods are in the MODS folder already. Pick \"Install \
+                          as a modpack\" to bake them into one, or pick Community Patch or Vox \
+                          Populi."
+                    .to_owned(),
+                detail: format!(
+                    "flavor {:?} with install mode {:?}",
+                    configuration.flavor, configuration.install_mode
+                ),
+            });
+        }
+        if !configuration.flavor.includes_community_patch() && configuration.extra_mods.is_empty() {
+            return Err(InstallError::UnsupportedConfiguration {
+                message: "A modpack of only your own mods needs at least one of them. Tick the \
+                          mods to bake in, or pick Community Patch or Vox Populi."
+                    .to_owned(),
+                detail: "own-mods-only modpack with no extra mods".to_owned(),
+            });
+        }
+
         Ok(Self {
             deployments: deployments_for(configuration),
             files: files_for(configuration),
@@ -248,10 +275,16 @@ impl Plan {
 ///
 /// There is no seventh row: EUI with Community Patch only is the one illegal combination, and
 /// [`Flavor`] makes it unrepresentable rather than rejecting it here.
+///
+/// [`Flavor::OwnModsOnly`] is outside the table - the official installer has no such
+/// component - because it deploys nothing from the Installation Source at all: its Modpack
+/// is the player's own mods alone. 43 Civs has nothing to apply to without `(1)`, whose DLL
+/// it changes, so it is ignored there.
 fn deployments_for(configuration: &InstallConfiguration) -> Vec<FolderDeployment> {
     let eui = match configuration.flavor {
         Flavor::VoxPopuli { eui } => eui,
         Flavor::CommunityPatch => Eui::Disabled,
+        Flavor::OwnModsOnly => return Vec::new(),
     };
     // With EUI on, `(3a)` supplies the Lua for `(1)` and `(2)`, so theirs is left behind.
     let base_selection = match eui {
@@ -259,7 +292,7 @@ fn deployments_for(configuration: &InstallConfiguration) -> Vec<FolderDeployment
         Eui::Disabled => SourceSelection::Everything,
     };
 
-    // Every Flavor includes the Community Patch - Vox Populi implies it.
+    // Every Flavor left includes the Community Patch - Vox Populi implies it.
     let mut deployments = vec![at_own_name(
         ClaimedFolder::CommunityPatch,
         base_selection.clone(),
@@ -302,11 +335,11 @@ fn deployments_for(configuration: &InstallConfiguration) -> Vec<FolderDeployment
 /// The Claimed Files this configuration installs.
 ///
 /// One entry today: every Vox Populi configuration deploys the loading-screen tips into the
-/// Text Folder, and no Community-Patch-only configuration does.
+/// Text Folder, and no other configuration does.
 fn files_for(configuration: &InstallConfiguration) -> Vec<ClaimedFile> {
     match configuration.flavor {
         Flavor::VoxPopuli { .. } => vec![ClaimedFile::VpuiTips],
-        Flavor::CommunityPatch => Vec::new(),
+        Flavor::CommunityPatch | Flavor::OwnModsOnly => Vec::new(),
     }
 }
 

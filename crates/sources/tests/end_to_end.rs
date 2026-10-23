@@ -127,7 +127,7 @@ fn a_release_from_the_upstream_cache_installs_end_to_end() {
         "kit"
     );
     assert_eq!(
-        fs::read_to_string(&outcome.built_dll).unwrap(),
+        fs::read_to_string(outcome.built_dll.unwrap()).unwrap(),
         DLL_MARKER,
         "the Built DLL, not the repository's"
     );

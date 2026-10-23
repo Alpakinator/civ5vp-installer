@@ -229,6 +229,21 @@ fn the_remembered_state_survives_the_round_trip() {
             opening_movie: civ5vp_core::OpeningMovie::Stock,
             dll_source: DllSource::ShippedWhenCurrent,
         },
+        // A Modpack of the player's own mods alone - neither Community Patch nor Vox Populi.
+        InstallConfiguration {
+            source: InstallationSource::UpstreamCache {
+                version: Version::Release("Release-4.19.1".to_owned()),
+            },
+            flavor: Flavor::OwnModsOnly,
+            forty_three_civs: FortyThreeCivs::Disabled,
+            build_configuration: BuildConfiguration::Release,
+            install_mode: InstallMode::Modpack,
+            extra_mods: vec!["My Modmod".to_owned()],
+            luajit: LuaJitEngine::Stock,
+            menu_theme: civ5vp_core::MenuTheme::Stock,
+            opening_movie: civ5vp_core::OpeningMovie::Stock,
+            dll_source: DllSource::ShippedWhenCurrent,
+        },
     ];
 
     for configuration in configurations {

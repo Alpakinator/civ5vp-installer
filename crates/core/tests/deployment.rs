@@ -61,8 +61,10 @@ fn a_deployment_reports_what_it_did() {
     assert_eq!(outcome.removed, Vec::new());
     assert_eq!(
         outcome.built_dll,
-        game.game_root()
-            .join("MODS/(1) Community Patch/CvGameCore_Expansion2.dll"),
+        Some(
+            game.game_root()
+                .join("MODS/(1) Community Patch/CvGameCore_Expansion2.dll")
+        ),
     );
     assert_eq!(
         game.read("MODS/(1) Community Patch/CvGameCore_Expansion2.dll"),

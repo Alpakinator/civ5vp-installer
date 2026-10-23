@@ -282,11 +282,14 @@ pub(crate) struct AssembledModpack {
 /// `resolved` is [`crate::Core`]'s resolve of the plan's deployments against the
 /// materialized source - the same list Sync uses, so what lands inside the Modpack is
 /// exactly what a Mods-mode Deployment would have put in MODS.
+///
+/// `source_root` and `built_dll` are `None` for a Flavor that takes nothing from the
+/// Installation Source: the pack is then the player's own mods alone, on the bare game.
 pub(crate) fn assemble(
     plan: &Plan,
-    source_root: &Path,
+    source_root: Option<&Path>,
     resolved: &[(usize, PathBuf)],
-    built_dll: &Path,
+    built_dll: Option<&Path>,
     work_dir: &Path,
     assembler: &dyn ModpackAssembler,
     progress: &ProgressReporter,
@@ -365,11 +368,13 @@ pub(crate) fn assemble(
         }
     }
 
-    // The Built DLL, where the game's VFS will find it. Every Flavor includes the Community
-    // Patch, so the folder is always among the staged mods.
-    let dll_home = mods_dir.join(ClaimedFolder::CommunityPatch.folder_name());
-    tree::create_dir_all(&dll_home)?;
-    tree::copy_file(built_dll, &dll_home.join(BUILT_DLL_FILE_NAME))?;
+    // The DLL, where the game's VFS will find it: in `(1) Community Patch`, which every
+    // Flavor with a DLL stages. A pack without the Community Patch runs the game's own.
+    if let Some(built_dll) = built_dll {
+        let dll_home = mods_dir.join(ClaimedFolder::CommunityPatch.folder_name());
+        tree::create_dir_all(&dll_home)?;
+        tree::copy_file(built_dll, &dll_home.join(BUILT_DLL_FILE_NAME))?;
+    }
 
     stage_ui(&stage, &staged_mods, &plan.folders, progress)?;
     stage_overrides(&stage, &plan.folders)?;
@@ -381,12 +386,15 @@ pub(crate) fn assemble(
     // labels (or hold an older Version's). Bake the selected source's Claimed Files into
     // the dump too: distributing the DLC must not depend on the creator's Text folder.
     // Apply these before mod actions, as the game does, so modmods can override them.
-    let mut updates: Vec<PathBuf> = plan
-        .files
-        .iter()
-        .filter_map(|file| file.source_path())
-        .map(|source_path| source_root.join(source_path))
-        .collect();
+    let mut updates: Vec<PathBuf> = match source_root {
+        Some(source_root) => plan
+            .files
+            .iter()
+            .filter_map(|file| file.source_path())
+            .map(|source_path| source_root.join(source_path))
+            .collect(),
+        None => Vec::new(),
+    };
     for staged in &staged_mods {
         collect_database_updates(staged, &mut updates, progress)?;
     }

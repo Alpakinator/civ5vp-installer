@@ -15,7 +15,8 @@ that's the whole process.
   installer itself. Either way you never install a compiler.
 - **Modpack mode.** Instead of ordinary mods, it can bake everything into a *modpack* the
   game loads automatically - no Mods menu, works in multiplayer. Your own mods from the
-  MODS folder can be baked in too, with a checkbox each.
+  MODS folder can be baked in too, with a checkbox each - or on their own, without Vox
+  Populi at all.
 - **Clean installs, clean exits.** Every install replaces the mod folders completely, so
   leftovers from an old version can never corrupt a new one. The **Uninstall** button puts
   your game back exactly the way it was.

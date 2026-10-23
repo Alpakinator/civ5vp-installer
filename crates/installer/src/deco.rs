@@ -348,7 +348,17 @@ pub fn header(ui: &mut egui::Ui, [before, emblem, after]: [&str; 3], corner: Opt
         )
     };
     let (before, after) = (word(before), word(after));
-    let emblem = set(emblem.to_owned(), EMBLEM_SIZE, 0.0, theme::GOLD_BRIGHT);
+    // Two letters fit the tile at the full size; a longer emblem is set smaller, by just as
+    // much as it needs to clear the tile's rims, so it never runs out over them.
+    let emblem = {
+        let full = set(emblem.to_owned(), EMBLEM_SIZE, 0.0, theme::GOLD_BRIGHT);
+        if full.size().x <= EMBLEM_ROOM {
+            full
+        } else {
+            let size = (EMBLEM_SIZE * EMBLEM_ROOM / full.size().x).floor();
+            set(emblem.to_owned(), size, 0.0, theme::GOLD_BRIGHT)
+        }
+    };
 
     let (area, response) = ui.allocate_exact_size(
         vec2(ui.available_width(), Crest::HEIGHT),
@@ -412,6 +422,9 @@ const WORD_SIZE: f32 = 19.0;
 const WORD_TRACKING: f32 = 3.0;
 /// The emblem's size: a fifth above the Display size, the largest type in the window.
 const EMBLEM_SIZE: f32 = 31.0;
+/// The widest an emblem may be set: the tile's face between its upright rims, less the
+/// same air a plate leaves between its rim and its word.
+const EMBLEM_ROOM: f32 = 2.0 * (2.0 * BAND_HALF * HEX_WIDTH_RATIO - RIM - TITLE_GAP);
 
 /// The header's geometry, settled once and on whole pixels, so every part is placed from the
 /// same numbers and every straight rim lands on whole pixels.

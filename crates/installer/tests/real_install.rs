@@ -118,7 +118,7 @@ fn a_fresh_machine_installs_the_newest_release_from_github() {
     let _ = printer.join();
     println!("fresh install finished in {:?}", started.elapsed());
 
-    let dll = fs::read(&outcome.built_dll).unwrap();
+    let dll = fs::read(outcome.built_dll.unwrap()).unwrap();
     assert_eq!(&dll[..2], b"MZ");
     assert!(dll.len() > 5_000_000);
     // Byte for byte the one the Release ships. Anything else means the Core decided to
@@ -217,7 +217,7 @@ fn a_real_version_installs_end_to_end_with_a_genuinely_built_dll() {
     let deployed = folders
         .mods
         .join("(1) Community Patch/CvGameCore_Expansion2.dll");
-    assert_eq!(outcome.built_dll, deployed);
+    assert_eq!(outcome.built_dll.as_ref(), Some(&deployed));
     let bytes = fs::read(&deployed).unwrap();
     assert_eq!(&bytes[..2], b"MZ", "deployed DLL must be a PE binary");
     assert!(

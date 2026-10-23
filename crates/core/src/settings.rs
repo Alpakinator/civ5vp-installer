@@ -272,6 +272,7 @@ impl Settings {
                 write_line(&mut text, "flavor", "vox-populi");
                 write_line(&mut text, "eui", on_off(*eui == Eui::Enabled));
             }
+            Flavor::OwnModsOnly => write_line(&mut text, "flavor", "own-mods-only"),
         }
         write_line(
             &mut text,
@@ -500,6 +501,7 @@ fn read_configuration(values: &Values) -> Option<InstallConfiguration> {
                 Eui::Disabled
             },
         },
+        "own-mods-only" => Flavor::OwnModsOnly,
         _ => return None,
     };
     let forty_three_civs = if values.get("forty-three-civs") == Some("on") {

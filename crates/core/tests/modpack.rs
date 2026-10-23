@@ -225,8 +225,10 @@ fn a_modpack_deployment_builds_the_pack_and_leaves_mods_alone() {
     assert!(!outcome.deployed.contains(&ClaimedFolder::ModpackMaps));
     assert_eq!(
         outcome.built_dll,
-        game.game_root()
-            .join("DLC/VP_MODPACK/Mods/(1) Community Patch/CvGameCore_Expansion2.dll"),
+        Some(
+            game.game_root()
+                .join("DLC/VP_MODPACK/Mods/(1) Community Patch/CvGameCore_Expansion2.dll")
+        ),
     );
 }
 
@@ -937,4 +939,168 @@ fn non_xml_unicode_asset_names_do_not_crash_modpack_assembly() {
     let plan = core.plan(&vox_populi_modpack(), &game.folders()).unwrap();
     core.execute(&plan, &ProgressReporter::silent()).unwrap();
     assert_eq!(game.read("DLC/Expansion2/图图"), "not GameData");
+}
+
+/// A Modpack of the player's own mods alone: neither Community Patch nor Vox Populi.
+fn own_mods_only_modpack() -> InstallConfiguration {
+    InstallConfiguration {
+        // Nothing comes from an Installation Source, so none has to be named.
+        source: InstallationSource::unchosen(),
+        flavor: Flavor::OwnModsOnly,
+        extra_mods: vec!["Even More Bonuses".to_owned()],
+        ..vox_populi_modpack()
+    }
+}
+
+/// The whole of "a Modpack without Community Patch or Vox Populi": the pick is baked into
+/// the bare game, and nothing is fetched or built for it - the source provider and the
+/// toolchain here fail on contact, so a single call to either fails the test.
+#[test]
+fn a_modpack_of_only_the_players_own_mods_takes_nothing_from_the_installation_source() {
+    let game = modpack_game();
+    plant_players_own_mods(&game);
+    // A Vox Populi Modpack from an earlier day, the VP-only DLC beside it, VP's tips in the
+    // Text Folder - and a Mods-mode install, which a Modpack Deployment leaves alone.
+    game.plant(
+        "DLC/VP_MODPACK/Mods/(1) Community Patch/CvGameCore_Expansion2.dll",
+        "an older Modpack's DLL",
+    );
+    game.plant("DLC/VPUI/VPUI.Civ5Pkg", "Vox Populi's interface");
+    game.plant("Text/VPUI_tips_en_us.xml", "Vox Populi's loading tips");
+    game.plant("MODS/(1) Community Patch/existing.txt", "left alone");
+    let (assembler, jobs) = FixtureModpackAssembler::new();
+    let core = Core::new(
+        Box::new(support::FailingSourceProvider),
+        Box::new(support::FailingToolchainRunner),
+        Box::new(assembler),
+        game.work_dir(),
+    );
+
+    let configuration = InstallConfiguration {
+        // 43 Civs changes which DLL goes into `(1)`; with no `(1)` it has nothing to apply to.
+        forty_three_civs: FortyThreeCivs::Enabled,
+        ..own_mods_only_modpack()
+    };
+    let plan = core.plan(&configuration, &game.folders()).unwrap();
+    let outcome = core
+        .execute(&plan, &ProgressReporter::silent())
+        .expect("a pack of the player's own mods needs no download and no build");
+
+    let pack = game.folders().dlc.join("VP_MODPACK");
+    assert!(pack.join("MPModsPack.Civ5Pkg").is_file());
+    let mut packed: Vec<String> = std::fs::read_dir(pack.join("Mods"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    packed.sort_unstable();
+    assert_eq!(packed, ["Even More Bonuses"], "the pick, and only the pick");
+    assert_eq!(outcome.built_dll, None, "no Community Patch, no DLL");
+
+    // Only the pick's changes cross the seam - no Vox Populi text to put under them.
+    let jobs = jobs.lock().unwrap();
+    let updates: Vec<String> = jobs[0]
+        .updates
+        .iter()
+        .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(updates, ["MoreBonuses.sql"]);
+
+    // Vox Populi's DLC and tips do not belong to this configuration.
+    assert_eq!(outcome.deployed, [ClaimedFolder::Modpack]);
+    assert!(!game.folders().dlc.join("VPUI").exists());
+    assert!(!game.folders().text.join("VPUI_tips_en_us.xml").exists());
+    // MODS is only read, as for every Modpack.
+    assert_eq!(
+        game.read("MODS/(1) Community Patch/existing.txt"),
+        "left alone"
+    );
+    assert!(game.folders().mods.join("Even More Bonuses").is_dir());
+    // Nothing installed carries a Version, so no banner can claim one.
+    assert_eq!(
+        core.installed_version_label(&game.folders(), InstallMode::Modpack),
+        None
+    );
+}
+
+/// In Mods mode the player's own mods are in MODS already, so without Community Patch or Vox
+/// Populi there is nothing to install. Refused before anything happens, with a way out.
+#[test]
+fn own_mods_only_is_refused_as_a_mods_deployment() {
+    let game = modpack_game();
+    let core = core_over(&game, FixtureModpackAssembler::ignored());
+
+    let Err(error) = core.plan(&mods_mode(own_mods_only_modpack()), &game.folders()) else {
+        panic!("a Mods Deployment of nothing must be refused");
+    };
+
+    assert!(matches!(
+        error,
+        InstallError::UnsupportedConfiguration { .. }
+    ));
+    assert!(
+        error.user_message().contains("Install as a modpack"),
+        "got: {}",
+        error.user_message()
+    );
+}
+
+/// A Modpack of the player's own mods with none of them picked would be the bare game baked
+/// into a DLC - certainly not what anyone asked for.
+#[test]
+fn an_own_mods_only_modpack_needs_at_least_one_mod() {
+    let game = modpack_game();
+    let core = core_over(&game, FixtureModpackAssembler::ignored());
+
+    let configuration = InstallConfiguration {
+        extra_mods: Vec::new(),
+        ..own_mods_only_modpack()
+    };
+    let Err(error) = core.plan(&configuration, &game.folders()) else {
+        panic!("an empty Modpack must be refused");
+    };
+
+    assert!(matches!(
+        error,
+        InstallError::UnsupportedConfiguration { .. }
+    ));
+    assert!(
+        error.user_message().contains("at least one"),
+        "got: {}",
+        error.user_message()
+    );
+}
+
+/// What the shell asks before drawing the choices: which Flavors bring the Community Patch
+/// (and so a DLL, and 43 Civs), and which make sense in which Install Mode.
+#[test]
+fn only_a_modpack_can_hold_neither_community_patch_nor_vox_populi() {
+    for flavor in [
+        Flavor::CommunityPatch,
+        Flavor::VoxPopuli { eui: Eui::Disabled },
+        Flavor::VoxPopuli { eui: Eui::Enabled },
+    ] {
+        assert!(flavor.includes_community_patch(), "{flavor:?}");
+        assert!(flavor.is_legal_with(InstallMode::Mods), "{flavor:?}");
+        assert!(flavor.is_legal_with(InstallMode::Modpack), "{flavor:?}");
+    }
+    assert!(!Flavor::OwnModsOnly.includes_community_patch());
+    assert!(!Flavor::OwnModsOnly.is_legal_with(InstallMode::Mods));
+    assert!(Flavor::OwnModsOnly.is_legal_with(InstallMode::Modpack));
+}
+
+/// Nothing is compiled for a pack of the player's own mods - not even where every other
+/// Flavor would compile - unless the player also asked for LuaJIT, which is always built.
+#[test]
+fn a_modpack_of_only_own_mods_needs_the_toolchain_only_for_luajit() {
+    let mut configuration = InstallConfiguration {
+        source: InstallationSource::LocalRepo {
+            path: miniature_repo(),
+        },
+        dll_source: DllSource::AlwaysCompile,
+        ..own_mods_only_modpack()
+    };
+    assert!(!configuration.needs_the_toolchain());
+
+    configuration.luajit = LuaJitEngine::LuaJit;
+    assert!(configuration.needs_the_toolchain());
 }

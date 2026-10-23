@@ -100,3 +100,77 @@ fn a_distributed_modpack_carries_vpui_text_from_the_selected_source() {
         assert_eq!(game.read(dump_path), first_dump);
     }
 }
+
+/// A Modpack of the player's own mods alone, through the real merge: the mod's change lands
+/// on the bare game's data, with no Community Patch or Vox Populi anywhere in it - and with
+/// no Installation Source and no compiler to reach for, since both here fail on contact.
+#[test]
+fn a_modpack_of_only_own_mods_merges_them_into_the_bare_game() {
+    let game = GameFixture::new();
+    for file in [
+        "DLC/Expansion2/UI/InGame/InGame.lua",
+        "DLC/Expansion2/UI/InGame/CityView/CityView.lua",
+        "DLC/Expansion2/UI/InGame/LeaderHead/LeaderHeadRoot.lua",
+    ] {
+        game.plant(file, "-- fixture base UI");
+    }
+    let base = game.work_dir().join("modpack-base");
+    std::fs::create_dir_all(&base).unwrap();
+    Connection::open(base.join("Civ5DebugDatabase.db"))
+        .unwrap()
+        .execute_batch(
+            "CREATE TABLE Defines (Name text, Value integer);
+             INSERT INTO Defines VALUES ('BASE_DEFINE', 1);",
+        )
+        .unwrap();
+    Connection::open(base.join("Localization-Merged.db"))
+        .unwrap()
+        .execute_batch(
+            "CREATE TABLE Language_en_US (Tag text PRIMARY KEY, Text text);
+             INSERT INTO Language_en_US VALUES ('TXT_KEY_BASE', 'Base text');",
+        )
+        .unwrap();
+    game.plant(
+        "MODS/Even More Bonuses/Even More Bonuses.modinfo",
+        "<Mod id=\"11111111-2222-3333-4444-555555555555\" version=\"3\">\n\
+         <Actions><OnModActivated>\n\
+         <UpdateDatabase>Data/MoreBonuses.sql</UpdateDatabase>\n\
+         </OnModActivated></Actions>\n\
+         </Mod>",
+    );
+    game.plant(
+        "MODS/Even More Bonuses/Data/MoreBonuses.sql",
+        "UPDATE Defines SET Value = 2 WHERE Name = 'BASE_DEFINE';",
+    );
+    let core = Core::new(
+        Box::new(support::FailingSourceProvider),
+        Box::new(support::FailingToolchainRunner),
+        Box::new(SqliteModpackAssembler::new()),
+        game.work_dir(),
+    );
+    let configuration = InstallConfiguration {
+        source: InstallationSource::unchosen(),
+        flavor: Flavor::OwnModsOnly,
+        forty_three_civs: FortyThreeCivs::Disabled,
+        build_configuration: BuildConfiguration::Release,
+        install_mode: InstallMode::Modpack,
+        extra_mods: vec!["Even More Bonuses".to_owned()],
+        luajit: LuaJitEngine::Stock,
+        menu_theme: MenuTheme::Stock,
+        opening_movie: civ5vp_core::OpeningMovie::Stock,
+        dll_source: DllSource::ShippedWhenCurrent,
+    };
+
+    let plan = core.plan(&configuration, &game.folders()).unwrap();
+    core.execute(&plan, &ProgressReporter::silent()).unwrap();
+
+    let gameplay = game.read("DLC/VP_MODPACK/Override/CIV5Units.xml");
+    assert!(
+        gameplay.contains("<Name>BASE_DEFINE</Name>\n\t\t\t<Value>2</Value>"),
+        "the mod's change, applied to the bare game: {gameplay}"
+    );
+    assert!(!gameplay.contains("CustomModOptions"), "no Community Patch");
+    let text = game.read("DLC/VP_MODPACK/Override/CIV5Units_Mongol.xml");
+    assert!(text.contains("Base text"));
+    assert!(!text.contains("TXT_KEY_VPUI"), "no Vox Populi text");
+}

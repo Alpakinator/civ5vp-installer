@@ -4,6 +4,19 @@ Notable changes, newest first. Versions follow [semantic versioning](https://sem
 and each one is the tag the [releases page](https://github.com/Alpakinator/civ5vp-installer/releases)
 publishes binaries for.
 
+## Unreleased
+
+### Added
+
+- **A modpack of only your own mods**: "Neither - only your own mods, as a modpack" builds a
+  modpack from the mods you tick in your MODS folder, with neither Community Patch nor Vox
+  Populi. Nothing is downloaded or compiled for it; the game runs its own DLL.
+
+### Changed
+
+- The header's hex tile names what you are installing, and changes the moment you choose:
+  "VP" for Vox Populi, "CBP" for Community Patch alone, "MOD" for a pack of your own mods.
+
 ## 0.1.8 - 2026-10-22
 
 ### Added

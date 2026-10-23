@@ -420,13 +420,9 @@ fn a_mod_the_modpack_cannot_carry_is_shown_greyed_out_with_the_reason() {
     assert!(!is_ticked(&mut harness, "Giant Earth"));
 }
 
-/// The Modpack mode radio drives a Modpack Deployment - the pack lands in the
-/// game's DLC, MODS is left alone, and the choice survives a relaunch.
-#[test]
-fn picking_the_modpack_mode_builds_a_modpack_and_is_remembered() {
-    let game = TempGame::new();
-    // What a Modpack build needs of the game: the base UI entry files and a pristine cache
-    // (the placeholder assembler reads the marker, exactly like the Core-seam fixture).
+/// What a Modpack build needs of the game: the base UI entry files and a pristine cache
+/// (the placeholder assembler reads the marker, exactly like the Core-seam fixture).
+fn plant_what_a_modpack_build_needs(game: &TempGame) {
     let expansion_ui = game.game_folder().join("Assets/DLC/Expansion2/UI/InGame");
     fs::create_dir_all(expansion_ui.join("CityView")).unwrap();
     fs::create_dir_all(expansion_ui.join("LeaderHead")).unwrap();
@@ -445,6 +441,121 @@ fn picking_the_modpack_mode_builds_a_modpack_and_is_remembered() {
     fs::create_dir_all(&cache).unwrap();
     fs::write(cache.join("Civ5DebugDatabase.db"), "pristine base").unwrap();
     fs::write(cache.join("Localization-Merged.db"), "pristine text").unwrap();
+}
+
+/// The header's hex tile names what is being installed, and follows the choice the moment
+/// it is made - one frame, not "after the mouse next moves".
+#[test]
+fn the_emblem_names_what_the_selection_installs() {
+    let game = TempGame::new();
+    let mut harness = harness_over(game.launch(&game.locations()));
+    harness.step();
+    // A first launch suggests Vox Populi.
+    harness.get_by_label("Civilization 5 VP Installer");
+
+    harness.get_by_label("Community Patch only").click();
+    harness.step();
+    harness.get_by_label("Civilization 5 CBP Installer");
+
+    harness
+        .get_by_label("Install as a modpack - loads automatically, works in multiplayer")
+        .click();
+    harness.step();
+    harness
+        .get_by_label("Neither - only your own mods, as a modpack")
+        .click();
+    harness.step();
+    harness.get_by_label("Civilization 5 MOD Installer");
+
+    harness.get_by_label("Community Patch + Vox Populi").click();
+    harness.step();
+    harness.get_by_label("Civilization 5 VP Installer");
+}
+
+/// "Neither" exists only as a modpack, and the screen never lets the two disagree: it
+/// cannot be picked while installing as mods, and installing as mods cannot be picked while
+/// it is chosen. 43 Civs has nothing to apply to without the Community Patch.
+#[test]
+fn neither_and_installing_as_mods_cannot_be_picked_together() {
+    use egui_kittest::kittest::NodeT as _;
+    let game = TempGame::new();
+    let mut harness = harness_over(game.launch(&game.locations()));
+    harness.step();
+    let neither = "Neither - only your own mods, as a modpack";
+    let as_mods = "Install as mods - activate them in the game's Mods menu";
+    let forty_three = "43 Civs - room for 43 civilizations on a map";
+
+    assert!(harness.get_by_label(neither).accesskit_node().is_disabled());
+    assert!(
+        !harness
+            .get_by_label(forty_three)
+            .accesskit_node()
+            .is_disabled()
+    );
+
+    harness
+        .get_by_label("Install as a modpack - loads automatically, works in multiplayer")
+        .click();
+    harness.step();
+    harness.get_by_label(neither).click();
+    harness.step();
+
+    assert!(is_ticked(&mut harness, neither));
+    assert!(harness.get_by_label(as_mods).accesskit_node().is_disabled());
+    assert!(
+        harness
+            .get_by_label(forty_three)
+            .accesskit_node()
+            .is_disabled()
+    );
+}
+
+/// A Modpack of only the player's own mods, from the screen: no checkout named, no Version
+/// fetched, no DLL - the pack holds the pick and nothing else.
+#[test]
+fn a_modpack_of_only_your_own_mods_is_built_from_the_screen() {
+    let game = TempGame::new();
+    plant_what_a_modpack_build_needs(&game);
+    fs::create_dir_all(game.mods_folder().join("My Modmod")).unwrap();
+    fs::write(
+        game.mods_folder().join("My Modmod/My Modmod.modinfo"),
+        "<Mod id=\"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\" version=\"1\"/>",
+    )
+    .unwrap();
+    fs::write(game.mods_folder().join("My Modmod/tweak.lua"), "-- mine").unwrap();
+
+    let mut harness = harness_over(game.launch(&game.locations()));
+    harness.step();
+    harness
+        .get_by_label("Install as a modpack - loads automatically, works in multiplayer")
+        .click();
+    harness.step();
+    harness
+        .get_by_label("Neither - only your own mods, as a modpack")
+        .click();
+    harness.step();
+    // Below the fold at the design-minimum size, like Install: pressed the way a screen
+    // reader presses it.
+    harness.get_by_label("My Modmod").click_accesskit();
+    harness.step();
+    harness.get_by_label("Install").click_accesskit();
+    wait_for_label(&mut harness, "Installed VP_MODPACK.");
+
+    let pack = game.game_folder().join("Assets/DLC/VP_MODPACK");
+    assert_eq!(
+        fs::read_to_string(pack.join("Mods/My Modmod/tweak.lua")).unwrap(),
+        "-- mine",
+    );
+    let packed: Vec<_> = fs::read_dir(pack.join("Mods")).unwrap().collect();
+    assert_eq!(packed.len(), 1, "the pick and nothing else");
+}
+
+/// The Modpack mode radio drives a Modpack Deployment - the pack lands in the
+/// game's DLC, MODS is left alone, and the choice survives a relaunch.
+#[test]
+fn picking_the_modpack_mode_builds_a_modpack_and_is_remembered() {
+    let game = TempGame::new();
+    plant_what_a_modpack_build_needs(&game);
     // A mod install from an earlier day, which the Modpack Deployment must leave alone.
     fs::create_dir_all(game.mods_folder().join("(2) Vox Populi")).unwrap();
     fs::write(

@@ -24,11 +24,22 @@ const LUA_ENGINE_FILE_NAME: &str = "lua51_Win32.dll";
 /// Grouped rather than passed one by one because that is what they have in common: each is
 /// something that could have failed, and Sync runs only once none of them did.
 struct Built<'a> {
-    dll: &'a Path,
+    /// The sources and the DLL - `None` for a Flavor that takes nothing from the
+    /// Installation Source.
+    from_source: Option<&'a FromSource>,
     /// The assembled Modpack, in Modpack mode only.
     modpack: Option<&'a crate::modpack::AssembledModpack>,
     /// The LuaJIT engine, when the configuration opted into it.
     luajit: Option<&'a Path>,
+}
+
+/// What a Deployment takes from the Installation Source: the materialized sources, the DLL
+/// that goes into `(1)`, and that DLL's Build Fingerprint. The three come together because
+/// the Community Patch brings all three, and only a Flavor without it goes without.
+struct FromSource {
+    root: PathBuf,
+    dll: PathBuf,
+    fingerprint: BuildFingerprint,
 }
 
 /// What a finished Deployment did.
@@ -40,8 +51,9 @@ pub struct InstallOutcome {
     pub removed: Vec<ClaimedFolder>,
     /// Claimed Files deployed, in a fixed order.
     pub deployed_files: Vec<ClaimedFile>,
-    /// Where the Built DLL ended up in the game.
-    pub built_dll: PathBuf,
+    /// Where the DLL ended up in the game - `None` for a Flavor without the Community
+    /// Patch, which deploys no DLL.
+    pub built_dll: Option<PathBuf>,
     /// What this Deployment did to the game's Lua engine.
     pub engine: EngineOutcome,
 }
@@ -162,6 +174,83 @@ impl Core {
         plan: &Plan,
         progress: &ProgressReporter,
     ) -> Result<InstallOutcome, InstallError> {
+        // A Modpack of only the player's own mods takes nothing from the Installation Source:
+        // no Version is downloaded and no DLL is built, so neither can cost the player a
+        // download or fail the install.
+        let from_source = if plan.configuration.flavor.includes_community_patch() {
+            Some(self.fetch_and_settle_dll(plan, progress)?)
+        } else {
+            progress.report(
+                Stage::Fetch,
+                "Nothing to download - the modpack holds only your own mods.",
+            );
+            None
+        };
+        // Built before Sync for the same reason the DLL is: the game is not touched until
+        // everything that can fail has succeeded. A LuaJIT build that fails - no wine, a
+        // broken download, an engine missing a symbol the game needs - must leave the
+        // player's engine exactly where it was.
+        let built_luajit = if plan.luajit() {
+            let luajit_source = self
+                .source_provider
+                .materialize_luajit(progress)
+                .map_err(InstallError::Fetch)?;
+            let build_dir = self.work_dir.join("build");
+            tree::create_dir_all(&build_dir)?;
+            let output_path = build_dir.join(LUA_ENGINE_FILE_NAME);
+            self.toolchain_runner
+                .build_luajit(
+                    &LuaJitBuildRequest {
+                        source_root: luajit_source,
+                        game_root: plan.folders.game_root.clone(),
+                        output_path: output_path.clone(),
+                    },
+                    progress,
+                )
+                .map_err(InstallError::Build)?;
+            Some(output_path)
+        } else {
+            None
+        };
+        // In Modpack mode the whole pack is assembled in the App Data Store before Sync
+        // runs - the game is untouched until everything that can fail has succeeded. Last of
+        // the preparations, so the activity log reads in stage order.
+        let staged_modpack = if plan.modpack() {
+            let source_root = from_source.as_ref().map(|from| from.root.as_path());
+            let resolved = match source_root {
+                Some(root) => self.resolve_sources(plan, root)?,
+                None => Vec::new(),
+            };
+            Some(crate::modpack::assemble(
+                plan,
+                source_root,
+                &resolved,
+                from_source.as_ref().map(|from| from.dll.as_path()),
+                &self.work_dir,
+                self.modpack_assembler.as_ref(),
+                progress,
+            )?)
+        } else {
+            None
+        };
+        self.sync(
+            plan,
+            &Built {
+                from_source: from_source.as_ref(),
+                modpack: staged_modpack.as_ref(),
+                luajit: built_luajit.as_deref(),
+            },
+            progress,
+        )
+    }
+
+    /// Fetch the Installation Source and settle the DLL that goes into `(1)`: the one
+    /// already deployed, the Shipped one, or a fresh build.
+    fn fetch_and_settle_dll(
+        &self,
+        plan: &Plan,
+        progress: &ProgressReporter,
+    ) -> Result<FromSource, InstallError> {
         let source = self.fetch(plan, progress)?;
         // Settled before the fingerprint is computed, because it is one of the fingerprint's
         // inputs: a Shipped DLL and a compiled one are different files from the same
@@ -194,60 +283,11 @@ impl Core {
                 None => self.build(plan, &source.root, &version_string, progress)?,
             },
         };
-        // Built before Sync for the same reason the DLL is: the game is not touched until
-        // everything that can fail has succeeded. A LuaJIT build that fails - no wine, a
-        // broken download, an engine missing a symbol the game needs - must leave the
-        // player's engine exactly where it was.
-        let built_luajit = if plan.luajit() {
-            let luajit_source = self
-                .source_provider
-                .materialize_luajit(progress)
-                .map_err(InstallError::Fetch)?;
-            let build_dir = self.work_dir.join("build");
-            tree::create_dir_all(&build_dir)?;
-            let output_path = build_dir.join(LUA_ENGINE_FILE_NAME);
-            self.toolchain_runner
-                .build_luajit(
-                    &LuaJitBuildRequest {
-                        source_root: luajit_source,
-                        game_root: plan.folders.game_root.clone(),
-                        output_path: output_path.clone(),
-                    },
-                    progress,
-                )
-                .map_err(InstallError::Build)?;
-            Some(output_path)
-        } else {
-            None
-        };
-        // In Modpack mode the whole pack is assembled in the App Data Store before Sync
-        // runs - the game is untouched until everything that can fail has succeeded. Last of
-        // the preparations, so the activity log reads in stage order.
-        let staged_modpack = if plan.modpack() {
-            let resolved = self.resolve_sources(plan, &source.root)?;
-            Some(crate::modpack::assemble(
-                plan,
-                &source.root,
-                &resolved,
-                &built_dll,
-                &self.work_dir,
-                self.modpack_assembler.as_ref(),
-                progress,
-            )?)
-        } else {
-            None
-        };
-        self.sync(
-            plan,
-            &source.root,
-            &Built {
-                dll: &built_dll,
-                modpack: staged_modpack.as_ref(),
-                luajit: built_luajit.as_deref(),
-            },
-            &fingerprint,
-            progress,
-        )
+        Ok(FromSource {
+            root: source.root,
+            dll: built_dll,
+            fingerprint,
+        })
     }
 
     /// Where the originals of Replaced Files are kept, inside the App Data Store.
@@ -543,13 +583,11 @@ impl Core {
     fn sync(
         &self,
         plan: &Plan,
-        source_root: &Path,
         built: &Built<'_>,
-        fingerprint: &BuildFingerprint,
         progress: &ProgressReporter,
     ) -> Result<InstallOutcome, InstallError> {
         let Built {
-            dll: built_dll,
+            from_source,
             modpack: staged_modpack,
             luajit: built_luajit,
         } = *built;
@@ -558,8 +596,12 @@ impl Core {
         // Resolved before a single deletion, not between them. `fetch` has already checked the
         // same thing, but Sync must not depend on that: the moment this runs after a removal
         // it becomes a way for a Deployment to stop half-done, and the game must never be
-        // left half-modified.
-        let sources = self.resolve_sources(plan, source_root)?;
+        // left half-modified. Nothing to resolve when nothing came from the source - the
+        // plan then deploys nothing from it either.
+        let sources = match from_source {
+            Some(from) => self.resolve_sources(plan, &from.root)?,
+            None => Vec::new(),
+        };
 
         let mut removed = Vec::new();
         for folder in plan.removed_folders() {
@@ -665,47 +707,20 @@ impl Core {
         }
 
         for file in &plan.files {
-            let Some(source_path) = file.source_path() else {
+            // A Flavor that takes nothing from the source plans no file from it either.
+            let (Some(source_path), Some(from)) = (file.source_path(), from_source) else {
                 continue;
             };
-            tree::copy_file(&source_root.join(source_path), &file.path_in(&plan.folders))?;
+            tree::copy_file(&from.root.join(source_path), &file.path_in(&plan.folders))?;
             progress.report(Stage::Sync, format!("Installed {}.", file.file_name()));
             deployed_files.push(*file);
         }
         deployed_files.sort_unstable();
 
-        // Every Flavor includes the Community Patch, and the Built DLL is the only DLL
-        // deployed. In Mods mode it goes at the root of `(1) Community Patch`; in Modpack
-        // mode the assembly already placed it inside the pack, so it is deployed by now
-        // either way and only the sidecar's home differs.
-        let dll_home = deployed_dll_home(&plan.folders, plan.configuration.install_mode);
-        let dll_destination = dll_home.join(BUILT_DLL_FILE_NAME);
-        if staged_modpack.is_none() {
-            tree::copy_file(built_dll, &dll_destination)?;
-            progress.report(Stage::Sync, "Installed the DLL.");
-        }
-
-        // The Build Fingerprint sidecar, beside the DLL it describes (both inside a Claimed
-        // Folder). Hashed from the deployed copy, so what is recorded is what a later
-        // launch will re-hash. A failure on this path only ever costs a rebuild, never a
-        // false skip, so it does not fail an otherwise complete Deployment - but it is said
-        // out loud: "it rebuilds every time" must be diagnosable from what the user can
-        // show us.
-        let sidecar = dll_home.join(FINGERPRINT_FILE_NAME);
-        let recorded = match fnv1a64_of_file(&dll_destination) {
-            Some(hash) => std::fs::write(&sidecar, fingerprint.sidecar_contents(hash)).is_ok(),
-            None => false,
+        let built_dll = match from_source {
+            Some(from) => Some(self.deploy_dll(plan, from, staged_modpack.is_none(), progress)?),
+            None => None,
         };
-        if !recorded {
-            progress.report(
-                Stage::Sync,
-                format!(
-                    "Could not record the build fingerprint at {} - the next install will \
-                     rebuild instead of skipping.",
-                    sidecar.display()
-                ),
-            );
-        }
 
         // The Replaced File, last of all: it is the one write outside the Claimed set
         // (ADR-0006), so it happens only once everything the installer owns is already right.
@@ -719,9 +734,54 @@ impl Core {
             deployed,
             removed,
             deployed_files,
-            built_dll: dll_destination,
+            built_dll,
             engine,
         })
+    }
+
+    /// Put the DLL in place and record its Build Fingerprint beside it, returning where it
+    /// is in the game.
+    ///
+    /// The DLL is the only one deployed. In Mods mode it goes at the root of
+    /// `(1) Community Patch`; in Modpack mode the assembly already placed it inside the pack
+    /// (`copy` is then false), so it is deployed by now either way and only the sidecar's
+    /// home differs.
+    fn deploy_dll(
+        &self,
+        plan: &Plan,
+        from: &FromSource,
+        copy: bool,
+        progress: &ProgressReporter,
+    ) -> Result<PathBuf, InstallError> {
+        let dll_home = deployed_dll_home(&plan.folders, plan.configuration.install_mode);
+        let dll_destination = dll_home.join(BUILT_DLL_FILE_NAME);
+        if copy {
+            tree::copy_file(&from.dll, &dll_destination)?;
+            progress.report(Stage::Sync, "Installed the DLL.");
+        }
+
+        // The Build Fingerprint sidecar, beside the DLL it describes (both inside a Claimed
+        // Folder). Hashed from the deployed copy, so what is recorded is what a later
+        // launch will re-hash. A failure on this path only ever costs a rebuild, never a
+        // false skip, so it does not fail an otherwise complete Deployment - but it is said
+        // out loud: "it rebuilds every time" must be diagnosable from what the user can
+        // show us.
+        let sidecar = dll_home.join(FINGERPRINT_FILE_NAME);
+        let recorded = match fnv1a64_of_file(&dll_destination) {
+            Some(hash) => std::fs::write(&sidecar, from.fingerprint.sidecar_contents(hash)).is_ok(),
+            None => false,
+        };
+        if !recorded {
+            progress.report(
+                Stage::Sync,
+                format!(
+                    "Could not record the build fingerprint at {} - the next install will \
+                     rebuild instead of skipping.",
+                    sidecar.display()
+                ),
+            );
+        }
+        Ok(dll_destination)
     }
 
     /// Bring the game's main menu theme into line with the configuration.

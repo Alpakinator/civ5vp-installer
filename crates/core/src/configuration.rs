@@ -12,6 +12,12 @@ pub enum Flavor {
     CommunityPatch,
     /// `(1)` + `(2)` + Squads + VPUI, optionally with EUI.
     VoxPopuli { eui: Eui },
+    /// Neither: no Community Patch and no Vox Populi, only the player's own mods from the
+    /// MODS folder, baked into a Modpack. Takes nothing from the Installation Source - no
+    /// Version is fetched and no DLL is built or deployed - and exists only as a Modpack:
+    /// in Mods mode those mods are in MODS already, so there would be nothing to install
+    /// ([`Flavor::is_legal_with`]).
+    OwnModsOnly,
 }
 
 /// The Enhanced User Interface toggle. Only reachable through [`Flavor::VoxPopuli`].
@@ -166,6 +172,23 @@ impl Flavor {
     pub fn suggested() -> Self {
         Self::VoxPopuli { eui: Eui::Enabled }
     }
+
+    /// Does this Flavor install the Community Patch - and with it the DLL, everything taken
+    /// from the Installation Source, and anything for 43 Civs to apply to?
+    ///
+    /// Vox Populi implies the Community Patch; only [`Flavor::OwnModsOnly`] goes without.
+    pub fn includes_community_patch(&self) -> bool {
+        !matches!(self, Self::OwnModsOnly)
+    }
+
+    /// Can a Deployment of this Flavor go ahead in `mode`?
+    ///
+    /// Every Flavor with the Community Patch can be installed either way. Without it, only a
+    /// Modpack has anything to do: the player's own mods are already in MODS, and a Mods
+    /// Deployment of nothing else would be a Deployment of nothing.
+    pub fn is_legal_with(&self, mode: InstallMode) -> bool {
+        self.includes_community_patch() || mode == InstallMode::Modpack
+    }
 }
 
 /// Which Lua engine the game runs.
@@ -259,6 +282,10 @@ impl InstallConfiguration {
         // LuaJIT build of the game's engine.
         if self.luajit == LuaJitEngine::LuaJit {
             return true;
+        }
+        // No Community Patch, no DLL - and nothing else here is compiled.
+        if !self.flavor.includes_community_patch() {
+            return false;
         }
         if self.dll_source == DllSource::AlwaysCompile {
             return true;
