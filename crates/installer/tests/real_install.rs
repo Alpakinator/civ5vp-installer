@@ -270,7 +270,7 @@ fn a_real_version_installs_end_to_end_with_a_genuinely_built_dll() {
     // other tests, so the file is restored afterwards (a panic in between leaves an edit
     // behind; re-materializing the Version puts it right).
     let lua = PathBuf::from(std::env::var_os("CIV5VP_DLL_SOURCE_ROOT").unwrap())
-        .join("(1) Community Patch/LUA/AssignStartingPlots.lua");
+        .join("(1) Community Patch/Core Files/Overrides/Includes/AssignStartingPlots.lua");
     let original = fs::read(&lua).unwrap();
     let mut edited = original.clone();
     edited.extend_from_slice(b"\n-- hot-reload demo edit\n");
@@ -295,7 +295,7 @@ fn a_real_version_installs_end_to_end_with_a_genuinely_built_dll() {
     let deployed_lua = fs::read(
         folders
             .mods
-            .join("(1) Community Patch/LUA/AssignStartingPlots.lua"),
+            .join("(1) Community Patch/Core Files/Overrides/Includes/AssignStartingPlots.lua"),
     )
     .unwrap();
     assert!(
@@ -362,8 +362,8 @@ fn luajit_is_built_deployed_and_restored() {
     let engine = folders.game_root.join("lua51_Win32.dll");
     let stock = fs::read(&engine).unwrap();
     assert!(
-        String::from_utf8_lossy(&stock).contains("Lua 5.1"),
-        "this test has to start from the stock engine"
+        !String::from_utf8_lossy(&stock).contains("luaJIT_setmode"),
+        "this test has to start from the stock engine: CIV5_GAME_DIR holds a LuaJIT"
     );
 
     let core = wiring::core_at(&store_root);

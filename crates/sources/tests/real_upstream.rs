@@ -227,7 +227,8 @@ fn a_real_release_installs_end_to_end() {
         luajit: LuaJitEngine::Stock,
         menu_theme: civ5vp_core::MenuTheme::Stock,
         opening_movie: civ5vp_core::OpeningMovie::Stock,
-        dll_source: DllSource::ShippedWhenCurrent,
+        // A Release would otherwise deploy the DLL it ships, and this checks the built one.
+        dll_source: DllSource::AlwaysCompile,
     };
 
     let plan = core.plan(&configuration, &folders).unwrap();
