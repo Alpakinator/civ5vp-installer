@@ -758,19 +758,12 @@ impl InstallerApp {
         let mut chosen = false;
         deco::panel(ui, Some("What to install"), |ui| {
             for (choice, label, caption) in flavor_choices() {
-                // Greyed out, not hidden, where the Install Mode below rules it out: the line
-                // itself says how to reach it.
-                let legal = choice.is_legal_with(self.install_mode);
-                let flavor_changed = ui
-                    .add_enabled_ui(legal, |ui| {
-                        deco::radio_value(ui, &mut self.flavor, choice, label)
-                            .on_disabled_hover_text(
-                                "Only as a modpack - pick \"Install as a modpack\" below.",
-                            )
-                            .changed()
-                    })
-                    .inner;
-                if flavor_changed {
+                if deco::radio_value(ui, &mut self.flavor, choice, label).changed() {
+                    // Picking a Flavor the Install Mode rules out moves the mode with it: the
+                    // line itself says "as a modpack", so the click means that as well.
+                    if !self.flavor.is_legal_with(self.install_mode) {
+                        self.install_mode = InstallMode::Modpack;
+                    }
                     // The header above names the Flavor and has been drawn already; redraw
                     // the frame rather than show the old name until the mouse next moves.
                     ui.ctx()
@@ -826,6 +819,21 @@ impl InstallerApp {
                 );
             if engine.changed() {
                 chosen = true;
+            }
+            // Not a refusal: this combination failed in October and has not failed since, and
+            // nobody has found out why. So it says what to do, for a player who meets it.
+            if self.luajit
+                && self.install_mode == InstallMode::Modpack
+                && self.flavor.includes_community_patch()
+            {
+                ui.label(
+                    egui::RichText::new(
+                        "LuaJIT caused Lua errors in some modpack games, such as the tech panel \
+                         not loading. If you see this, untick LuaJIT and install again.",
+                    )
+                    .small()
+                    .color(theme::PARCHMENT_DIM),
+                );
             }
             // The second file the game owns. Same promise as the engine above - saved, and put
             // back when the box is cleared - and the hover text names the one theme it touches,

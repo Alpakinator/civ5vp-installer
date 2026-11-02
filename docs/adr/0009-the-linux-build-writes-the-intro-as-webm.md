@@ -28,6 +28,10 @@ intro costs a constant, not a second embedded video.
 
 ## Consequences
 
+- On 2026-11-02 Brave New World's own movie played as colour bars on one machine too (Proton 11,
+  `PROTON_USE_WOW64=1`), after Steam replaced its `transcoded_video.foz` with a smaller one. The
+  cause is not established, so "in that cache" above holds only while Steam's copy has the entry.
+
 - An intro re-edit adds its two encodings to `INSTALLER_INTROS` and keeps the old ones. A test
   pins the constants to the asset files, so neither can drift.
 - The Linux binary is about 8 MB smaller: the WebM is 2.2 MB, the WMV 10.3 MB.

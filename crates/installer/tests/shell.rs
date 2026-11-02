@@ -789,9 +789,10 @@ fn the_emblem_names_what_the_selection_installs() {
     harness.get_by_label("Civilization 5 VP Installer");
 }
 
-/// "Neither" exists only as a modpack, and the screen never lets the two disagree: it
-/// cannot be picked while installing as mods, and installing as mods cannot be picked while
-/// it is chosen. 43 Civs has nothing to apply to without the Community Patch.
+/// "Neither" exists only as a modpack, and the screen never lets the two disagree: picking
+/// it while installing as mods moves the Install Mode to a modpack, and installing as mods
+/// cannot be picked while it is chosen. 43 Civs has nothing to apply to without the Community
+/// Patch.
 #[test]
 fn neither_and_installing_as_mods_cannot_be_picked_together() {
     use egui_kittest::kittest::NodeT as _;
@@ -800,9 +801,11 @@ fn neither_and_installing_as_mods_cannot_be_picked_together() {
     harness.step();
     let neither = "Neither - only your own mods, as a modpack";
     let as_mods = "Install as mods - activate them in the game's Mods menu";
+    let as_a_modpack = "Install as a modpack - loads automatically, works in multiplayer";
     let forty_three = "43 Civs - room for 43 civilizations on a map";
 
-    assert!(harness.get_by_label(neither).accesskit_node().is_disabled());
+    assert!(is_ticked(&mut harness, as_mods));
+    assert!(!harness.get_by_label(neither).accesskit_node().is_disabled());
     assert!(
         !harness
             .get_by_label(forty_three)
@@ -810,14 +813,16 @@ fn neither_and_installing_as_mods_cannot_be_picked_together() {
             .is_disabled()
     );
 
-    harness
-        .get_by_label("Install as a modpack - loads automatically, works in multiplayer")
-        .click();
-    harness.step();
     harness.get_by_label(neither).click();
+    harness.step();
     harness.step();
 
     assert!(is_ticked(&mut harness, neither));
+    assert!(is_ticked(&mut harness, as_a_modpack));
+    assert_eq!(
+        remembered_configuration(&game).install_mode,
+        civ5vp_core::InstallMode::Modpack,
+    );
     assert!(harness.get_by_label(as_mods).accesskit_node().is_disabled());
     assert!(
         harness
@@ -1077,6 +1082,47 @@ fn the_luajit_checkbox_reaches_the_configuration() {
     let mut next = harness_over(game.launch(&game.nowhere()));
     next.step();
     assert!(is_ticked(&mut next, "Use the LuaJIT engine"));
+}
+
+/// LuaJIT in a modpack with the Community Patch has failed in the past, so that one combination
+/// says so, and says what to do. Mods installs and packs of only your own mods have not.
+#[test]
+fn luajit_in_a_modpack_with_the_community_patch_says_what_to_do_if_it_fails() {
+    let game = TempGame::new();
+    let note = "LuaJIT caused Lua errors in some modpack games, such as the tech panel not \
+                loading. If you see this, untick LuaJIT and install again.";
+    let mut harness = harness_over(game.launch(&game.locations()));
+    harness.step();
+    assert!(harness.query_by_label(note).is_none());
+
+    harness.get_by_label("Use the LuaJIT engine").click();
+    harness.step();
+    harness.step();
+    assert!(harness.query_by_label(note).is_none(), "installing as mods");
+
+    harness
+        .get_by_label("Install as a modpack - loads automatically, works in multiplayer")
+        .click();
+    harness.step();
+    harness.step();
+    harness.get_by_label(note);
+
+    harness
+        .get_by_label("Neither - only your own mods, as a modpack")
+        .click();
+    harness.step();
+    harness.step();
+    assert!(harness.query_by_label(note).is_none(), "own mods only");
+
+    harness.get_by_label("Community Patch only").click();
+    harness.step();
+    harness.step();
+    harness.get_by_label(note);
+
+    harness.get_by_label("Use the LuaJIT engine").click();
+    harness.step();
+    harness.step();
+    assert!(harness.query_by_label(note).is_none(), "LuaJIT cleared");
 }
 
 /// Nobody is opted into overwriting a file the game owns.

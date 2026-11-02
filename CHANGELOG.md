@@ -4,7 +4,7 @@ Notable changes, newest first. Versions follow [semantic versioning](https://sem
 and each one is the tag the [releases page](https://github.com/Alpakinator/civ5vp-installer/releases)
 publishes binaries for.
 
-## Unreleased
+## 0.1.9 - 2026-11-02
 
 ### Added
 
@@ -12,6 +12,7 @@ publishes binaries for.
   modpack from the mods you tick in your MODS folder, with neither Community Patch nor Vox
   Populi. Nothing is downloaded or compiled for it. "Install from" and the Vox Populi intro are
   greyed out while it is selected, and an intro already swapped in goes back.
+  Picking it switches the install to a modpack.
 - Modpack: with Neither selected, a mod that brings its own `CvGameCore_Expansion2.dll` can be
   baked in, one at a time: ticking it greys out the others that have one, and the file goes into
   the pack with the mod. Whether the game really loads a DLL from there for such a mod has not
@@ -23,6 +24,9 @@ publishes binaries for.
 - Modpack: ticked mods that carry a file of the same name get a note saying which copy wins,
   in the list and in the log. It is only a note: mods often replace files on purpose, so
   nothing is unticked and the build goes ahead.
+- LuaJIT in a modpack with Community Patch or Vox Populi now carries a note under the
+  checkbox. That setup has caused Lua errors, such as the tech panel not loading, and the cause
+  is not known. If you see them, untick LuaJIT and install again.
 - The header's hex tile names what you are installing, and changes the moment you choose:
   "VP" for Vox Populi, "CBP" for Community Patch alone, "MOD" for a pack of your own mods.
 
