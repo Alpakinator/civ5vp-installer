@@ -404,6 +404,144 @@ fn a_table_element_creates_the_table_with_its_constraints() {
     );
 }
 
+/// The cases below were put through the game's own XML loader, so they are its rules.
+///
+/// `GreatPersons.Specialist` is declared `default="NULL"`, and Vox Populi's Rationalism.sql
+/// selects on `Specialist IS NOT NULL`: stored as text, every row would pass.
+#[test]
+fn column_defaults_are_the_ones_the_game_writes() {
+    let merged = run_merge(
+        "",
+        "",
+        &[
+            (
+                "schema.xml",
+                "<GameData>\n\
+                 \t<Table name=\"People\">\n\
+                 \t\t<Column name=\"Type\" type=\"text\"/>\n\
+                 \t\t<Column name=\"Specialist\" type=\"text\" default=\"NULL\"/>\n\
+                 \t\t<Column name=\"AltX\" type=\"integer\" default=\"NULL\"/>\n\
+                 \t\t<Column name=\"Unset\" type=\"text\" default=\"\"/>\n\
+                 \t\t<Column name=\"Lower\" type=\"text\" default=\"null\"/>\n\
+                 \t\t<Column name=\"Name\" type=\"text\" default=\"Inf\"/>\n\
+                 \t\t<Column name=\"FlagNull\" type=\"boolean\" default=\"NULL\"/>\n\
+                 \t\t<Column name=\"FlagOne\" type=\"boolean\" default=\"1\"/>\n\
+                 \t\t<Column name=\"FlagTrue\" type=\"boolean\" default=\"TRUE\"/>\n\
+                 \t\t<Column name=\"FlagCapital\" type=\"Boolean\" default=\"true\"/>\n\
+                 \t</Table>\n\
+                 \t<People>\n\
+                 \t\t<Row Type=\"GENERAL\"/>\n\
+                 \t\t<Row Type=\"ENGINEER\" Specialist=\"SPECIALIST_ENGINEER\" AltX=\"1\"/>\n\
+                 \t</People>\n\
+                 </GameData>",
+            ),
+            (
+                "rules.sql",
+                "CREATE TABLE Picked (Type text, Reason text);\n\
+                 INSERT INTO Picked SELECT Type, 'X' FROM People WHERE Specialist IS NOT NULL;\n\
+                 INSERT INTO Picked SELECT Type, 'Y' FROM People WHERE AltX IS NOT NULL;\n\
+                 INSERT INTO Picked SELECT Type, 'Z' FROM People WHERE Unset IS NOT NULL;",
+            ),
+        ],
+    )
+    .unwrap();
+
+    assert_eq!(merged.gameplay.matches("<Type>GENERAL</Type>").count(), 1);
+    assert_eq!(merged.gameplay.matches("<Type>ENGINEER</Type>").count(), 3);
+    assert!(!merged.gameplay.contains(">NULL<"));
+    for column in [
+        "<Lower>null</Lower>",
+        "<Name>Inf</Name>",
+        "<FlagNull>0</FlagNull>",
+        "<FlagOne>0</FlagOne>",
+        "<FlagTrue>1</FlagTrue>",
+        "<FlagCapital>true</FlagCapital>",
+    ] {
+        assert_eq!(merged.gameplay.matches(column).count(), 2, "{column}");
+    }
+}
+
+/// Also the game's rules, and the same on a column of any type: `ArtDefine_Landmarks`
+/// declares `TerrainContour` an integer, and Vox Populi sets it to `True`.
+#[test]
+fn values_are_stored_the_way_the_game_stores_them() {
+    let merged = run_merge(
+        "CREATE TABLE Modes (Type text, Mission text, Level integer);\n\
+         INSERT INTO Modes VALUES ('MODE_SET', 'MISSION_MOVE', 0);\n\
+         INSERT INTO Modes VALUES ('MODE_SET_EMPTY', 'MISSION_MOVE', 0);\n\
+         INSERT INTO Modes VALUES ('MODE_MATCHED', '', 0);",
+        "",
+        &[
+            (
+                "rows.xml",
+                "<GameData>\n\
+                 \t<Modes>\n\
+                 \t\t<Row Type=\"MODE_ELEMENT\"><Mission>NULL</Mission></Row>\n\
+                 \t\t<Row Type=\"MODE_PADDED\"><Mission> NULL </Mission></Row>\n\
+                 \t\t<Row Type=\"MODE_ATTRIBUTE\" Mission=\"NULL\"/>\n\
+                 \t\t<Row Type=\"MODE_EMPTY\" Mission=\"\"/>\n\
+                 \t\t<Row Type=\"MODE_BLANK\"><Mission>  \n  </Mission></Row>\n\
+                 \t\t<Row Type=\"MODE_CLOSED\"><Mission/></Row>\n\
+                 \t\t<Row Type=\"MODE_WORD\" Mission=\"Null\"/>\n\
+                 \t\t<Row Type=\"MODE_TRIM\"><Mission> trimmed </Mission></Row>\n\
+                 \t\t<Row Type=\"MODE_LINES\"><Mission>two\r\nlines</Mission></Row>\n\
+                 \t\t<Row Type=\"MODE_KEPT\" Mission=\" kept \"/>\n\
+                 \t\t<Row Type=\"MODE_TRUE\" Level=\"True\" Mission=\"FALSE\"/>\n\
+                 \t\t<Update>\n\
+                 \t\t\t<Set Mission=\"NULL\"/>\n\
+                 \t\t\t<Where Type=\"MODE_SET\"/>\n\
+                 \t\t</Update>\n\
+                 \t\t<Update>\n\
+                 \t\t\t<Set Mission=\"\"/>\n\
+                 \t\t\t<Where Type=\"MODE_SET_EMPTY\"/>\n\
+                 \t\t</Update>\n\
+                 \t\t<Update>\n\
+                 \t\t\t<Set Level=\"7\"/>\n\
+                 \t\t\t<Where Mission=\"\"/>\n\
+                 \t\t</Update>\n\
+                 \t</Modes>\n\
+                 </GameData>",
+            ),
+            (
+                "rules.sql",
+                "CREATE TABLE Unset (Type text);\n\
+                 INSERT INTO Unset SELECT Type || '_UNSET' FROM Modes WHERE Mission IS NULL;",
+            ),
+        ],
+    )
+    .unwrap();
+
+    for unset in [
+        "MODE_ELEMENT",
+        "MODE_PADDED",
+        "MODE_ATTRIBUTE",
+        "MODE_EMPTY",
+        "MODE_BLANK",
+        "MODE_CLOSED",
+        "MODE_SET",
+        "MODE_SET_EMPTY",
+    ] {
+        assert!(
+            merged
+                .gameplay
+                .contains(&format!("<Type>{unset}_UNSET</Type>")),
+            "{unset}"
+        );
+    }
+    assert!(!merged.gameplay.contains("MODE_WORD_UNSET"));
+    assert!(merged.gameplay.contains("<Mission>Null</Mission>"));
+    assert!(merged.gameplay.contains("<Mission>trimmed</Mission>"));
+    assert!(merged.gameplay.contains("<Mission>two\r\nlines</Mission>"));
+    assert!(merged.gameplay.contains("<Mission> kept </Mission>"));
+    assert!(merged.gameplay.contains("<Level>1</Level>"));
+    assert!(merged.gameplay.contains("<Mission>0</Mission>"));
+    assert!(
+        !merged.gameplay.contains("<Level>7</Level>"),
+        "an empty condition is NULL, which matches nothing"
+    );
+    assert!(!merged.gameplay.contains(">NULL<"));
+}
+
 #[test]
 fn row_values_come_from_attributes_and_elements_alike() {
     let merged = run_merge(

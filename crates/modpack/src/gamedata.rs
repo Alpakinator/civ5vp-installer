@@ -60,8 +60,9 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<Element, String> {
                 attach(element, &mut stack, &mut root)?;
             }
             Event::Text(data) => {
+                // decode, not xml_content: the game keeps a value's CRLF line endings.
                 let value = data
-                    .xml_content()
+                    .decode()
                     .map_err(|error| format!("bad character data: {error}"))?;
                 match stack.last_mut() {
                     Some(open) => open.text.push_str(&value),

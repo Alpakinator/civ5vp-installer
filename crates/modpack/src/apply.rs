@@ -8,13 +8,15 @@
 //! `Language_*` tables live in the localization database and every other table
 //! in the gameplay database - routed per top-level element, exactly as the game routes them.
 //!
-//! Strictness is calibrated to what the game itself tolerates. A `<Row>` colliding with an
-//! existing primary key or unique value is logged and skipped, because activating the same
-//! mods in-game survives that too. An `<Update>` or `<Delete>` matching zero rows is silently
-//! fine. Everything else - a missing table, a malformed file, an unknown construct - is a mod
-//! bug and aborts the merge before anything is dumped.
+//! Values and column defaults follow the game's XML loader; `convert` and `default_literal`
+//! say how, and were checked against it case by case. Strictness does not quite: the game fails
+//! a file on any constraint error and takes none of it. A `<Row>` colliding with an existing
+//! primary key or unique value is logged and skipped here, because the base still holds the
+//! DLC map rows the game drops before mods activate, and Community Patch's EMP_Maps.xml adds
+//! them back. An `<Update>` or `<Delete>` matching zero rows is silently fine. Anything else,
+//! such as a missing table, a malformed file, an unknown construct or NULL in a required
+//! column, is a mod bug and aborts the merge before anything is dumped.
 
-use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
@@ -285,10 +287,11 @@ fn create_table(conn: &Connection, table: &str, declaration: &Element) -> Result
         if truthy(child.attribute("notnull")) {
             definition.push_str(" NOT NULL");
         }
-        if let Some(default) = child.attribute("default") {
-            let is_boolean = declared_type.eq_ignore_ascii_case("boolean");
+        if let Some(default) = child.attribute("default")
+            && let Some(literal) = default_literal(default, declared_type)
+        {
             definition.push_str(" DEFAULT ");
-            definition.push_str(&default_literal(default, is_boolean));
+            definition.push_str(&literal);
         }
         // A reference="OtherTable(Col)" attribute exists in the wild; the game does not
         // enforce foreign keys on this path and neither do we.
@@ -338,21 +341,26 @@ fn valid_type(declared_type: &str) -> Result<(), String> {
     }
 }
 
-/// Quote a `default="…"` attribute for the CREATE: booleans become 0/1, numbers pass
-/// through bare, everything else is single-quoted with `''` escaping.
-fn default_literal(raw: &str, is_boolean: bool) -> String {
-    if is_boolean {
-        if raw.eq_ignore_ascii_case("true") {
-            return "1".to_string();
-        }
-        if raw.eq_ignore_ascii_case("false") {
-            return "0".to_string();
-        }
+/// The default a `default="…"` attribute gives a column, the way the game's XML loader reads
+/// it: none if empty; on a column declared exactly `boolean`, 1 for true in any case and 0 for
+/// anything else, `NULL` included; then `NULL` as the keyword, exactly so spelt, numbers bare,
+/// and everything else single-quoted with `''` escaping.
+fn default_literal(raw: &str, declared_type: &str) -> Option<String> {
+    if raw.is_empty() {
+        return None;
     }
-    if !raw.is_empty() && raw.parse::<f64>().is_ok() {
-        return raw.to_string();
+    if declared_type == "boolean" {
+        let flag = if raw.eq_ignore_ascii_case("true") {
+            "1"
+        } else {
+            "0"
+        };
+        return Some(flag.to_string());
     }
-    format!("'{}'", raw.replace('\'', "''"))
+    if raw == "NULL" || raw.parse::<f64>().is_ok_and(f64::is_finite) {
+        return Some(raw.to_string());
+    }
+    Some(format!("'{}'", raw.replace('\'', "''")))
 }
 
 fn apply_operations(
@@ -362,18 +370,12 @@ fn apply_operations(
     file_name: &str,
     progress: &ProgressReporter,
 ) -> Result<(), String> {
-    // Which columns are declared boolean decides the true/false → 1/0 conversion. On a
-    // missing table this set is just empty; the operation itself then fails with the real
-    // "no such table" error.
-    let booleans = boolean_columns(conn, table)?;
-
     for operation in &container.children {
         match operation.name.as_str() {
             "Row" => insert(
                 conn,
                 table,
                 operation,
-                &booleans,
                 InsertKind::Plain,
                 file_name,
                 progress,
@@ -382,7 +384,6 @@ fn apply_operations(
                 conn,
                 table,
                 operation,
-                &booleans,
                 InsertKind::Replace,
                 file_name,
                 progress,
@@ -391,13 +392,12 @@ fn apply_operations(
                 conn,
                 table,
                 operation,
-                &booleans,
                 InsertKind::Ignore,
                 file_name,
                 progress,
             )?,
-            "Update" => update(conn, table, operation, &booleans)?,
-            "Delete" => delete(conn, table, operation, &booleans)?,
+            "Update" => update(conn, table, operation)?,
+            "Delete" => delete(conn, table, operation)?,
             "DeleteMissingReferences" => {
                 return Err(format!(
                     "<DeleteMissingReferences> on table {table} is not supported by the Modpack merge"
@@ -411,42 +411,14 @@ fn apply_operations(
     Ok(())
 }
 
-fn boolean_columns(conn: &Connection, table: &str) -> Result<HashSet<String>, String> {
-    let mut stmt = conn
-        .prepare(&format!("PRAGMA table_info(\"{table}\")"))
-        .map_err(|error| format!("reading the schema of {table}: {error}"))?;
-    let mut booleans = HashSet::new();
-    let mut rows = stmt
-        .query([])
-        .map_err(|error| format!("reading the schema of {table}: {error}"))?;
-    while let Some(row) = rows
-        .next()
-        .map_err(|error| format!("reading the schema of {table}: {error}"))?
-    {
-        let name: String = row
-            .get(1)
-            .map_err(|error| format!("reading the schema of {table}: {error}"))?;
-        let declared_type: String = row
-            .get(2)
-            .map_err(|error| format!("reading the schema of {table}: {error}"))?;
-        if declared_type.eq_ignore_ascii_case("boolean") {
-            booleans.insert(name);
-        }
-    }
-    Ok(booleans)
-}
-
 /// Column/value pairs of one operation element: attributes first, then child elements.
-/// `<Row Tag="X"><Cost>5</Cost></Row>` yields `[("Tag", "X"), ("Cost", "5")]`.
-fn pairs_of(
-    element: &Element,
-    booleans: &HashSet<String>,
-    table: &str,
-) -> Result<Vec<(String, Value)>, String> {
+/// `<Row Tag="X"><Cost>5</Cost></Row>` yields `[("Tag", "X"), ("Cost", "5")]`. The game trims
+/// an element's text but keeps an attribute's as written.
+fn pairs_of(element: &Element, table: &str) -> Result<Vec<(String, Value)>, String> {
     let mut pairs = Vec::new();
     for (column, value) in &element.attributes {
         valid_name(column)?;
-        pairs.push((column.clone(), convert(column, value, booleans)));
+        pairs.push((column.clone(), convert(value)));
     }
     for child in &element.children {
         if !child.children.is_empty() {
@@ -456,24 +428,23 @@ fn pairs_of(
             ));
         }
         valid_name(&child.name)?;
-        pairs.push((
-            child.name.clone(),
-            convert(&child.name, &child.text, booleans),
-        ));
+        pairs.push((child.name.clone(), convert(child.text.trim_ascii())));
     }
     Ok(pairs)
 }
 
-/// true/false on a boolean-declared column becomes 1/0; everything else is bound as the
-/// text it came as - SQLite's column affinity does the rest, exactly as it does in-game.
-fn convert(column: &str, value: &str, booleans: &HashSet<String>) -> Value {
-    if booleans.contains(column) {
-        if value.eq_ignore_ascii_case("true") {
-            return Value::Integer(1);
-        }
-        if value.eq_ignore_ascii_case("false") {
-            return Value::Integer(0);
-        }
+/// A value the way the game's XML loader stores it, on a column of any type: empty or the word
+/// `NULL`, exactly so spelt, is SQL NULL; true/false in any case is 1/0; everything else is
+/// bound as the text it came as - SQLite's column affinity does the rest, as it does in-game.
+fn convert(value: &str) -> Value {
+    if value.is_empty() || value == "NULL" {
+        return Value::Null;
+    }
+    if value.eq_ignore_ascii_case("true") {
+        return Value::Integer(1);
+    }
+    if value.eq_ignore_ascii_case("false") {
+        return Value::Integer(0);
     }
     Value::Text(value.to_string())
 }
@@ -489,12 +460,11 @@ fn insert(
     conn: &Connection,
     table: &str,
     operation: &Element,
-    booleans: &HashSet<String>,
     kind: InsertKind,
     file_name: &str,
     progress: &ProgressReporter,
 ) -> Result<(), String> {
-    let pairs = pairs_of(operation, booleans, table)?;
+    let pairs = pairs_of(operation, table)?;
     let verb = match kind {
         InsertKind::Plain => "INSERT",
         InsertKind::Replace => "INSERT OR REPLACE",
@@ -517,8 +487,8 @@ fn insert(
     let result = conn.execute(&sql, params_from_iter(pairs.iter().map(|(_, value)| value)));
     match result {
         Ok(_) => Ok(()),
-        // The game does not abort a whole activation over a duplicate row and neither do we:
-        // log it, skip it, keep the first one - the same outcome an in-game activation has.
+        // The rows the base keeps from DLC the game drops first (see the module docs): log it,
+        // skip it, keep the first one - the same rows an in-game activation ends up with.
         Err(error) if kind == InsertKind::Plain && is_duplicate(&error) => {
             progress.report(
                 Stage::Build,
@@ -541,18 +511,13 @@ fn is_duplicate(error: &rusqlite::Error) -> bool {
     )
 }
 
-fn update(
-    conn: &Connection,
-    table: &str,
-    operation: &Element,
-    booleans: &HashSet<String>,
-) -> Result<(), String> {
+fn update(conn: &Connection, table: &str, operation: &Element) -> Result<(), String> {
     let mut sets = Vec::new();
     let mut conditions = Vec::new();
     for child in &operation.children {
         match child.name.as_str() {
-            "Set" => sets.extend(pairs_of(child, booleans, table)?),
-            "Where" => conditions.extend(pairs_of(child, booleans, table)?),
+            "Set" => sets.extend(pairs_of(child, table)?),
+            "Where" => conditions.extend(pairs_of(child, table)?),
             other => {
                 return Err(format!(
                     "unexpected <{other}> inside <Update> of table {table}"
@@ -588,13 +553,8 @@ fn update(
         .map_err(|error| format!("updating {table}: {error}"))
 }
 
-fn delete(
-    conn: &Connection,
-    table: &str,
-    operation: &Element,
-    booleans: &HashSet<String>,
-) -> Result<(), String> {
-    let conditions = pairs_of(operation, booleans, table)?;
+fn delete(conn: &Connection, table: &str, operation: &Element) -> Result<(), String> {
+    let conditions = pairs_of(operation, table)?;
     let sql = if conditions.is_empty() {
         format!("DELETE FROM \"{table}\"")
     } else {
