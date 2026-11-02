@@ -503,6 +503,62 @@ fn a_mod_is_offered_while_the_selection_brings_what_it_plugs_into() {
     harness.get_by_label(reason);
 }
 
+/// A mod made for Vox Populi follows the Flavor: tickable with it, unticked and refused the
+/// frame it is dropped, with the reason naming what is missing.
+#[test]
+fn a_mod_is_offered_while_the_selection_holds_what_it_depends_on() {
+    use egui_kittest::kittest::NodeT as _;
+    let game = TempGame::new();
+    let mods = game.mods_folder();
+    fs::create_dir_all(mods.join("For VP")).unwrap();
+    fs::write(
+        mods.join("For VP/For VP.modinfo"),
+        "<Mod id=\"for-vp\" version=\"1\"><Dependencies>\
+         <Mod id=\"8411a7a8-dad3-4622-a18e-fcc18324c799\" title=\"(2) Vox Populi\" />\
+         </Dependencies></Mod>",
+    )
+    .unwrap();
+    let reason = "It needs Vox Populi";
+
+    let mut harness = harness_over(game.launch(&game.locations()));
+    harness.step();
+    harness
+        .get_by_label("Install as a modpack - loads automatically, works in multiplayer")
+        .click();
+    harness.step();
+    assert!(
+        !harness
+            .get_by_label("For VP")
+            .accesskit_node()
+            .is_disabled()
+    );
+    harness.get_by_label("For VP").click_accesskit();
+    harness.step();
+    harness.step();
+    assert!(is_ticked(&mut harness, "For VP"));
+
+    harness.get_by_label("Community Patch only").click();
+    harness.step();
+    assert!(
+        harness
+            .get_by_label("For VP")
+            .accesskit_node()
+            .is_disabled()
+    );
+    assert!(!is_ticked(&mut harness, "For VP"));
+    harness.get_by_label(reason);
+
+    harness.get_by_label("Community Patch + Vox Populi").click();
+    harness.step();
+    assert!(
+        !harness
+            .get_by_label("For VP")
+            .accesskit_node()
+            .is_disabled()
+    );
+    assert!(harness.query_by_label(reason).is_none());
+}
+
 /// What a Modpack build needs of the game: the base UI entry files and a pristine cache
 /// (the placeholder assembler reads the marker, exactly like the Core-seam fixture).
 fn plant_what_a_modpack_build_needs(game: &TempGame) {
@@ -1509,7 +1565,7 @@ fn every_screen_matches_its_baseline() {
         // The own-mods modpack's point is the mod list, which sits below the fold at the
         // design-minimum size: rendered tall enough to hold it.
         if screen == Screen::OwnModsModpack {
-            harness.set_size(egui::vec2(WINDOW[0], 1360.0));
+            harness.set_size(egui::vec2(WINDOW[0], 1410.0));
         }
         harness.run();
         results.add(harness.try_snapshot_options(screen.file_stem(), &options));

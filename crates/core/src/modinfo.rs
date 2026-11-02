@@ -73,25 +73,58 @@ pub(crate) struct EntryPoint {
 /// Every `<EntryPoint type="..." file="...">` in document order.
 pub(crate) fn entry_points(modinfo: &str) -> Vec<EntryPoint> {
     let modinfo = without_comments(modinfo);
-    let mut points = Vec::new();
-    for section in element_payloads_raw(&modinfo, "EntryPoints") {
-        let mut rest = section;
-        while let Some(start) = rest.find("<EntryPoint") {
-            rest = &rest[start + "<EntryPoint".len()..];
-            let Some(end) = rest.find('>') else {
-                break;
-            };
-            let attributes = &rest[..end];
-            if let (Some(addin_type), Some(file)) = (
-                attribute_value(attributes, "type"),
-                attribute_value(attributes, "file"),
-            ) {
-                points.push(EntryPoint { addin_type, file });
-            }
-            rest = &rest[end + 1..];
-        }
+    element_payloads_raw(&modinfo, "EntryPoints")
+        .into_iter()
+        .flat_map(|section| tag_attributes(section, "<EntryPoint"))
+        .filter_map(|attributes| {
+            Some(EntryPoint {
+                addin_type: attribute_value(attributes, "type")?,
+                file: attribute_value(attributes, "file")?,
+            })
+        })
+        .collect()
+}
+
+/// A mod another mod cannot do without.
+pub(crate) struct Dependency {
+    /// Lowercase: the game does not go by the case of a mod ID.
+    pub(crate) id: String,
+    /// What the modinfo calls it, for the player. Falls back on the ID.
+    pub(crate) title: String,
+}
+
+/// Every `<Dependencies><Mod id="..." title="..."/></Dependencies>`, in document order.
+///
+/// Mods only: the DLC a mod depends on is the game's business, as are the version bounds, which
+/// are not checked. `<References>` are soft and not read at all.
+pub(crate) fn dependencies(modinfo: &str) -> Vec<Dependency> {
+    let modinfo = without_comments(modinfo);
+    element_payloads_raw(&modinfo, "Dependencies")
+        .into_iter()
+        .flat_map(|section| tag_attributes(section, "<Mod"))
+        .filter_map(|attributes| {
+            let id = attribute_value(attributes, "id")?.to_ascii_lowercase();
+            let title = attribute_value(attributes, "title")
+                .filter(|title| !title.trim().is_empty())
+                .unwrap_or_else(|| format!("the mod {id}"));
+            Some(Dependency { id, title })
+        })
+        .collect()
+}
+
+/// The attribute list of every tag in `section` opening with `open` - `<Mod`, say.
+fn tag_attributes<'a>(section: &'a str, open: &str) -> Vec<&'a str> {
+    let mut found = Vec::new();
+    let mut rest = section;
+    while let Some(start) = rest.find(open) {
+        rest = &rest[start + open.len()..];
+        let Some(end) = rest.find('>') else {
+            break;
+        };
+        found.push(&rest[..end]);
+        rest = &rest[end + 1..];
     }
-    points
+    found
 }
 
 /// Active database actions only, in document order. Comments and other lifecycle

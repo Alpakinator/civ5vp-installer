@@ -915,10 +915,8 @@ impl InstallerApp {
                     if !self.extra_mods.refused.is_empty() {
                         ui.add_space(4.0);
                         ui.label(
-                            egui::RichText::new(
-                                "These cannot be baked in. Install as mods to play them:",
-                            )
-                            .color(theme::PARCHMENT_DIM),
+                            egui::RichText::new("These cannot be baked in:")
+                                .color(theme::PARCHMENT_DIM),
                         );
                         for refused in &self.extra_mods.refused {
                             ui.add_enabled_ui(false, |ui| {

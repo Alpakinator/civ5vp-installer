@@ -207,18 +207,14 @@ impl ExtraModScan {
             .iter()
             .filter_map(|scanned| Some((scanned.name.as_str(), scanned.facts.as_ref().ok()?)))
             .collect();
-        let managed: &[&str] = if configuration.flavor.includes_community_patch() {
-            &COMMUNITY_PATCH_BRINGS
-        } else {
-            &[]
-        };
-        let settled = settle_selection(&candidates, &configuration.extra_mods, managed);
+        let managed = Selection::managed_by(configuration);
+        let settled = settle_selection(&candidates, &configuration.extra_mods, &managed);
 
         let mut offer = ExtraModOffer::default();
         for scanned in &self.mods {
             let refusal = match &scanned.facts {
                 Err(reason) => Some(reason.clone()),
-                Ok(facts) => facts.missing(&settled.brought),
+                Ok(facts) => facts.missing(&settled.selection),
             };
             match refusal {
                 None => offer.offered.push(scanned.name.clone()),
@@ -256,6 +252,10 @@ pub struct RefusedMod {
 /// gathered once from disk so that asking them again costs nothing.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct ModFacts {
+    /// Its mod IDs, lowercase - more than one when a folder holds several mods.
+    ids: Vec<String>,
+    /// What it cannot do without, as ID and title.
+    needs: Vec<(String, String)>,
     /// The hook targets it carries ([`brought_ui_files`]) in a form that takes hooks
     /// ([`consumes_hooks`]), at any depth in any of its mod roots - the pack copies such a file
     /// into `UI/` from wherever it is.
@@ -266,12 +266,36 @@ struct ModFacts {
 }
 
 impl ModFacts {
-    /// Why this mod cannot be carried whole when the rest of the selection brings `brought` -
-    /// `None` when it can. Its own files count too.
-    fn missing(&self, brought: &[&str]) -> Option<String> {
+    /// Why this mod cannot be carried whole beside the rest of `selection` - `None` when it
+    /// can. What it carries itself counts too.
+    fn missing(&self, selection: &Selection) -> Option<String> {
+        self.missing_dependencies(selection)
+            .or_else(|| self.missing_hook_target(selection))
+    }
+
+    fn missing_dependencies(&self, selection: &Selection) -> Option<String> {
+        let mut absent: Vec<&str> = Vec::new();
+        for (id, title) in &self.needs {
+            let title = without_load_order(title);
+            if !self.ids.contains(id) && !selection.mod_ids.contains(id) && !absent.contains(&title)
+            {
+                absent.push(title);
+            }
+        }
+        let (last, others) = absent.split_last()?;
+        Some(if others.is_empty() {
+            format!("it needs {last}")
+        } else {
+            format!("it needs {} and {last}", others.join(", "))
+        })
+    }
+
+    fn missing_hook_target(&self, selection: &Selection) -> Option<String> {
         self.plugs_into
             .iter()
-            .find(|(_, target)| !brought.contains(target) && !self.brings.contains(target))
+            .find(|(_, target)| {
+                !selection.brought.contains(target) && !self.brings.contains(target)
+            })
             .map(|(file, target)| {
                 format!(
                     "part of it ({file}) plugs into a {target} that takes hooks, which none of \
@@ -281,30 +305,99 @@ impl ModFacts {
     }
 }
 
+/// `(2) Vox Populi` as a player says it. The number is the load order mod authors put in
+/// the name; `(UI) Religion Spread` keeps its bracket, which is part of the name.
+fn without_load_order(title: &str) -> &str {
+    title
+        .strip_prefix('(')
+        .and_then(|rest| rest.split_once(") "))
+        .filter(|(order, _)| order.starts_with(|c: char| c.is_ascii_digit()))
+        .map_or(title, |(_, name)| name)
+}
+
+/// What a selection puts in the pack, as far as the cross-mod rules care.
+#[derive(Debug, Clone, Default)]
+struct Selection {
+    /// The hook targets it brings, in a form that takes hooks.
+    brought: Vec<&'static str>,
+    /// The mod IDs in it, lowercase.
+    mod_ids: Vec<String>,
+}
+
+impl Selection {
+    /// What the managed set of `configuration` will bring, told from the configuration alone
+    /// because the offer is shown before the sources are in hand. See
+    /// [`COMMUNITY_PATCH_BRINGS`] for why the build does not go by this.
+    fn managed_by(configuration: &InstallConfiguration) -> Self {
+        Self {
+            brought: if configuration.flavor.includes_community_patch() {
+                COMMUNITY_PATCH_BRINGS.to_vec()
+            } else {
+                Vec::new()
+            },
+            mod_ids: crate::plan::deployments_for(configuration)
+                .iter()
+                .filter_map(|deployment| deployment.claimed.mod_id())
+                .map(str::to_owned)
+                .collect(),
+        }
+    }
+
+    /// What these staged managed folders really bring.
+    fn staged(staged_mods: &[PathBuf]) -> Result<Self, InstallError> {
+        let targets = brought_ui_files();
+        let mut selection = Self::default();
+        for staged in staged_mods {
+            selection.add_targets(&ui_files_brought_by(staged, &targets));
+            if let Some(path) = modinfo::find(staged)?
+                && let Some(id) = modinfo::mod_id(&read_file(&path)?)
+            {
+                selection.mod_ids.push(id.to_ascii_lowercase());
+            }
+        }
+        Ok(selection)
+    }
+
+    fn add_targets(&mut self, files: &[&'static str]) {
+        for file in files {
+            if !self.brought.contains(file) {
+                self.brought.push(file);
+            }
+        }
+    }
+
+    fn add(&mut self, facts: &ModFacts) {
+        self.add_targets(&facts.brings);
+        self.mod_ids.extend(facts.ids.iter().cloned());
+    }
+}
+
 /// What a selection settles into under the cross-mod rules.
 struct Settled<'a> {
     /// The ticked mods the pack can carry whole beside each other, in `candidates` order.
     kept: Vec<&'a str>,
-    /// Every hook target the managed set and the kept mods bring between them.
-    brought: Vec<&'static str>,
+    /// The managed set and the kept mods together.
+    selection: Selection,
 }
 
 /// The cross-mod rules, applied to a whole selection: which of the `ticked` mods the pack can
-/// carry whole beside the managed set (which brings `managed`), and what they bring.
+/// carry whole beside the `managed` set, and what they all add up to.
 ///
-/// Only a mod that is kept brings anything, so dropping one can drop another that leant on
-/// it: repeated until nothing changes. What is left is the largest set that holds together -
+/// Only a mod that is kept counts for the others, so dropping one can drop another that leant
+/// on it: repeated until nothing changes. What is left is the largest set that holds together -
 /// two mods that each bring what the other plugs into are both kept, because both files will
 /// be in the pack. `candidates` are the mods the per-mod rules let through; a ticked mod they
-/// refused is not among them and brings nothing.
+/// refused is not among them and counts for nothing.
 ///
 /// The offer and the build both go by this, so a pick the offer showed as whole is one the
-/// build will carry whole. Hook targets are the one cross-mod rule today; another would join
-/// [`ModFacts`] and [`ModFacts::missing`].
+/// build will carry whole. The rules are hook targets and dependencies; another would join
+/// [`ModFacts`], [`Selection`] and [`ModFacts::missing`]. It has to be one that only ever takes
+/// mods away as the selection shrinks, or the largest set is no longer unique - which is why
+/// `<Blocks>` is not one of them.
 fn settle_selection<'a>(
     candidates: &[(&'a str, &'a ModFacts)],
     ticked: &[String],
-    managed: &[&'static str],
+    managed: &Selection,
 ) -> Settled<'a> {
     let mut kept: Vec<(&str, &ModFacts)> = candidates
         .iter()
@@ -312,20 +405,16 @@ fn settle_selection<'a>(
         .copied()
         .collect();
     loop {
-        let mut brought = managed.to_vec();
+        let mut selection = managed.clone();
         for (_, facts) in &kept {
-            for file in &facts.brings {
-                if !brought.contains(file) {
-                    brought.push(file);
-                }
-            }
+            selection.add(facts);
         }
         let before = kept.len();
-        kept.retain(|(_, facts)| facts.missing(&brought).is_none());
+        kept.retain(|(_, facts)| facts.missing(&selection).is_none());
         if kept.len() == before {
             return Settled {
                 kept: kept.into_iter().map(|(name, _)| name).collect(),
-                brought,
+                selection,
             };
         }
     }
@@ -365,6 +454,8 @@ fn bakeable_mod_roots(folder: &Path) -> Result<(Vec<PathBuf>, ModFacts), Unbakea
             }
         }
         facts.plugs_into.extend(root_facts.plugs_into);
+        facts.ids.extend(root_facts.ids);
+        facts.needs.extend(root_facts.needs);
     }
     Ok((roots, facts))
 }
@@ -374,8 +465,8 @@ fn bakeable_mod_roots(folder: &Path) -> Result<(Vec<PathBuf>, ModFacts), Unbakea
 /// database updates and the UI addins the pack hooks reach the game, so a mod asking for
 /// anything else - or naming a file it does not carry - would arrive partly.
 ///
-/// Whether a hook's target will be in the pack is not decided here: that depends on the rest
-/// of the selection ([`settle_selection`]).
+/// Whether a hook's target or a dependency will be in the pack is not decided here: that
+/// depends on the rest of the selection ([`settle_selection`]).
 ///
 /// The reasons are shown to the player beside the mod, so they are in a player's words.
 fn why_not_bakeable(root: &Path) -> Result<ModFacts, Unbakeable> {
@@ -388,7 +479,8 @@ fn why_not_bakeable(root: &Path) -> Result<ModFacts, Unbakeable> {
     let Ok(text) = std::fs::read_to_string(&modinfo) else {
         return Err(Refused("its .modinfo file cannot be read".to_owned()));
     };
-    if modinfo::mod_id(&text).is_some_and(|id| id.eq_ignore_ascii_case(MODPACK_MAKER_ID)) {
+    let id = modinfo::mod_id(&text).map(|id| id.to_ascii_lowercase());
+    if id.as_deref() == Some(MODPACK_MAKER_ID) {
         return Err(NotOffered("it is the in-game Modpack Maker".to_owned()));
     }
     if let Some(action) = modinfo::activation_actions(&text)
@@ -421,7 +513,14 @@ fn why_not_bakeable(root: &Path) -> Result<ModFacts, Unbakeable> {
         return Err(missing(&absent));
     }
     let brought = brought_ui_files();
-    let mut facts = ModFacts::default();
+    let mut facts = ModFacts {
+        ids: id.into_iter().collect(),
+        needs: modinfo::dependencies(&text)
+            .into_iter()
+            .map(|dependency| (dependency.id, dependency.title))
+            .collect(),
+        ..ModFacts::default()
+    };
     for point in modinfo::entry_points(&text) {
         if point.addin_type.eq_ignore_ascii_case(MAP_SCRIPT_ADDIN) {
             if !carries(&point.file) {
@@ -587,23 +686,15 @@ pub(crate) fn assemble(
             .map_err(|unbakeable| not_bakeable(name, &from, unbakeable.reason()))?;
         picks.push((name, from, roots, facts));
     }
-    let brought = brought_ui_files();
-    let mut managed_brings = Vec::new();
-    for staged in &staged_mods {
-        for file in ui_files_brought_by(staged, &brought) {
-            if !managed_brings.contains(&file) {
-                managed_brings.push(file);
-            }
-        }
-    }
+    let managed = Selection::staged(&staged_mods)?;
     let candidates: Vec<(&str, &ModFacts)> = picks
         .iter()
         .map(|(name, _, _, facts)| (name.as_str(), facts))
         .collect();
-    let settled = settle_selection(&candidates, &plan.configuration.extra_mods, &managed_brings);
+    let settled = settle_selection(&candidates, &plan.configuration.extra_mods, &managed);
     for (name, from, _, facts) in &picks {
         if !settled.kept.contains(&name.as_str()) {
-            let reason = facts.missing(&settled.brought).unwrap_or_default();
+            let reason = facts.missing(&settled.selection).unwrap_or_default();
             return Err(not_bakeable(name, from, &reason));
         }
     }

@@ -63,7 +63,8 @@ not run for this audit.
   the selected folder order (alphabetical in the UI). An extra mod that depends
   on another extra mod may therefore run too early. The installer is not yet a
   general mod dependency resolver; the standard VP order and the two extras in
-  the reported pack do not reveal this problem.
+  the reported pack do not reveal this problem. Ticket 16 reads `<Dependencies>`
+  to refuse a mod whose dependency is not selected, but does not reorder.
 - **The saved base is not tied to a game installation, DLC set, or language.**
   `ensure_base_snapshot` reuses an existing pair without a configuration identity.
   Changing those inputs can leave it stale. Likewise, the override scan sees the

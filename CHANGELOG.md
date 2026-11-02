@@ -29,6 +29,10 @@ publishes binaries for.
   Packs with the Community Patch's own UI files are unchanged.
 - Modpack: a `MiniMapPanel.lua` or `MapGenerator.lua` counts as somewhere to hook into only if
   it really takes hooks, not because of its name.
+- Modpack: a mod that depends on another can no longer be ticked without it. A mod made for
+  Vox Populi could be baked into a pack that did not have Vox Populi; it is now refused with
+  what is missing, for instance "It needs Vox Populi", until the selection holds it. Your own
+  ticked mods count, and so do the managed mods your choices install.
 - Windows: compiled builds failed to link, because the `/DEF` path was split on the spaces in
   the installer's data folder (issue #1). Releases were unaffected.
 

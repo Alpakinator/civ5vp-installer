@@ -280,7 +280,7 @@ impl ModpackAssembler for PlaceholderModpackAssembler {
 /// The player's own mods a preview's extra-mod list shows, as `(folder, files)`: a plain
 /// database mod, a minimap overlay and a reworked minimap panel that it hooks into, and a
 /// map-generation hook with nothing in the selection to hook into.
-const PREVIEW_MODS: [(&str, &[(&str, &str)]); 4] = [
+const PREVIEW_MODS: [(&str, &[(&str, &str)]); 5] = [
     (
         "Better Minimap Overlay",
         &[
@@ -309,6 +309,15 @@ const PREVIEW_MODS: [(&str, &[(&str, &str)]); 4] = [
             ),
             ("Hook.lua", ""),
         ],
+    ),
+    (
+        "Promotion Tree for VP",
+        &[(
+            "Promotion Tree.modinfo",
+            "<Mod id=\"preview-promotions\" version=\"1\"><Dependencies>\
+             <Mod id=\"8411a7a8-dad3-4622-a18e-fcc18324c799\" title=\"(2) Vox Populi\" />\
+             </Dependencies></Mod>",
+        )],
     ),
     (
         "Minimap Panel Rework",

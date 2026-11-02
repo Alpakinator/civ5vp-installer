@@ -853,6 +853,262 @@ fn a_file_that_takes_no_hooks_provides_nothing() {
     assert_eq!(game.files(), before, "rule 7: the game is untouched");
 }
 
+const COMMUNITY_PATCH_ID: &str = "d1b6328c-ff44-4b0d-aad7-c657f83610cd";
+const VOX_POPULI_ID: &str = "8411a7a8-dad3-4622-a18e-fcc18324c799";
+const EUI_COMPATIBILITY_ID: &str = "24923240-e4fb-4bf6-8f0e-6e5b6cf4d3c2";
+const FORTY_THREE_CIVS_ID: &str = "6521c02b-1c78-4826-a5b0-faed86235e98";
+const SQUADS_ID: &str = "3645dbca-bdfb-4d86-bdc5-46cb5a426cc2";
+
+/// A mod in MODS with these `<Dependencies>`, written the way upstream writes them.
+fn plant_mod_needing(game: &GameFixture, folder: &str, id: &str, needs: &[(&str, &str)]) {
+    let needs: String = needs
+        .iter()
+        .map(|(id, title)| {
+            format!("<Mod id=\"{id}\" minversion=\"17\" maxversion=\"999\" title=\"{title}\" />")
+        })
+        .collect();
+    game.plant(
+        &format!("MODS/{folder}/{folder}.modinfo"),
+        &format!("<Mod id=\"{id}\" version=\"1\"><Dependencies>{needs}</Dependencies></Mod>"),
+    );
+}
+
+fn with_flavor(flavor: Flavor, ticked: &[&str]) -> InstallConfiguration {
+    InstallConfiguration {
+        flavor,
+        ..modpack_with(ticked)
+    }
+}
+
+fn neither(ticked: &[&str]) -> InstallConfiguration {
+    InstallConfiguration {
+        extra_mods: ticked.iter().map(|name| (*name).to_owned()).collect(),
+        ..own_mods_only_modpack()
+    }
+}
+
+/// A mod made for Vox Populi not installing without Vox Populi is right, and the installer does
+/// not try to make it work: it only must not be tickable. The reason says what is missing.
+#[test]
+fn a_mod_is_refused_while_the_mods_it_depends_on_are_not_selected() {
+    let game = modpack_game();
+    plant_mod_needing(
+        &game,
+        "For VP",
+        "for-vp",
+        &[
+            (COMMUNITY_PATCH_ID, "(1) Community Patch"),
+            (VOX_POPULI_ID, "(2) Vox Populi"),
+        ],
+    );
+
+    let (offered, refused) = offer_for(&game, &neither(&[]));
+    assert_eq!(offered, Vec::<String>::new());
+    assert_eq!(refused, ["For VP: it needs Community Patch and Vox Populi"]);
+
+    let (offered, refused) = offer_for(&game, &with_flavor(Flavor::CommunityPatch, &[]));
+    assert_eq!(offered, Vec::<String>::new());
+    assert_eq!(refused, ["For VP: it needs Vox Populi"]);
+
+    let (offered, refused) = offer_for(&game, &modpack_with(&[]));
+    assert_eq!(offered, ["For VP"]);
+    assert_eq!(refused, Vec::<String>::new());
+}
+
+/// Each managed mod counts by its real ID, exactly while the configuration deploys it.
+#[test]
+fn the_managed_mods_a_configuration_deploys_satisfy_dependencies() {
+    let game = modpack_game();
+    plant_mod_needing(
+        &game,
+        "Needs EUI",
+        "needs-eui",
+        &[(EUI_COMPATIBILITY_ID, "(3a) VP - EUI Compatibility Files")],
+    );
+    plant_mod_needing(
+        &game,
+        "Needs 43 Civs",
+        "needs-43",
+        &[(FORTY_THREE_CIVS_ID, "(3b) 43 Civs Community Patch")],
+    );
+    plant_mod_needing(
+        &game,
+        "Needs Squads",
+        "needs-squads",
+        &[(SQUADS_ID, "(4a) Squads for VP")],
+    );
+    let offered = |configuration: &InstallConfiguration| offer_for(&game, configuration).0;
+
+    assert_eq!(
+        offered(&with_flavor(Flavor::CommunityPatch, &[])),
+        Vec::<String>::new()
+    );
+    assert_eq!(offered(&modpack_with(&[])), ["Needs Squads"]);
+    assert_eq!(
+        offered(&with_flavor(Flavor::VoxPopuli { eui: Eui::Enabled }, &[])),
+        ["Needs EUI", "Needs Squads"]
+    );
+    let forty_three = FortyThreeCivs::Enabled;
+    assert_eq!(
+        offered(&InstallConfiguration {
+            forty_three_civs: forty_three,
+            ..with_flavor(Flavor::CommunityPatch, &[])
+        }),
+        ["Needs 43 Civs"]
+    );
+    // 43 Civs is ignored without the Community Patch: it deploys nothing there.
+    assert_eq!(
+        offered(&InstallConfiguration {
+            forty_three_civs: forty_three,
+            ..neither(&[])
+        }),
+        Vec::<String>::new()
+    );
+}
+
+/// A ticked mod satisfies a dependency like a managed one, but only a mod that is itself kept:
+/// one refused for want of Vox Populi carries nothing for the mod leaning on it.
+#[test]
+fn a_dependency_on_another_of_the_players_mods_follows_the_ticks() {
+    let game = modpack_game();
+    plant_mod_needing(
+        &game,
+        "Promotion Tree",
+        "promotion-tree",
+        &[(VOX_POPULI_ID, "(2) Vox Populi")],
+    );
+    plant_mod_needing(
+        &game,
+        "Tree Addon",
+        // Written with the case the game ignores.
+        "tree-addon",
+        &[("PROMOTION-TREE", "UI - Promotion Tree for VP")],
+    );
+
+    let (offered, refused) = offer_for(&game, &modpack_with(&[]));
+    assert_eq!(offered, ["Promotion Tree"]);
+    assert_eq!(refused, ["Tree Addon: it needs UI - Promotion Tree for VP"]);
+
+    let (offered, _) = offer_for(&game, &modpack_with(&["Promotion Tree"]));
+    assert_eq!(offered, ["Promotion Tree", "Tree Addon"]);
+
+    let (offered, refused) = offer_for(&game, &neither(&["Promotion Tree", "Tree Addon"]));
+    assert_eq!(offered, Vec::<String>::new());
+    assert_eq!(
+        refused,
+        [
+            "Promotion Tree: it needs Vox Populi",
+            "Tree Addon: it needs UI - Promotion Tree for VP",
+        ]
+    );
+}
+
+/// Two mods unpacked into one folder are picked together, so one can depend on the other.
+#[test]
+fn a_dependency_inside_the_mods_own_folder_is_satisfied() {
+    let game = modpack_game();
+    game.plant(
+        "MODS/Bundle/Base/Base.modinfo",
+        "<Mod id=\"bundle-base\" version=\"1\"/>",
+    );
+    game.plant(
+        "MODS/Bundle/Addon/Addon.modinfo",
+        "<Mod id=\"bundle-addon\" version=\"1\"><Dependencies>\
+         <Mod id=\"bundle-base\" title=\"Base\" /></Dependencies></Mod>",
+    );
+
+    assert_eq!(offer_for(&game, &neither(&[])).0, ["Bundle"]);
+}
+
+/// What the game asks for is what counts: a soft `<References>`, a DLC or a commented-out
+/// dependency is no reason to refuse a mod, and a dependency with no title still says what it is.
+#[test]
+fn only_a_real_dependency_on_a_mod_refuses_one() {
+    let game = modpack_game();
+    game.plant(
+        "MODS/Soft/Soft.modinfo",
+        "<Mod id=\"soft\" version=\"1\"><Dependencies>\
+         <!-- <Mod id=\"gone\" title=\"Gone\" /> -->\
+         <Dlc id=\"7459BA32-5764-44ae-8E95-01AD0E0EFD48\" minversion=\"0\" maxversion=\"999\" />\
+         </Dependencies><References><Mod id=\"other\" title=\"Other\" /></References>\
+         <Blocks><Mod id=\"another\" title=\"Another\" /></Blocks></Mod>",
+    );
+    game.plant(
+        "MODS/Empty/Empty.modinfo",
+        "<Mod id=\"empty\" version=\"1\"><Dependencies /></Mod>",
+    );
+    game.plant(
+        "MODS/Untitled/Untitled.modinfo",
+        "<Mod id=\"untitled\" version=\"1\"><Dependencies>\
+         <Mod id=\"abc-123\" /></Dependencies></Mod>",
+    );
+
+    let (offered, refused) = offer_for(&game, &neither(&[]));
+    assert_eq!(offered, ["Empty", "Soft"]);
+    assert_eq!(refused, ["Untitled: it needs the mod abc-123"]);
+}
+
+/// The build goes by the same rule against the modinfos really staged, and stops before the
+/// game is touched.
+#[test]
+fn the_build_checks_dependencies_against_the_whole_selection() {
+    let game = modpack_game();
+    plant_mod_needing(
+        &game,
+        "For VP",
+        "for-vp",
+        &[(VOX_POPULI_ID, "(2) Vox Populi")],
+    );
+    let core = core_over(&game, FixtureModpackAssembler::ignored());
+
+    let before = game.files();
+    let plan = core.plan(&neither(&["For VP"]), &game.folders()).unwrap();
+    let error = core
+        .execute(&plan, &ProgressReporter::silent())
+        .expect_err("a mod for Vox Populi cannot go into a pack without it");
+    assert!(
+        error.user_message().contains("it needs Vox Populi"),
+        "got: {}",
+        error.user_message()
+    );
+    assert_eq!(game.files(), before, "rule 7: the game is untouched");
+
+    let plan = core
+        .plan(&modpack_with(&["For VP"]), &game.folders())
+        .unwrap();
+    core.execute(&plan, &ProgressReporter::silent()).unwrap();
+    assert!(
+        game.game_root()
+            .join("DLC/VP_MODPACK/Mods/For VP/For VP.modinfo")
+            .exists()
+    );
+}
+
+/// The `(3b)` modinfo is staged even though most of that folder stays behind, and `(3a)` comes
+/// with EUI: both count at build time by the IDs in the files.
+#[test]
+fn the_build_finds_the_managed_mods_by_the_ids_in_their_modinfos() {
+    let game = modpack_game();
+    plant_mod_needing(
+        &game,
+        "For Everything",
+        "for-everything",
+        &[
+            (EUI_COMPATIBILITY_ID, "(3a) VP - EUI Compatibility Files"),
+            (FORTY_THREE_CIVS_ID, "(3b) 43 Civs Community Patch"),
+            (SQUADS_ID, "(4a) Squads for VP"),
+        ],
+    );
+    let core = core_over(&game, FixtureModpackAssembler::ignored());
+    let configuration = InstallConfiguration {
+        forty_three_civs: FortyThreeCivs::Enabled,
+        ..with_flavor(Flavor::VoxPopuli { eui: Eui::Enabled }, &["For Everything"])
+    };
+
+    let plan = core.plan(&configuration, &game.folders()).unwrap();
+    core.execute(&plan, &ProgressReporter::silent()).unwrap();
+}
+
 /// A pick that can no longer be carried whole - edited since it was offered - stops the
 /// build before the game is touched, rather than baking in part of it.
 #[test]

@@ -280,7 +280,7 @@ impl Plan {
 /// component - because it deploys nothing from the Installation Source at all: its Modpack
 /// is the player's own mods alone. 43 Civs has nothing to apply to without `(1)`, whose DLL
 /// it changes, so it is ignored there.
-fn deployments_for(configuration: &InstallConfiguration) -> Vec<FolderDeployment> {
+pub(crate) fn deployments_for(configuration: &InstallConfiguration) -> Vec<FolderDeployment> {
     let eui = match configuration.flavor {
         Flavor::VoxPopuli { eui } => eui,
         Flavor::CommunityPatch => Eui::Disabled,

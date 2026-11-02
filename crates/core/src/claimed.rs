@@ -157,6 +157,20 @@ impl ClaimedFolder {
     /// older Release fail with "the mod files are missing …" for a folder that is right there
     /// under its old name.
     ///
+    /// The mod ID this folder's `.modinfo` carries, for a Claimed Folder that is a mod. Stable
+    /// across Versions: other mods name these in their `<Dependencies>`, and what the player's
+    /// mods need has to be answerable before any source is in hand.
+    pub(crate) fn mod_id(self) -> Option<&'static str> {
+        match self {
+            Self::CommunityPatch => Some("d1b6328c-ff44-4b0d-aad7-c657f83610cd"),
+            Self::VoxPopuli => Some("8411a7a8-dad3-4622-a18e-fcc18324c799"),
+            Self::EuiCompatibilityFiles => Some("24923240-e4fb-4bf6-8f0e-6e5b6cf4d3c2"),
+            Self::FortyThreeCivsCommunityPatch => Some("6521c02b-1c78-4826-a5b0-faed86235e98"),
+            Self::SquadsForVoxPopuli => Some("3645dbca-bdfb-4d86-bdc5-46cb5a426cc2"),
+            _ => None,
+        }
+    }
+
     /// Every name here is Claimed. That matters as much for removal as for deployment: a player
     /// who installs an old Release and then a new one must not be left with both folders, which
     /// is exactly the stale-install corruption Sync exists to prevent.
