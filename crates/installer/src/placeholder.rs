@@ -314,7 +314,13 @@ const PREVIEW_MODS: [(&str, &[(&str, &str)]); 4] = [
         "Minimap Panel Rework",
         &[
             ("Panel.modinfo", "<Mod id=\"preview-panel\" version=\"1\"/>"),
-            ("UI/MiniMapPanel.lua", ""),
+            (
+                "UI/MiniMapPanel.lua",
+                "local g_uiAddins = {};\n\
+                 setmetatable(g_uiAddins, { __newindex = function(_, _, value)\n\
+                 \tContextPtr:LoadNewContext(value);\n\
+                 end });\n",
+            ),
         ],
     ),
 ];

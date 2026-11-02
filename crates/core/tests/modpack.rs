@@ -165,7 +165,7 @@ fn a_modpack_deployment_builds_the_pack_and_leaves_mods_alone() {
         "the staged duplicate of a UI entry file must be deleted"
     );
     let in_game = game.read("DLC/VP_MODPACK/UI/InGame.lua");
-    assert!(in_game.starts_with("-- base InGame.lua"));
+    assert!(in_game.starts_with("-- fixture: the Community Patch's own InGame.lua"));
     assert!(in_game.contains("g_uiAddins[#g_uiAddins + 1] = \"PlotHelpManager\";"));
     // The overrides: the game's GameData XML emptied by name, other XML untouched, and the
     // two dumps written by the assembler.
@@ -482,7 +482,10 @@ fn a_mod_the_pack_cannot_carry_whole_is_listed_as_refused_with_the_reason() {
          <EntryPoint type=\"MiniMapOverlayAddin\" file=\"Overlay.lua\"/></EntryPoints></Mod>",
     );
     game.plant("MODS/Overlay With Panel/Overlay.lua", "-- fixture");
-    game.plant("MODS/Overlay With Panel/UI/MiniMapPanel.lua", "-- fixture");
+    game.plant(
+        "MODS/Overlay With Panel/UI/MiniMapPanel.lua",
+        PANEL_TAKING_HOOKS,
+    );
 
     // A pack of the player's own mods: no Community Patch to bring a MiniMapPanel.lua.
     let offer = civ5vp_core::extra_mod_offer(&game.folders().mods, &own_mods_only_modpack());
@@ -513,8 +516,8 @@ fn a_mod_the_pack_cannot_carry_whole_is_listed_as_refused_with_the_reason() {
             ),
             (
                 "Overlay",
-                "part of it (Overlay.lua) plugs into MiniMapPanel.lua, which none of the \
-                 selected mods has"
+                "part of it (Overlay.lua) plugs into a MiniMapPanel.lua that takes hooks, \
+                 which none of the selected mods has"
             ),
             (
                 "Own DLL Mod",
@@ -523,6 +526,16 @@ fn a_mod_the_pack_cannot_carry_whole_is_listed_as_refused_with_the_reason() {
         ]
     );
 }
+
+/// A MiniMapPanel.lua that does something with a hook line: the Community Patch's shape,
+/// where assigning into `g_uiAddins` loads the context.
+const PANEL_TAKING_HOOKS: &str = "-- a whole MiniMapPanel\n\
+    local g_uiAddins = {};\n\
+    setmetatable(g_uiAddins, {\n\
+    \t__newindex = function(_, _, value)\n\
+    \t\tContextPtr:LoadNewContext(value);\n\
+    \tend,\n\
+    });\n";
 
 /// Three of the player's mods for the cross-mod tests: a minimap overlay and a map-generation
 /// hook, neither bringing the file it plugs into, and a mod that brings MiniMapPanel.lua.
@@ -545,7 +558,7 @@ fn plant_hooks_and_a_provider(game: &GameFixture) {
     );
     game.plant(
         "MODS/Panel Provider/Deep/Inside/minimappanel.lua",
-        "-- a whole MiniMapPanel\n",
+        PANEL_TAKING_HOOKS,
     );
 }
 
@@ -590,10 +603,10 @@ fn a_hook_target_counts_wherever_in_the_selection_it_comes_from() {
     assert_eq!(
         refused,
         [
-            "Map Hook: part of it (Hook.lua) plugs into MapGenerator.lua, which none of the \
-             selected mods has",
-            "Overlay: part of it (Overlay.lua) plugs into MiniMapPanel.lua, which none of the \
-             selected mods has",
+            "Map Hook: part of it (Hook.lua) plugs into a MapGenerator.lua that takes hooks, \
+             which none of the selected mods has",
+            "Overlay: part of it (Overlay.lua) plugs into a MiniMapPanel.lua that takes hooks, \
+             which none of the selected mods has",
         ]
     );
 
@@ -689,6 +702,155 @@ fn the_community_patch_brings_the_hook_targets_for_the_players_mods() {
         game.read("DLC/VP_MODPACK/UI/MapGenerator.lua")
             .contains("g_uiAddins[#g_uiAddins + 1] = \"Hook\";")
     );
+}
+
+/// A mod with one UI addin, for the tests of how a hook reaches the file it goes into.
+fn plant_ui_addin(game: &GameFixture) {
+    game.plant(
+        "MODS/Addin/Addin.modinfo",
+        "<Mod id=\"addin\" version=\"1\"><EntryPoints>\
+         <EntryPoint type=\"InGameUIAddin\" file=\"Addin.xml\"/></EntryPoints></Mod>",
+    );
+    game.plant("MODS/Addin/Addin.xml", "<Context/>");
+}
+
+const LOADED: &str = "ContextPtr:LoadNewContext(\"Addin\");";
+const LISTED: &str = "g_uiAddins[#g_uiAddins + 1] = \"Addin\";";
+
+/// The game's own InGame.lua has a plain `g_uiAddins` table, so a line assigning into it would
+/// load nothing: the hook has to load the context itself.
+#[test]
+fn a_ui_hook_in_the_games_own_file_loads_its_context() {
+    let game = modpack_game();
+    plant_ui_addin(&game);
+    let core = core_over(&game, FixtureModpackAssembler::ignored());
+
+    let plan = core
+        .plan(
+            &InstallConfiguration {
+                extra_mods: vec!["Addin".to_owned()],
+                ..own_mods_only_modpack()
+            },
+            &game.folders(),
+        )
+        .unwrap();
+    core.execute(&plan, &ProgressReporter::silent()).unwrap();
+
+    let in_game = game.read("DLC/VP_MODPACK/UI/InGame.lua");
+    assert!(in_game.ends_with(&format!("\n{LOADED}\n")), "{in_game}");
+    assert!(!in_game.contains(LISTED), "{in_game}");
+}
+
+/// The Community Patch's InGame.lua loads whatever is assigned into `g_uiAddins`, so packs with
+/// it keep the line they always had, to the byte.
+#[test]
+fn a_ui_hook_in_the_community_patchs_file_keeps_its_line() {
+    let game = modpack_game();
+    plant_ui_addin(&game);
+    let core = core_over(&game, FixtureModpackAssembler::ignored());
+
+    let plan = core
+        .plan(&modpack_with(&["Addin"]), &game.folders())
+        .unwrap();
+    core.execute(&plan, &ProgressReporter::silent()).unwrap();
+
+    let in_game = game.read("DLC/VP_MODPACK/UI/InGame.lua");
+    assert!(in_game.ends_with(&format!("\n{LISTED}\n")), "{in_game}");
+    assert!(!in_game.contains(LOADED), "{in_game}");
+}
+
+/// It is the file that ends up in the pack that decides: a mod's own InGame.lua replacing the
+/// Community Patch's, without its table, gets the line that loads the context.
+#[test]
+fn a_ui_hook_follows_a_mods_override_of_the_file() {
+    let game = modpack_game();
+    plant_ui_addin(&game);
+    game.plant("MODS/Addin/InGame.lua", "-- a mod's plain InGame.lua\n");
+    let core = core_over(&game, FixtureModpackAssembler::ignored());
+
+    let plan = core
+        .plan(&modpack_with(&["Addin"]), &game.folders())
+        .unwrap();
+    core.execute(&plan, &ProgressReporter::silent()).unwrap();
+
+    let in_game = game.read("DLC/VP_MODPACK/UI/InGame.lua");
+    assert!(in_game.starts_with("-- a mod's plain InGame.lua"));
+    assert!(in_game.contains(LOADED), "{in_game}");
+    assert!(!in_game.contains(LISTED), "{in_game}");
+}
+
+/// MapGenerator.lua runs its list later and has no UI context to load anything into: a hook
+/// there is a line in the list, whatever the file looks like.
+#[test]
+fn a_map_generation_hook_is_listed_and_never_loaded_as_a_context() {
+    let game = modpack_game();
+    plant_hooks_and_a_provider(&game);
+    game.plant(
+        "MODS/Generator Provider/Generator Provider.modinfo",
+        "<Mod id=\"generator-provider\" version=\"1\"/>",
+    );
+    game.plant(
+        "MODS/Generator Provider/MapGenerator.lua",
+        "local g_uiAddins = {};\nfor _, file in ipairs( g_uiAddins ) do include(file); end\n",
+    );
+    let core = core_over(&game, FixtureModpackAssembler::ignored());
+
+    let plan = core
+        .plan(
+            &InstallConfiguration {
+                extra_mods: vec!["Generator Provider".to_owned(), "Map Hook".to_owned()],
+                ..own_mods_only_modpack()
+            },
+            &game.folders(),
+        )
+        .unwrap();
+    core.execute(&plan, &ProgressReporter::silent()).unwrap();
+
+    let generator = game.read("DLC/VP_MODPACK/UI/MapGenerator.lua");
+    assert!(generator.contains("g_uiAddins[#g_uiAddins + 1] = \"Hook\";"));
+    assert!(!generator.contains("LoadNewContext"), "{generator}");
+}
+
+/// Sharing the name is not enough. A MiniMapPanel.lua or MapGenerator.lua that does nothing with
+/// a hook line would leave the mod plugged into nothing, so it provides nothing - in the offer,
+/// and in the build, which goes by the same rule.
+#[test]
+fn a_file_that_takes_no_hooks_provides_nothing() {
+    let game = modpack_game();
+    plant_hooks_and_a_provider(&game);
+    game.plant(
+        "MODS/Panel Provider/Deep/Inside/minimappanel.lua",
+        "-- the game's plain MiniMapPanel\n",
+    );
+    game.plant(
+        "MODS/Panel Provider/MapGenerator.lua",
+        "local g_uiAddins = {};\n",
+    );
+    let picks = InstallConfiguration {
+        extra_mods: vec![
+            "Map Hook".to_owned(),
+            "Overlay".to_owned(),
+            "Panel Provider".to_owned(),
+        ],
+        ..own_mods_only_modpack()
+    };
+
+    let (offered, refused) = offer_for(&game, &picks);
+    assert_eq!(offered, ["Panel Provider"]);
+    assert_eq!(refused.len(), 2, "{refused:?}");
+
+    let core = core_over(&game, FixtureModpackAssembler::ignored());
+    let before = game.files();
+    let plan = core.plan(&picks, &game.folders()).unwrap();
+    let error = core
+        .execute(&plan, &ProgressReporter::silent())
+        .expect_err("nothing in the pack takes these hooks");
+    assert!(
+        error.user_message().contains("takes hooks"),
+        "got: {}",
+        error.user_message()
+    );
+    assert_eq!(game.files(), before, "rule 7: the game is untouched");
 }
 
 /// A pick that can no longer be carried whole - edited since it was offered - stops the

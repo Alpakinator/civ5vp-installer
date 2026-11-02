@@ -24,6 +24,11 @@ publishes binaries for.
   into - the Community Patch, or another mod you tick. They were refused unless they carried
   that file themselves. The list follows your ticks: untick the mod a hook needs and the hook
   is unticked and listed among the mods that cannot be baked in, with the missing file named.
+- Modpack: a UI addin hooked into a plain UI file - the game's own, in a pack of only your own
+  mods, or a mod's copy of one - now gets a line that loads it, not a list entry nothing reads.
+  Packs with the Community Patch's own UI files are unchanged.
+- Modpack: a `MiniMapPanel.lua` or `MapGenerator.lua` counts as somewhere to hook into only if
+  it really takes hooks, not because of its name.
 - Windows: compiled builds failed to link, because the `/DEF` path was split on the spaces in
   the installer's data folder (issue #1). Releases were unaffected.
 

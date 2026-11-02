@@ -32,6 +32,32 @@ Populi. That is now a third Flavor, **Own Mods Only**.
   any Modpack Deployment does, and removes `VPUI`, `UI_bc1` and the VPUI tips like any other
   Flavor that does not include them. MODS is still only read.
 
+## Correction: a hook has to fit the file it goes into
+
+The pack hooks a UI addin in by appending `g_uiAddins[#g_uiAddins + 1] = "stem";`. That only
+does anything because the Community Patch's `InGame.lua`, `CityView.lua`, `LeaderHeadRoot.lua`
+and `MiniMapPanel.lua` give `g_uiAddins` a `__newindex` that calls
+`ContextPtr:LoadNewContext(value)`. The game's own copies have a plain table. Run with the line
+appended, the real loaders made 0 `LoadNewContext` calls with the vanilla file and 1 with the
+Community Patch's, so every UI addin in an Own Mods Only pack was silently dead.
+
+So the hook now goes by the text of the file that ended up in the pack: with the `__newindex`
+consumer it is today's line, byte for byte, so packs with the Community Patch do not change;
+without it, `ContextPtr:LoadNewContext("stem");`. That also covers a mod whose override of a UI
+file lacks the consumer. `MapGenerator.lua` is the exception. It has no UI context, and the
+Community Patch's copy walks a plain list with `ipairs` later on, so a map-generation hook is
+always a list line.
+
+The same check decides what can provide a hook target: a `MiniMapPanel.lua` or
+`MapGenerator.lua` counts only if it consumes hooks, not because the name matches. The offer
+still assumes it of a Community Patch that has not been fetched; the build reads the real files.
+
+**Not confirmed in the game.** The `LoadNewContext` line was checked against the loaders under
+luajit with a stubbed `ContextPtr`, never in a running game. Whether a context loads correctly
+from the end of a vanilla `InGame.lua`, `CityView.lua` or `LeaderHeadRoot.lua` needs an in-game
+check. Also, the vanilla code keeps the returned context in `g_uiAddins`, where this line, like
+the Community Patch's `__newindex`, discards it.
+
 ## What stays the same
 
 The package is still `VP_MODPACK`, with the same manifest, GUID and Key as every Community

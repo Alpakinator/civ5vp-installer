@@ -68,6 +68,10 @@ const UI_ENTRY_FILES: [(&str, &str); 5] = [
     ("MapGenerator.lua", "PreMapGenScript"),
 ];
 
+/// The entry file that is not a UI: it has no context to load anything into, and runs the
+/// scripts in its `g_uiAddins` itself, later, while the map is generated.
+const MAP_GENERATOR_FILE: &str = "MapGenerator.lua";
+
 /// The base-game copies the UI entry files start from, relative to the DLC folder.
 const BASE_UI_FILES: [(&str, &str); 3] = [
     ("Expansion2/UI/InGame/InGame.lua", "InGame.lua"),
@@ -92,9 +96,10 @@ const MODPACK_MAKER_ID: &str = "eb8f6ed3-109d-4f2f-a81d-516c8d2f91c1";
 ///
 /// What the offer counts on for the managed set, because it is shown before the sources are
 /// in hand - a first run has fetched nothing yet. The build does not trust it: it counts what
-/// is really staged, so a Version that lacks either file stops the build with the reason
-/// rather than baking in a mod whose hook has nowhere to go.
-const COMMUNITY_PATCH_BRINGS: [&str; 2] = ["MiniMapPanel.lua", "MapGenerator.lua"];
+/// is really staged, so a Version whose copies lack the file or take no hooks
+/// ([`consumes_hooks`]) stops the build with the reason rather than baking in a mod whose hook
+/// has nowhere to go.
+const COMMUNITY_PATCH_BRINGS: [&str; 2] = ["MiniMapPanel.lua", MAP_GENERATOR_FILE];
 
 /// The UI entry files a hook can target that the game itself does not supply: a Modpack has
 /// them only when something in it brings them.
@@ -104,6 +109,32 @@ fn brought_ui_files() -> Vec<&'static str> {
         .map(|(file, _)| *file)
         .filter(|file| !BASE_UI_FILES.iter().any(|(_, base)| base == file))
         .collect()
+}
+
+/// Does this copy of an entry file do anything with the hooks appended to it?
+///
+/// A UI file does when, as in the Community Patch's copies, a `__newindex` on `g_uiAddins` loads
+/// the context the moment one is assigned. The game's own copies have a plain table: an
+/// assignment there is just a table entry nobody reads. MapGenerator.lua does when it walks the
+/// list. Read from the text because that is all a mod's copy offers; spacing varies, so it is
+/// compared without any.
+fn consumes_hooks(file: &str, lua: &str) -> bool {
+    let code: String = lua.split_whitespace().collect();
+    if file == MAP_GENERATOR_FILE {
+        code.contains("ipairs(g_uiAddins)")
+    } else {
+        code.contains("setmetatable(g_uiAddins") && code.contains("__newindex")
+    }
+}
+
+/// The line that hooks `stem` into `file`, whose text is `lua`, going by what that text does
+/// with it. MapGenerator.lua only ever lists: it has no UI context to load into.
+fn hook_line(file: &str, stem: &str, lua: &str) -> String {
+    if file == MAP_GENERATOR_FILE || consumes_hooks(file, lua) {
+        format!("g_uiAddins[#g_uiAddins + 1] = \"{stem}\";")
+    } else {
+        format!("ContextPtr:LoadNewContext(\"{stem}\");")
+    }
 }
 
 /// The player's own mods in the MODS folder, as the extra-mod picker shows them for
@@ -225,8 +256,9 @@ pub struct RefusedMod {
 /// gathered once from disk so that asking them again costs nothing.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct ModFacts {
-    /// The hook targets it carries ([`brought_ui_files`]), at any depth in any of its mod
-    /// roots - the pack copies such a file into `UI/` from wherever it is.
+    /// The hook targets it carries ([`brought_ui_files`]) in a form that takes hooks
+    /// ([`consumes_hooks`]), at any depth in any of its mod roots - the pack copies such a file
+    /// into `UI/` from wherever it is.
     brings: Vec<&'static str>,
     /// Each entry point whose target only a mod can bring: the entry point's file, and the
     /// target it plugs into.
@@ -242,8 +274,8 @@ impl ModFacts {
             .find(|(_, target)| !brought.contains(target) && !self.brings.contains(target))
             .map(|(file, target)| {
                 format!(
-                    "part of it ({file}) plugs into {target}, which none of the selected mods \
-                     has"
+                    "part of it ({file}) plugs into a {target} that takes hooks, which none of \
+                     the selected mods has"
                 )
             })
     }
@@ -419,8 +451,8 @@ fn why_not_bakeable(root: &Path) -> Result<ModFacts, Unbakeable> {
     Ok(facts)
 }
 
-/// Which of `wanted` (canonical names) are somewhere under `dir`, matched the way the pack
-/// copies them into `UI/`: at any depth, ignoring case.
+/// Which of `wanted` (canonical names) are somewhere under `dir` in a form that takes hooks,
+/// matched the way the pack copies them into `UI/`: at any depth, ignoring case.
 fn ui_files_brought_by(dir: &Path, wanted: &[&'static str]) -> Vec<&'static str> {
     let mut found = Vec::new();
     if find_files_named(dir, wanted, &mut found).is_err() {
@@ -434,6 +466,8 @@ fn ui_files_brought_by(dir: &Path, wanted: &[&'static str]) -> Vec<&'static str>
                 path.file_name()
                     .and_then(|file| file.to_str())
                     .is_some_and(|file| file.eq_ignore_ascii_case(name))
+                    && std::fs::read(path)
+                        .is_ok_and(|bytes| consumes_hooks(name, &String::from_utf8_lossy(&bytes)))
             })
         })
         .collect()
@@ -956,16 +990,17 @@ fn stage_ui(
         }
     }
 
-    // The hooks: one `g_uiAddins` line per entry point, appended to the UI file its type
-    // hooks into. Skipped when the target file does not exist (the Modpack Maker does the
-    // same - an addin type nothing provides a base file for is dropped with a log line).
+    // The hooks: one line per entry point, appended to the UI file its type hooks into, of
+    // the kind that file acts on (`hook_line`). Skipped when the target file does not exist
+    // (the Modpack Maker does the same - an addin type nothing provides a base file for is
+    // dropped with a log line).
     for staged in staged_mods {
         let Some(modinfo) = modinfo::find(staged)? else {
             continue;
         };
         let text = read_file(&modinfo)?;
         for point in modinfo::entry_points(&text) {
-            let Some((_, target)) = UI_ENTRY_FILES
+            let Some((file, target)) = UI_ENTRY_FILES
                 .iter()
                 .find(|(_, addin_type)| addin_type.eq_ignore_ascii_case(&point.addin_type))
                 .map(|(file, _)| (file, ui.join(file)))
@@ -980,8 +1015,8 @@ fn stage_ui(
                 );
                 continue;
             }
-            let line = format!("g_uiAddins[#g_uiAddins + 1] = \"{stem}\";");
             let contents = read_file(&target)?;
+            let line = hook_line(file, &stem, &contents);
             if contents.contains(&line) {
                 continue;
             }

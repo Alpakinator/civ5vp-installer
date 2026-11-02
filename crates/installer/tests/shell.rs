@@ -443,9 +443,13 @@ fn a_mod_is_offered_while_the_selection_brings_what_it_plugs_into() {
         "<Mod id=\"panel-provider\" version=\"1\"/>",
     )
     .unwrap();
-    fs::write(mods.join("Panel Provider/UI/MiniMapPanel.lua"), "-- panel").unwrap();
-    let reason = "Part of it (Overlay.lua) plugs into MiniMapPanel.lua, which none of the \
-                  selected mods has";
+    fs::write(
+        mods.join("Panel Provider/UI/MiniMapPanel.lua"),
+        "local g_uiAddins = {};\nsetmetatable(g_uiAddins, { __newindex = LoadIt });\n",
+    )
+    .unwrap();
+    let reason = "Part of it (Overlay.lua) plugs into a MiniMapPanel.lua that takes hooks, \
+                  which none of the selected mods has";
 
     let mut harness = harness_over(game.launch(&game.locations()));
     harness.step();
