@@ -41,3 +41,4 @@
 
 # Local Git worktrees (usable by any agent).
 /.worktrees/
+/.claude/

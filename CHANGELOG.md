@@ -24,6 +24,8 @@ publishes binaries for.
   into - the Community Patch, or another mod you tick. They were refused unless they carried
   that file themselves. The list follows your ticks: untick the mod a hook needs and the hook
   is unticked and listed among the mods that cannot be baked in, with the missing file named.
+- Windows: compiled builds failed to link, because the `/DEF` path was split on the spaces in
+  the installer's data folder (issue #1). Releases were unaffected.
 
 ## 0.1.8 - 2026-10-22
 
