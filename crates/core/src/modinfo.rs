@@ -85,8 +85,8 @@ pub(crate) fn entry_points(modinfo: &str) -> Vec<EntryPoint> {
         .collect()
 }
 
-/// A mod another mod cannot do without.
-pub(crate) struct Dependency {
+/// A mod named in another mod's `<Dependencies>` or `<Blocks>`.
+pub(crate) struct NamedMod {
     /// Lowercase: the game does not go by the case of a mod ID.
     pub(crate) id: String,
     /// What the modinfo calls it, for the player. Falls back on the ID.
@@ -95,11 +95,21 @@ pub(crate) struct Dependency {
 
 /// Every `<Dependencies><Mod id="..." title="..."/></Dependencies>`, in document order.
 ///
-/// Mods only: the DLC a mod depends on is the game's business, as are the version bounds, which
-/// are not checked. `<References>` are soft and not read at all.
-pub(crate) fn dependencies(modinfo: &str) -> Vec<Dependency> {
+/// `<References>` are soft and not read at all.
+pub(crate) fn dependencies(modinfo: &str) -> Vec<NamedMod> {
+    mods_named_in(modinfo, "Dependencies")
+}
+
+/// Every `<Blocks><Mod id="..." title="..."/></Blocks>`, in document order.
+pub(crate) fn blocks(modinfo: &str) -> Vec<NamedMod> {
+    mods_named_in(modinfo, "Blocks")
+}
+
+/// The `<Mod>` entries of a `section`. Mods only: the `<Dlc>` and `<Game>` lines those sections
+/// can hold are between the mod and the game, and version bounds are not checked.
+fn mods_named_in(modinfo: &str, section: &str) -> Vec<NamedMod> {
     let modinfo = without_comments(modinfo);
-    element_payloads_raw(&modinfo, "Dependencies")
+    element_payloads_raw(&modinfo, section)
         .into_iter()
         .flat_map(|section| tag_attributes(section, "<Mod"))
         .filter_map(|attributes| {
@@ -107,7 +117,7 @@ pub(crate) fn dependencies(modinfo: &str) -> Vec<Dependency> {
             let title = attribute_value(attributes, "title")
                 .filter(|title| !title.trim().is_empty())
                 .unwrap_or_else(|| format!("the mod {id}"));
-            Some(Dependency { id, title })
+            Some(NamedMod { id, title })
         })
         .collect()
 }

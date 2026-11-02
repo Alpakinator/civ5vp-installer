@@ -171,6 +171,43 @@ impl ClaimedFolder {
         }
     }
 
+    /// The mod IDs this folder's `.modinfo` lists under `<Blocks>`, as upstream ships it, for
+    /// the same reason as [`Self::mod_id`]. The build does not go by this: it reads the modinfos
+    /// staged, so a block newer than this list stops the build with the reason.
+    pub(crate) fn blocks(self) -> &'static [&'static str] {
+        match self {
+            Self::CommunityPatch => &[
+                "a4a8d2bb-cffd-4d8e-8893-d773f25b6fe1",
+                "275db698-0c69-401e-89a8-7eab501b6bcf",
+                "781d81cf-49e1-4acb-ae5f-b9e3713f98d3",
+                "857405dd-7394-471e-8910-a875db36374f",
+                "59c70c09-d8ec-4856-b012-33b43b4f98fc",
+            ],
+            Self::VoxPopuli => &[
+                "eead0050-1e3f-4178-a91f-26cf1881ac39",
+                "c7bf7064-d1b1-4708-9e93-7a1560868582",
+                "be2d13ee-d18d-410e-8f04-7cd19cd99a98",
+                "828b5b4b-7c62-4afb-a43f-034b596ef5e4",
+                "0f1eab20-b84e-4277-a3cc-f772b952be54",
+                "ba4d7977-e47e-4145-8577-bd562b0173a3",
+                "f30c5651-8fce-44c8-abe6-4bc9bd582098",
+                "10732c4a-9be6-4d41-8ca0-9ffea0dcb19c",
+                "5e4c5a89-f4e0-44f1-9590-da744d7950d5",
+                "675ba5ec-dc5a-400f-9864-8170568d04e5",
+                "259c3593-34dd-4fdd-bd7d-8ed67cc0797c",
+            ],
+            Self::EuiCompatibilityFiles => &[
+                "17498aae-f116-4961-83cf-2fc270dc56dc",
+                "e5cc542a-1580-4ca1-b44f-c29c985cf990",
+            ],
+            Self::SquadsForVoxPopuli => &[
+                "24923240-e4fb-4bf6-link-6e5b6cf4d3c2",
+                "59c70c09-d8ec-4856-b012-33b43b4f98fc",
+            ],
+            _ => &[],
+        }
+    }
+
     /// Every name here is Claimed. That matters as much for removal as for deployment: a player
     /// who installs an old Release and then a new one must not be left with both folders, which
     /// is exactly the stale-install corruption Sync exists to prevent.

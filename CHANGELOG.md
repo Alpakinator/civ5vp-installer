@@ -36,6 +36,10 @@ publishes binaries for.
 - Modpack: game data changed by a mod other than the Community Patch is no longer saved as
   the clean copy every later modpack is built from. Mods would otherwise be applied twice,
   without any error. If you see this after an update, start the game once without mods.
+- Modpack: mods the game would refuse to run together can no longer go into one pack. The game
+  enforces a mod's `<Blocks>` in its Mods menu, and a pack activates nothing, so nothing did.
+  Ticking one greys the other out with the reason, and unticking brings it back. A block
+  involving a mod your choices install always goes against your own mod.
 - Windows: compiled builds failed to link, because the `/DEF` path was split on the spaces in
   the installer's data folder (issue #1). Releases were unaffected.
 

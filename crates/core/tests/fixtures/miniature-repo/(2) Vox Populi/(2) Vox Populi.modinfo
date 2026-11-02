@@ -16,4 +16,9 @@
       <Name>PlotHelpManager</Name>
     </EntryPoint>
   </EntryPoints>
+  <Blocks>
+    <Mod id="be2d13ee-d18d-410e-8f04-7cd19cd99a98" minversion="0" maxversion="999" title="(5) More Luxuries" />
+    <Mod id="f1x7ure0-only-in-the-staged-modinfo0000" minversion="0" maxversion="999" title="A Newer Clash" />
+    <Dlc id="3F49DF54-68B6-44d1-A930-A168628FAA59" minversion="0" maxversion="999" />
+  </Blocks>
 </Mod>

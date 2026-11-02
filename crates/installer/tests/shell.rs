@@ -559,6 +559,50 @@ fn a_mod_is_offered_while_the_selection_holds_what_it_depends_on() {
     assert!(harness.query_by_label(reason).is_none());
 }
 
+/// Two mods that block each other: ticking one greys the other out with the reason, and
+/// unticking it brings the other back.
+#[test]
+fn a_mod_blocked_by_a_ticked_mod_comes_back_when_that_is_unticked() {
+    use egui_kittest::kittest::NodeT as _;
+    let game = TempGame::new();
+    let mods = game.mods_folder();
+    fs::create_dir_all(mods.join("Alpha")).unwrap();
+    fs::write(
+        mods.join("Alpha/Alpha.modinfo"),
+        "<Mod id=\"alpha\" version=\"1\"><Blocks>\
+         <Mod id=\"beta\" title=\"Beta\" /></Blocks></Mod>",
+    )
+    .unwrap();
+    fs::create_dir_all(mods.join("Beta")).unwrap();
+    fs::write(
+        mods.join("Beta/Beta.modinfo"),
+        "<Mod id=\"beta\" version=\"1\"/>",
+    )
+    .unwrap();
+    let reason = "It can't run alongside Alpha";
+
+    let mut harness = harness_over(game.launch(&game.locations()));
+    harness.step();
+    harness
+        .get_by_label("Install as a modpack - loads automatically, works in multiplayer")
+        .click();
+    harness.step();
+    assert!(!harness.get_by_label("Beta").accesskit_node().is_disabled());
+
+    harness.get_by_label("Alpha").click_accesskit();
+    harness.step();
+    harness.step();
+    assert!(is_ticked(&mut harness, "Alpha"));
+    assert!(harness.get_by_label("Beta").accesskit_node().is_disabled());
+    harness.get_by_label(reason);
+
+    harness.get_by_label("Alpha").click_accesskit();
+    harness.step();
+    harness.step();
+    assert!(!harness.get_by_label("Beta").accesskit_node().is_disabled());
+    assert!(harness.query_by_label(reason).is_none());
+}
+
 /// What a Modpack build needs of the game: the base UI entry files and a pristine cache
 /// (the placeholder assembler reads the marker, exactly like the Core-seam fixture).
 fn plant_what_a_modpack_build_needs(game: &TempGame) {

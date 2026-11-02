@@ -1137,6 +1137,239 @@ fn the_build_finds_the_managed_mods_by_the_ids_in_their_modinfos() {
     core.execute(&plan, &ProgressReporter::silent()).unwrap();
 }
 
+/// A mod in MODS with these `<Blocks>`, written the way upstream writes them.
+fn plant_mod_blocking(game: &GameFixture, folder: &str, id: &str, blocks: &[(&str, &str)]) {
+    let blocks: String = blocks
+        .iter()
+        .map(|(id, title)| {
+            format!("<Mod id=\"{id}\" minversion=\"0\" maxversion=\"999\" title=\"{title}\" />")
+        })
+        .collect();
+    game.plant(
+        &format!("MODS/{folder}/{folder}.modinfo"),
+        &format!("<Mod id=\"{id}\" version=\"1\"><Blocks>{blocks}</Blocks></Mod>"),
+    );
+}
+
+/// The game enforces `<Blocks>` in its Mods menu, and a Modpack activates nothing, so here
+/// nothing else would. Either side may declare it. The mod the player has not ticked is the
+/// one greyed out, and it comes back when the other is unticked.
+#[test]
+fn a_mod_blocked_by_something_selected_is_refused_until_that_is_unticked() {
+    let game = modpack_game();
+    plant_mod_blocking(&game, "Alpha", "alpha", &[("BETA", "(2b) Beta Title")]);
+    plant_mod_blocking(&game, "Beta", "beta", &[]);
+
+    assert_eq!(offer_for(&game, &neither(&[])).0, ["Alpha", "Beta"]);
+
+    let (offered, refused) = offer_for(&game, &neither(&["Alpha"]));
+    assert_eq!(offered, ["Alpha"]);
+    assert_eq!(refused, ["Beta: it can't run alongside Alpha"]);
+
+    let (offered, refused) = offer_for(&game, &neither(&["Beta"]));
+    assert_eq!(offered, ["Beta"]);
+    assert_eq!(refused, ["Alpha: it can't run alongside Beta Title"]);
+}
+
+/// Managed mods always win, whichever side declares it, and only while they are deployed.
+#[test]
+fn a_block_against_a_managed_mod_goes_against_the_players_mod() {
+    let game = modpack_game();
+    plant_mod_blocking(
+        &game,
+        "Blocks VP",
+        "blocks-vp",
+        &[(VOX_POPULI_ID, "(2) Vox Populi")],
+    );
+    plant_mod_blocking(
+        &game,
+        "More Luxuries",
+        "BE2D13EE-D18D-410E-8F04-7CD19CD99A98",
+        &[],
+    );
+    plant_mod_blocking(
+        &game,
+        "TechTree",
+        "e5cc542a-1580-4ca1-b44f-c29c985cf990",
+        &[],
+    );
+
+    let (offered, refused) = offer_for(&game, &with_flavor(Flavor::CommunityPatch, &[]));
+    assert_eq!(offered, ["Blocks VP", "More Luxuries", "TechTree"]);
+    assert_eq!(refused, Vec::<String>::new());
+
+    let (offered, refused) = offer_for(&game, &modpack_with(&["Blocks VP", "More Luxuries"]));
+    assert_eq!(offered, ["TechTree"]);
+    assert_eq!(
+        refused,
+        [
+            "Blocks VP: it can't run alongside Vox Populi",
+            "More Luxuries: it can't run alongside Vox Populi",
+        ]
+    );
+
+    // `(3a)` blocks this one, so it goes with EUI.
+    let (offered, refused) = offer_for(
+        &game,
+        &with_flavor(Flavor::VoxPopuli { eui: Eui::Enabled }, &[]),
+    );
+    assert_eq!(offered, Vec::<String>::new());
+    assert_eq!(
+        refused[2],
+        "TechTree: it can't run alongside VP - EUI Compatibility Files"
+    );
+}
+
+/// Ticks that clash anyway, loaded from settings say: the first in the selection's order stays
+/// and the other goes, whichever of them declares it.
+#[test]
+fn of_two_ticked_mods_that_clash_the_first_is_kept() {
+    let game = modpack_game();
+    plant_mod_blocking(&game, "Alpha", "alpha", &[("beta", "Beta")]);
+    plant_mod_blocking(&game, "Beta", "beta", &[]);
+
+    let (offered, refused) = offer_for(&game, &neither(&["Alpha", "Beta"]));
+    assert_eq!(offered, ["Alpha"]);
+    assert_eq!(refused, ["Beta: it can't run alongside Alpha"]);
+
+    let (offered, refused) = offer_for(&game, &neither(&["Beta", "Alpha"]));
+    assert_eq!(offered, ["Beta"]);
+    assert_eq!(refused, ["Alpha: it can't run alongside Beta"]);
+}
+
+/// Dropping a mod can resolve a clash, so they go one at a time: in a chain the middle one
+/// goes and both ends stay. Mods that block each other in a ring still settle, with one left.
+#[test]
+fn clashes_settle_one_at_a_time_and_always_finish() {
+    let game = modpack_game();
+    plant_mod_blocking(&game, "A", "a", &[("b", "B")]);
+    plant_mod_blocking(&game, "B", "b", &[("c", "C")]);
+    plant_mod_blocking(&game, "C", "c", &[]);
+    assert_eq!(
+        offer_for(&game, &neither(&["A", "B", "C"])).0,
+        ["A", "C"],
+        "B went, and nothing is left to hold against C"
+    );
+
+    let ring = modpack_game();
+    plant_mod_blocking(&ring, "A", "a", &[("b", "B")]);
+    plant_mod_blocking(&ring, "B", "b", &[("a", "A"), ("c", "C")]);
+    plant_mod_blocking(&ring, "C", "c", &[("a", "A")]);
+    let (offered, refused) = offer_for(&ring, &neither(&["A", "B", "C"]));
+    assert_eq!(offered, ["A"]);
+    assert_eq!(refused.len(), 2, "{refused:?}");
+}
+
+/// A mod that will not make it anyway holds nothing against a neighbour, and a mod that loses a
+/// clash stops counting for whatever depended on it.
+#[test]
+fn clashes_and_dependencies_settle_together() {
+    let game = modpack_game();
+    game.plant(
+        "MODS/A Needs VP/A Needs VP.modinfo",
+        "<Mod id=\"a-needs-vp\" version=\"1\"><Dependencies>\
+         <Mod id=\"8411a7a8-dad3-4622-a18e-fcc18324c799\" title=\"(2) Vox Populi\" />\
+         </Dependencies><Blocks><Mod id=\"beta\" title=\"Beta\" /></Blocks></Mod>",
+    );
+    plant_mod_blocking(&game, "Beta", "beta", &[("delta", "Delta")]);
+    plant_mod_blocking(&game, "Delta", "delta", &[]);
+    plant_mod_needing(&game, "Needs Delta", "needs-delta", &[("delta", "Delta")]);
+
+    // "A Needs VP" falls for want of Vox Populi, so Beta stays, and Delta loses to Beta.
+    let (offered, refused) = offer_for(
+        &game,
+        &neither(&["A Needs VP", "Beta", "Delta", "Needs Delta"]),
+    );
+    assert_eq!(offered, ["Beta"]);
+    assert_eq!(
+        refused,
+        [
+            "A Needs VP: it needs Vox Populi",
+            "Delta: it can't run alongside Beta",
+            "Needs Delta: it needs Delta",
+        ]
+    );
+}
+
+/// Only a mod can block a mod: `<Dlc>` and `<Game>` lines are about the game, and a mod listing
+/// its own ID does not stand in its own way.
+#[test]
+fn only_a_block_on_another_mod_counts() {
+    let game = modpack_game();
+    game.plant(
+        "MODS/Odd/Odd.modinfo",
+        "<Mod id=\"odd\" version=\"1\"><Blocks>\
+         <Dlc id=\"beta\" minversion=\"0\" maxversion=\"999\" />\
+         <Game id=\"beta\" />\
+         <Mod id=\"ODD\" title=\"Odd\" />\
+         </Blocks></Mod>",
+    );
+    plant_mod_blocking(&game, "Beta", "beta", &[]);
+
+    let (offered, refused) = offer_for(&game, &neither(&["Beta", "Odd"]));
+    assert_eq!(offered, ["Beta", "Odd"]);
+    assert_eq!(refused, Vec::<String>::new());
+}
+
+/// The build goes by the same rule and stops with the reason rather than baking both.
+#[test]
+fn the_build_will_not_bake_two_mods_that_clash() {
+    let game = modpack_game();
+    plant_mod_blocking(&game, "Alpha", "alpha", &[("beta", "Beta")]);
+    plant_mod_blocking(&game, "Beta", "beta", &[]);
+    let core = core_over(&game, FixtureModpackAssembler::ignored());
+
+    let before = game.files();
+    let plan = core
+        .plan(&neither(&["Alpha", "Beta"]), &game.folders())
+        .unwrap();
+    let error = core
+        .execute(&plan, &ProgressReporter::silent())
+        .expect_err("a pack is no place for two mods the game would not run together");
+    assert!(
+        error
+            .user_message()
+            .contains("\"Beta\" cannot be baked into the Modpack: it can't run alongside Alpha"),
+        "got: {}",
+        error.user_message()
+    );
+    assert_eq!(game.files(), before, "rule 7: the game is untouched");
+}
+
+/// The offer knows the managed mods' blocks from a table, because it is shown before the sources
+/// are in hand. The build reads the modinfos staged, so a block newer than the table still
+/// stops it, and it says who.
+#[test]
+fn the_build_reads_the_blocks_of_the_managed_mods_really_staged() {
+    let game = modpack_game();
+    plant_mod_blocking(
+        &game,
+        "Newer Clash",
+        "f1x7ure0-only-in-the-staged-modinfo0000",
+        &[],
+    );
+    let core = core_over(&game, FixtureModpackAssembler::ignored());
+
+    let (offered, _) = offer_for(&game, &modpack_with(&["Newer Clash"]));
+    assert_eq!(offered, ["Newer Clash"]);
+
+    let before = game.files();
+    let plan = core
+        .plan(&modpack_with(&["Newer Clash"]), &game.folders())
+        .unwrap();
+    let error = core
+        .execute(&plan, &ProgressReporter::silent())
+        .expect_err("the staged Vox Populi blocks this mod");
+    assert!(
+        error
+            .user_message()
+            .contains("it can't run alongside Vox Populi"),
+        "got: {}",
+        error.user_message()
+    );
+    assert_eq!(game.files(), before, "rule 7: the game is untouched");
+}
+
 /// A pick that can no longer be carried whole - edited since it was offered - stops the
 /// build before the game is touched, rather than baking in part of it.
 #[test]

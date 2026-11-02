@@ -214,7 +214,10 @@ impl ExtraModScan {
         for scanned in &self.mods {
             let refusal = match &scanned.facts {
                 Err(reason) => Some(reason.clone()),
-                Ok(facts) => facts.missing(&settled.selection),
+                Ok(facts) => settled
+                    .reason_dropped(&scanned.name)
+                    .map(str::to_owned)
+                    .or_else(|| facts.missing(&settled.selection)),
             };
             match refusal {
                 None => offer.offered.push(scanned.name.clone()),
@@ -256,6 +259,8 @@ struct ModFacts {
     ids: Vec<String>,
     /// What it cannot do without, as ID and title.
     needs: Vec<(String, String)>,
+    /// What it cannot run beside, as ID and title.
+    blocks: Vec<(String, String)>,
     /// The hook targets it carries ([`brought_ui_files`]) in a form that takes hooks
     /// ([`consumes_hooks`]), at any depth in any of its mod roots - the pack copies such a file
     /// into `UI/` from wherever it is.
@@ -266,11 +271,35 @@ struct ModFacts {
 }
 
 impl ModFacts {
-    /// Why this mod cannot be carried whole beside the rest of `selection` - `None` when it
+    /// Why this mod cannot go into the pack beside the rest of `selection` - `None` when it
     /// can. What it carries itself counts too.
     fn missing(&self, selection: &Selection) -> Option<String> {
+        self.lacks(selection).or_else(|| self.clash(selection))
+    }
+
+    /// What it needs that `selection` does not hold. A smaller selection can only lack more.
+    fn lacks(&self, selection: &Selection) -> Option<String> {
         self.missing_dependencies(selection)
             .or_else(|| self.missing_hook_target(selection))
+    }
+
+    /// Who in `selection` it cannot run beside, whichever of the two says so. Its own `<Blocks>`
+    /// name the other by a title; the other's name it by ID, so there it is called what the
+    /// selection calls it.
+    fn clash(&self, selection: &Selection) -> Option<String> {
+        let declared = self
+            .blocks
+            .iter()
+            .find(|(id, _)| !self.ids.contains(id) && selection.mod_ids.contains(id))
+            .map(|(_, title)| without_load_order(title));
+        let against = declared.or_else(|| {
+            selection
+                .blocked
+                .iter()
+                .find(|(id, _)| self.ids.contains(id))
+                .map(|(_, by)| by.as_str())
+        })?;
+        Some(format!("it can't run alongside {against}"))
     }
 
     fn missing_dependencies(&self, selection: &Selection) -> Option<String> {
@@ -322,6 +351,8 @@ struct Selection {
     brought: Vec<&'static str>,
     /// The mod IDs in it, lowercase.
     mod_ids: Vec<String>,
+    /// The mod IDs its mods block, lowercase, each with the name of the mod that does.
+    blocked: Vec<(String, String)>,
 }
 
 impl Selection {
@@ -329,18 +360,21 @@ impl Selection {
     /// because the offer is shown before the sources are in hand. See
     /// [`COMMUNITY_PATCH_BRINGS`] for why the build does not go by this.
     fn managed_by(configuration: &InstallConfiguration) -> Self {
-        Self {
-            brought: if configuration.flavor.includes_community_patch() {
-                COMMUNITY_PATCH_BRINGS.to_vec()
-            } else {
-                Vec::new()
-            },
-            mod_ids: crate::plan::deployments_for(configuration)
-                .iter()
-                .filter_map(|deployment| deployment.claimed.mod_id())
-                .map(str::to_owned)
-                .collect(),
+        let mut selection = Self::default();
+        if configuration.flavor.includes_community_patch() {
+            selection.add_targets(&COMMUNITY_PATCH_BRINGS);
         }
+        for deployment in crate::plan::deployments_for(configuration) {
+            let claimed = deployment.claimed;
+            selection
+                .mod_ids
+                .extend(claimed.mod_id().map(str::to_owned));
+            let name = without_load_order(claimed.folder_name());
+            for id in claimed.blocks() {
+                selection.blocked.push(((*id).to_owned(), name.to_owned()));
+            }
+        }
+        selection
     }
 
     /// What these staged managed folders really bring.
@@ -349,10 +383,17 @@ impl Selection {
         let mut selection = Self::default();
         for staged in staged_mods {
             selection.add_targets(&ui_files_brought_by(staged, &targets));
-            if let Some(path) = modinfo::find(staged)?
-                && let Some(id) = modinfo::mod_id(&read_file(&path)?)
-            {
-                selection.mod_ids.push(id.to_ascii_lowercase());
+            let Some(path) = modinfo::find(staged)? else {
+                continue;
+            };
+            let text = read_file(&path)?;
+            selection
+                .mod_ids
+                .extend(modinfo::mod_id(&text).map(|id| id.to_ascii_lowercase()));
+            let folder = staged.file_name().unwrap_or_default().to_string_lossy();
+            let name = without_load_order(&folder);
+            for blocked in modinfo::blocks(&text) {
+                selection.blocked.push((blocked.id, name.to_owned()));
             }
         }
         Ok(selection)
@@ -366,58 +407,98 @@ impl Selection {
         }
     }
 
-    fn add(&mut self, facts: &ModFacts) {
+    fn add(&mut self, name: &str, facts: &ModFacts) {
         self.add_targets(&facts.brings);
         self.mod_ids.extend(facts.ids.iter().cloned());
+        for (id, _) in &facts.blocks {
+            if !facts.ids.contains(id) {
+                self.blocked.push((id.clone(), name.to_owned()));
+            }
+        }
     }
 }
 
 /// What a selection settles into under the cross-mod rules.
 struct Settled<'a> {
-    /// The ticked mods the pack can carry whole beside each other, in `candidates` order.
-    kept: Vec<&'a str>,
+    /// The ticked mods the pack cannot carry beside the rest, each with the reason it had when it went. A clash can stop
+    /// being true once the other mod goes too, and a mod dropped for one is still dropped.
+    dropped: Vec<(&'a str, String)>,
     /// The managed set and the kept mods together.
     selection: Selection,
+}
+
+impl Settled<'_> {
+    fn reason_dropped(&self, name: &str) -> Option<&str> {
+        self.dropped
+            .iter()
+            .find(|(dropped, _)| *dropped == name)
+            .map(|(_, reason)| reason.as_str())
+    }
 }
 
 /// The cross-mod rules, applied to a whole selection: which of the `ticked` mods the pack can
 /// carry whole beside the `managed` set, and what they all add up to.
 ///
 /// Only a mod that is kept counts for the others, so dropping one can drop another that leant
-/// on it: repeated until nothing changes. What is left is the largest set that holds together -
-/// two mods that each bring what the other plugs into are both kept, because both files will
-/// be in the pack. `candidates` are the mods the per-mod rules let through; a ticked mod they
-/// refused is not among them and counts for nothing.
+/// on it: repeated until nothing changes. Two mods that each bring what the other plugs into
+/// are both kept, because both files will be in the pack. `candidates` are the mods the per-mod
+/// rules let through; a ticked mod they refused is not among them and counts for nothing.
+///
+/// What a mod lacks ([`ModFacts::lacks`]) has one answer, however the mods are ordered: losing
+/// a mod can only make others lack more. A clash ([`ModFacts::clash`]) does not - dropping
+/// either side settles it - so `ticked` order decides: a mod goes if it clashes with the managed
+/// set or an earlier mod, and managed mods always win. Clashes go one at a time, each after
+/// what lacks has settled, so a mod that was going anyway takes no neighbour with it and a chain
+/// loses only its middle. Every pass drops a mod or returns, so this ends.
 ///
 /// The offer and the build both go by this, so a pick the offer showed as whole is one the
-/// build will carry whole. The rules are hook targets and dependencies; another would join
-/// [`ModFacts`], [`Selection`] and [`ModFacts::missing`]. It has to be one that only ever takes
-/// mods away as the selection shrinks, or the largest set is no longer unique - which is why
-/// `<Blocks>` is not one of them.
+/// build will carry whole. Another rule would join [`ModFacts`] and [`Selection`], as a lack if
+/// it only gets worse as the selection shrinks and otherwise as a clash.
 fn settle_selection<'a>(
     candidates: &[(&'a str, &'a ModFacts)],
     ticked: &[String],
     managed: &Selection,
 ) -> Settled<'a> {
-    let mut kept: Vec<(&str, &ModFacts)> = candidates
+    let mut kept: Vec<(&str, &ModFacts)> = ticked
         .iter()
-        .filter(|(name, _)| ticked.iter().any(|picked| picked == name))
+        .filter_map(|picked| candidates.iter().find(|(name, _)| name == picked))
         .copied()
         .collect();
+    let mut dropped = Vec::new();
     loop {
         let mut selection = managed.clone();
-        for (_, facts) in &kept {
-            selection.add(facts);
+        for (name, facts) in &kept {
+            selection.add(name, facts);
         }
         let before = kept.len();
-        kept.retain(|(_, facts)| facts.missing(&selection).is_none());
-        if kept.len() == before {
-            return Settled {
-                kept: kept.into_iter().map(|(name, _)| name).collect(),
-                selection,
-            };
+        kept.retain(|(name, facts)| match facts.lacks(&selection) {
+            Some(reason) => {
+                dropped.push((*name, reason));
+                false
+            }
+            None => true,
+        });
+        if kept.len() != before {
+            continue;
         }
+        let Some((index, reason)) = first_clash(&kept, managed) else {
+            return Settled { dropped, selection };
+        };
+        let (name, _) = kept.remove(index);
+        dropped.push((name, reason));
     }
+}
+
+/// The first of `kept` to clash with the managed set or a mod before it.
+fn first_clash(kept: &[(&str, &ModFacts)], managed: &Selection) -> Option<(usize, String)> {
+    let mut before = managed.clone();
+    for (index, (name, facts)) in kept.iter().enumerate() {
+        if let Some(reason) = facts.clash(&before) {
+            return Some((index, reason));
+        }
+        before.add(name, facts);
+    }
+    None
 }
 
 /// Why a folder in MODS cannot be baked into a Modpack.
@@ -456,6 +537,7 @@ fn bakeable_mod_roots(folder: &Path) -> Result<(Vec<PathBuf>, ModFacts), Unbakea
         facts.plugs_into.extend(root_facts.plugs_into);
         facts.ids.extend(root_facts.ids);
         facts.needs.extend(root_facts.needs);
+        facts.blocks.extend(root_facts.blocks);
     }
     Ok((roots, facts))
 }
@@ -517,7 +599,11 @@ fn why_not_bakeable(root: &Path) -> Result<ModFacts, Unbakeable> {
         ids: id.into_iter().collect(),
         needs: modinfo::dependencies(&text)
             .into_iter()
-            .map(|dependency| (dependency.id, dependency.title))
+            .map(|named| (named.id, named.title))
+            .collect(),
+        blocks: modinfo::blocks(&text)
+            .into_iter()
+            .map(|named| (named.id, named.title))
             .collect(),
         ..ModFacts::default()
     };
@@ -692,10 +778,9 @@ pub(crate) fn assemble(
         .map(|(name, _, _, facts)| (name.as_str(), facts))
         .collect();
     let settled = settle_selection(&candidates, &plan.configuration.extra_mods, &managed);
-    for (name, from, _, facts) in &picks {
-        if !settled.kept.contains(&name.as_str()) {
-            let reason = facts.missing(&settled.selection).unwrap_or_default();
-            return Err(not_bakeable(name, from, &reason));
+    for (name, from, _, _) in &picks {
+        if let Some(reason) = settled.reason_dropped(name) {
+            return Err(not_bakeable(name, from, reason));
         }
     }
 
