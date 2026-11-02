@@ -672,7 +672,12 @@ impl InstallerApp {
         // panel's own margin is gap enough. The 6-point step between the panels below is
         // what separates sections from each other, not the header from the page.
 
-        self.source_section(ui);
+        // Greyed out, not hidden, while the Flavor takes nothing from a source: nothing moves,
+        // and what was chosen here is still chosen when a Flavor with the Community Patch is
+        // picked again.
+        ui.add_enabled_ui(self.flavor.includes_community_patch(), |ui| {
+            self.source_section(ui);
+        });
         ui.add_space(6.0);
 
         let mut edited = false;
@@ -833,20 +838,24 @@ impl InstallerApp {
             if theme.changed() {
                 chosen = true;
             }
-            // The third file the game owns, on the same promise as the two above.
-            let intro = deco::checkbox(
-                ui,
-                &mut self.vp_intro,
-                "Swap the intro for the Vox Populi one",
-            )
-            .on_hover_text(
-                "Replaces Brave New World's opening movie with a short Vox Populi intro \
-                     ending on the Civilization V logo. Your original file is saved, and put \
-                     back if you clear this box or uninstall.",
-            );
-            if intro.changed() {
-                chosen = true;
-            }
+            // The third file the game owns, on the same promise as the two above. Greyed out
+            // without the Community Patch, which the Core treats as the box being clear; the
+            // tick stays for when a Flavor with it is picked again.
+            chosen |= ui
+                .add_enabled_ui(self.flavor.includes_community_patch(), |ui| {
+                    deco::checkbox(
+                        ui,
+                        &mut self.vp_intro,
+                        "Swap the intro for the Vox Populi one",
+                    )
+                    .on_hover_text(
+                        "Replaces Brave New World's opening movie with a short Vox Populi \
+                         intro ending on the Civilization V logo. Your original file is saved, \
+                         and put back if you clear this box or uninstall.",
+                    )
+                    .changed()
+                })
+                .inner;
             ui.add_space(4.0);
             // How the selection reaches the game. Two radios, not a checkbox:
             // "as mods" and "as a modpack" are both real things a player asks for by name.

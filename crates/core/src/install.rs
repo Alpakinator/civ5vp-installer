@@ -824,7 +824,7 @@ impl Core {
         plan: &Plan,
         progress: &ProgressReporter,
     ) -> Result<(), InstallError> {
-        let wanted = plan.configuration.opening_movie == crate::OpeningMovie::VoxPopuli;
+        let wanted = plan.configuration.plays_the_vox_populi_intro();
         self.settle_carried_replacement(
             plan,
             ReplacedFile::OpeningMovie,

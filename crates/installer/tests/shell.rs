@@ -603,6 +603,55 @@ fn a_mod_blocked_by_a_ticked_mod_comes_back_when_that_is_unticked() {
     assert!(harness.query_by_label(reason).is_none());
 }
 
+/// Neither takes nothing from the Installation Source and has no use for the Vox Populi intro,
+/// so both are greyed out where they stand, and both are as the player left them when a Flavor
+/// with the Community Patch comes back.
+#[test]
+fn neither_greys_out_the_source_and_the_intro_and_keeps_them() {
+    use egui_kittest::kittest::NodeT as _;
+    let game = TempGame::new();
+    let intro = "Swap the intro for the Vox Populi one";
+    let source_rows = [
+        "Download from GitHub - pick a version",
+        "My own Community-Patch-DLL checkout - Dev mode",
+        "Compile the DLL myself",
+    ];
+    let mut harness = harness_over(game.launch(&game.locations()));
+    harness.step();
+    harness.get_by_label(intro).click();
+    harness.step();
+    harness
+        .get_by_label("Install as a modpack - loads automatically, works in multiplayer")
+        .click();
+    harness.step();
+    for row in source_rows {
+        assert!(!harness.get_by_label(row).accesskit_node().is_disabled());
+    }
+
+    harness
+        .get_by_label("Neither - only your own mods, as a modpack")
+        .click();
+    harness.step();
+    harness.step();
+    assert!(harness.get_by_label(intro).accesskit_node().is_disabled());
+    assert!(is_ticked(&mut harness, intro), "the tick is kept for later");
+    for row in source_rows {
+        assert!(
+            harness.get_by_label(row).accesskit_node().is_disabled(),
+            "{row}"
+        );
+    }
+
+    harness.get_by_label("Community Patch + Vox Populi").click();
+    harness.step();
+    harness.step();
+    assert!(!harness.get_by_label(intro).accesskit_node().is_disabled());
+    assert!(is_ticked(&mut harness, intro));
+    for row in source_rows {
+        assert!(!harness.get_by_label(row).accesskit_node().is_disabled());
+    }
+}
+
 /// Two ticked mods with a file of the same name: a note under each, and neither is disabled.
 #[test]
 fn a_note_appears_under_ticked_mods_that_share_a_file() {

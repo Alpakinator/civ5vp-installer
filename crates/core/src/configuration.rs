@@ -267,6 +267,16 @@ pub struct InstallConfiguration {
 }
 
 impl InstallConfiguration {
+    /// Should the Vox Populi intro be in place after this Deployment?
+    ///
+    /// Not with Own Mods Only, whatever [`Self::opening_movie`] says: a Vox Populi intro has no
+    /// place in a game without it. That is the same as the box being clear, so an intro swapped
+    /// in earlier goes back. The field itself stays as it was, and the choice returns with a
+    /// Flavor that has the Community Patch.
+    pub fn plays_the_vox_populi_intro(&self) -> bool {
+        self.opening_movie == OpeningMovie::VoxPopuli && self.flavor.includes_community_patch()
+    }
+
     /// Will this configuration have to compile something?
     ///
     /// The one question that decides whether the Toolchain Bootstrap's multi-gigabyte

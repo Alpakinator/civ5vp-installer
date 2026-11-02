@@ -10,7 +10,9 @@ publishes binaries for.
 
 - **A modpack of only your own mods**: "Neither - only your own mods, as a modpack" builds a
   modpack from the mods you tick in your MODS folder, with neither Community Patch nor Vox
-  Populi. Nothing is downloaded or compiled for it; the game runs its own DLL.
+  Populi. Nothing is downloaded or compiled for it; the game runs its own DLL. "Install from"
+  and the Vox Populi intro are greyed out while it is selected, and an intro already swapped in
+  goes back.
 
 ### Changed
 

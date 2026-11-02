@@ -28,6 +28,13 @@ Populi. That is now a third Flavor, **Own Mods Only**.
   goes into `(1)`, and there is no `(1)`. The shell greys the checkbox out
   (`Flavor::includes_community_patch`) but keeps its tick for when a Flavor with a DLL is
   picked again.
+- **The "Install from" panel is greyed out** while nothing comes from it, in place and with its
+  values kept. The player sees what will not be used, and nothing moves.
+- **The Vox Populi intro is treated as cleared.** The shell greys the checkbox out and keeps its
+  tick; `InstallConfiguration::plays_the_vox_populi_intro` is what the Core goes by, so a saved
+  configuration asking for the intro deploys nothing, and an intro swapped in earlier goes back
+  exactly as it does when the box is cleared. Silencing the menu theme stays available: that
+  option is not Vox Populi's.
 - Switching an existing Vox Populi Modpack to Own Mods Only replaces the pack wholesale, as
   any Modpack Deployment does, and removes `VPUI`, `UI_bc1` and the VPUI tips like any other
   Flavor that does not include them. MODS is still only read.

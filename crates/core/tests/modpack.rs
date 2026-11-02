@@ -1370,6 +1370,41 @@ fn the_build_reads_the_blocks_of_the_managed_mods_really_staged() {
     assert_eq!(game.files(), before, "rule 7: the game is untouched");
 }
 
+/// Without the Community Patch the Vox Populi intro has no place: a saved configuration that
+/// still asks for it deploys nothing, and an intro swapped in earlier goes the way it goes when
+/// the box is cleared - the choice itself survives for when a Flavor with it is picked again.
+#[test]
+fn neither_treats_the_vox_populi_intro_as_cleared() {
+    let game = modpack_game();
+    plant_players_own_mods(&game);
+    let movie = "Assets/DLC/Expansion2/Civ5XP2_Opening_Movie_en_US.wmv";
+    let original = "Brave New World's own opening movie";
+    game.plant(movie, original);
+    let core = core_over(&game, FixtureModpackAssembler::ignored());
+    let neither = InstallConfiguration {
+        opening_movie: civ5vp_core::OpeningMovie::VoxPopuli,
+        ..own_mods_only_modpack()
+    };
+
+    // Never swapped: left alone.
+    let plan = core.plan(&neither, &game.folders()).unwrap();
+    core.execute(&plan, &ProgressReporter::silent()).unwrap();
+    assert_eq!(game.read(movie), original);
+
+    // Swapped by an earlier install: put back.
+    let swapped = InstallConfiguration {
+        opening_movie: civ5vp_core::OpeningMovie::VoxPopuli,
+        ..vox_populi_modpack()
+    };
+    let plan = core.plan(&swapped, &game.folders()).unwrap();
+    core.execute(&plan, &ProgressReporter::silent()).unwrap();
+    assert!(std::fs::read(game.game_root().join(movie)).unwrap() != original.as_bytes());
+
+    let plan = core.plan(&neither, &game.folders()).unwrap();
+    core.execute(&plan, &ProgressReporter::silent()).unwrap();
+    assert_eq!(game.read(movie), original);
+}
+
 /// A small mod in MODS carrying these files.
 fn plant_mod_with_files(game: &GameFixture, folder: &str, files: &[&str]) {
     game.plant(
