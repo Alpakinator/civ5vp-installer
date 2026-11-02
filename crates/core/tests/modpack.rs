@@ -325,6 +325,34 @@ fn a_modpack_deployment_refuses_a_modded_cache() {
     assert_eq!(game.files(), before, "rule 7: the game is untouched");
 }
 
+/// Sync clears the cache, so a cache that exists while a Modpack is deployed was written by a
+/// launch with that pack in it, whatever the database says: a pack of only the player's own
+/// mods leaves no Community Patch table behind and activates no mod. Here no launch of the game
+/// can help, so the sentence has to say to uninstall first.
+#[test]
+fn a_cache_written_with_a_modpack_deployed_cannot_be_the_base() {
+    let game = modpack_game();
+    game.plant("DLC/VP_MODPACK/MPModsPack.Civ5Pkg", "a deployed pack");
+    let before = game.files();
+    let core = core_over(&game, FixtureModpackAssembler::ignored());
+
+    let plan = core.plan(&vox_populi_modpack(), &game.folders()).unwrap();
+    let error = core
+        .execute(&plan, &ProgressReporter::silent())
+        .expect_err("the cache has the deployed Modpack in it");
+
+    assert!(
+        error.user_message().contains("Uninstall"),
+        "got: {}",
+        error.user_message()
+    );
+    assert_eq!(game.files(), before, "rule 7: the game is untouched");
+    assert!(
+        !game.work_dir().join("modpack-base").exists(),
+        "it must not be kept as the base of later builds"
+    );
+}
+
 /// The snapshot outlives the cache: Sync clears the game's cache folder, and once the
 /// Modpack is deployed every later launch would rebuild the cache with the Modpack baked
 /// in - so an upgrade must run from the snapshot, and does.
@@ -1554,6 +1582,11 @@ fn a_modpack_of_only_the_players_own_mods_takes_nothing_from_the_installation_so
     game.plant("DLC/VPUI/VPUI.Civ5Pkg", "Vox Populi's interface");
     game.plant("Text/VPUI_tips_en_us.xml", "Vox Populi's loading tips");
     game.plant("MODS/(1) Community Patch/existing.txt", "left alone");
+    // That Modpack left the snapshot it was built from.
+    let snapshot = game.work_dir().join("modpack-base");
+    std::fs::create_dir_all(&snapshot).unwrap();
+    std::fs::write(snapshot.join("Civ5DebugDatabase.db"), "pristine base").unwrap();
+    std::fs::write(snapshot.join("Localization-Merged.db"), "pristine text").unwrap();
     let (assembler, jobs) = FixtureModpackAssembler::new();
     let core = Core::new(
         Box::new(support::FailingSourceProvider),

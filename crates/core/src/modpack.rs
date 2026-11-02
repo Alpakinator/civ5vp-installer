@@ -979,6 +979,10 @@ fn escape_xml(text: &str) -> String {
 
 /// The snapshot of the game's pristine databases, taking it now if the game's cache can
 /// provide one and it has not been taken before.
+///
+/// A snapshot that exists is not questioned: it has no mod database beside it to ask. So one
+/// taken by a build older than ADR-0011 from a cache modded without the Community Patch stays in
+/// use until it is deleted.
 fn ensure_base_snapshot(
     work_dir: &Path,
     folders: &GameFolders,
@@ -990,6 +994,21 @@ fn ensure_base_snapshot(
     let text = snapshot.join(TEXT_BASE_FILE_NAME);
     if gameplay.is_file() && text.is_file() {
         return Ok((gameplay, text));
+    }
+
+    // Sync clears the cache, so anything in it now was written with this pack loaded - and a
+    // pack leaves no mark a database check can see: it activates no mod, and without the
+    // Community Patch it adds no table of its. Launching the game again would change nothing.
+    let deployed = ClaimedFolder::Modpack.path_in(folders);
+    if deployed.is_dir() {
+        return Err(InstallError::UnsupportedConfiguration {
+            message: "Building a Modpack needs a fresh copy of the game's own data, and with a \
+                      Modpack installed the game no longer has one. Click Uninstall, start \
+                      Civilization V, wait for the main menu, quit the game, and try again. \
+                      Your game is unchanged."
+                .to_owned(),
+            detail: format!("no base snapshot, and a Modpack at {}", deployed.display()),
+        });
     }
 
     let Some(cache) = folders.cache() else {

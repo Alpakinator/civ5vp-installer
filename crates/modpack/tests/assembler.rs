@@ -69,18 +69,109 @@ fn job_in(dir: &Path, updates: &[(&str, &str)]) -> ModpackDatabaseJob {
 
 // ---------------------------------------------------------------- cache_state
 
+const POPULATED_GAMEPLAY: &str = "CREATE TABLE Civilizations (Type text); \
+     INSERT INTO Civilizations VALUES ('CIVILIZATION_ROME');";
+
+/// The game's mod database beside the gameplay one, with one row per `(enabled, activated)`
+/// and the columns the game gives that table.
+fn plant_mods_database(cache: &Path, mods: &[(i64, i64)]) -> PathBuf {
+    let path = cache.join("Civ5ModsDatabase.db");
+    let rows: String = mods
+        .iter()
+        .map(|(enabled, activated)| {
+            format!(
+                "INSERT INTO Mods (ModID, Enabled, Activated) VALUES ('m', {enabled}, {activated});"
+            )
+        })
+        .collect();
+    create_db(
+        &path,
+        &format!(
+            "CREATE TABLE Mods(RowID INTEGER PRIMARY KEY, ModID TEXT NOT NULL, \
+             Enabled BOOL DEFAULT 0, Activated BOOL DEFAULT 0); {rows}"
+        ),
+    );
+    path
+}
+
+/// The order the game writes them in on a launch: the mod database, then the gameplay one.
+fn write_the_gameplay_database_last(mods_database: &Path, gameplay: &Path) {
+    let then = fs::metadata(gameplay).unwrap().modified().unwrap();
+    fs::File::options()
+        .write(true)
+        .open(mods_database)
+        .unwrap()
+        .set_modified(then - std::time::Duration::from_secs(10))
+        .unwrap();
+}
+
 #[test]
 fn a_pristine_cache_offers_itself_as_the_modpack_base() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("Civ5DebugDatabase.db");
-    create_db(
-        &db,
-        "CREATE TABLE Civilizations (Type text); INSERT INTO Civilizations VALUES ('CIVILIZATION_ROME');",
-    );
+    create_db(&db, POPULATED_GAMEPLAY);
+    // Ticked in the Mods menu in some earlier session, which is not the same as activated:
+    // every real pristine cache looked at had Enabled rows and no Activated ones.
+    let mods = plant_mods_database(dir.path(), &[(1, 0), (1, 0), (0, 0)]);
+    write_the_gameplay_database_last(&mods, &db);
 
     let state = SqliteModpackAssembler::new().cache_state(&db).unwrap();
 
     assert_eq!(state, CacheState::Pristine);
+}
+
+/// No Community Patch in sight: this is the modded cache the old tell called pristine, and
+/// that then served as the base of every Modpack after it.
+#[test]
+fn a_cache_written_with_any_mod_activated_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("Civ5DebugDatabase.db");
+    create_db(&db, POPULATED_GAMEPLAY);
+    let mods = plant_mods_database(dir.path(), &[(1, 0), (1, 1)]);
+    write_the_gameplay_database_last(&mods, &db);
+
+    let state = SqliteModpackAssembler::new().cache_state(&db).unwrap();
+
+    assert_eq!(state, CacheState::Modded);
+}
+
+/// The mod database moved after the gameplay one was written, so its `Activated` column no
+/// longer speaks for that file: a real cache was caught with most rows flipped back to 0 and
+/// the gameplay database still modded.
+#[test]
+fn a_cache_older_than_the_mod_database_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("Civ5DebugDatabase.db");
+    create_db(&db, POPULATED_GAMEPLAY);
+    let mods = plant_mods_database(dir.path(), &[(1, 0)]);
+    write_the_gameplay_database_last(&db, &mods);
+
+    let state = SqliteModpackAssembler::new().cache_state(&db).unwrap();
+
+    assert_eq!(state, CacheState::Modded);
+}
+
+/// Without the mod database nothing vouches for the file, and the game writes one on every
+/// launch, so the way out is the same sentence as for an unreadable cache.
+#[test]
+fn a_cache_with_no_usable_mod_database_tells_the_user_to_launch_the_game() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("Civ5DebugDatabase.db");
+    create_db(&db, POPULATED_GAMEPLAY);
+    let assembler = SqliteModpackAssembler::new();
+
+    let missing = assembler.cache_state(&db).unwrap_err();
+    assert!(missing.message().contains("start Civilization V"));
+
+    let mods = dir.path().join("Civ5ModsDatabase.db");
+    fs::write(&mods, "this is not a database").unwrap();
+    let garbled = assembler.cache_state(&db).unwrap_err();
+    assert!(garbled.message().contains("start Civilization V"));
+
+    fs::remove_file(&mods).unwrap();
+    create_db(&mods, "CREATE TABLE Mods (ModID text);");
+    let unknown = assembler.cache_state(&db).unwrap_err();
+    assert!(unknown.message().contains("start Civilization V"));
 }
 
 #[test]

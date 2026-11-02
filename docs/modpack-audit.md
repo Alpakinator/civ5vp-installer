@@ -71,8 +71,10 @@ not run for this audit.
   current Assets tree while the base may predate a newly installed DLC. A robust
   solution needs base provenance and refresh rules, not another list of text
   filenames. This remains an architectural follow-up.
-- **Pristine-cache detection is a VP-specific heuristic.** Absence of
-  `CustomModOptions` does not prove that no unrelated mod ever modified a cache.
+- **Pristine-cache detection is evidence, not proof.** Absence of
+  `CustomModOptions` said nothing about an unrelated mod. ADR-0011 adds the game's
+  own `Activated` record and a deployed-Modpack check, and lists what stays
+  unverified.
 - **Runtime database processing is not simulated.** The DLL performs ID remapping
   and other database post-processing when the game loads. The upstream Maker
   runs inside that environment; the offline tests do not exercise the game engine.

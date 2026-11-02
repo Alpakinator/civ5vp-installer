@@ -10,9 +10,23 @@ use std::path::Path;
 use civ5vp_core::{BoundaryError, CacheState};
 use rusqlite::{Connection, OpenFlags};
 
-/// The tell the two states are told apart by: `CustomModOptions` is created by the Community
-/// Patch's own SQL, so its presence means a modded session wrote the cache. A pristine cache
-/// lacks it but still holds the full vanilla merge - `Civilizations`, populated.
+/// The game's record of which mods are installed, enabled and activated, beside the gameplay
+/// database in the cache folder.
+const MODS_DATABASE_FILE_NAME: &str = "Civ5ModsDatabase.db";
+
+/// Three things have to hold before the file is called pristine (ADR-0011):
+///
+/// - no `CustomModOptions`, which the Community Patch's own SQL creates;
+/// - no mod `Activated` in the game's mod database - `Enabled` says nothing, it is only the tick
+///   in the Mods menu, and pristine caches have plenty;
+/// - the mod database not written after the gameplay database, or its `Activated` column no
+///   longer speaks for that file.
+///
+/// It must also hold the full vanilla merge - `Civilizations`, populated. A cache with no
+/// usable mod database has nothing to vouch for it and is treated like an unreadable one: the
+/// game writes one on every launch.
+///
+/// Both files are only read.
 pub(crate) fn cache_state(gameplay_db: &Path) -> Result<CacheState, BoundaryError> {
     let unreadable = |detail: String| {
         BoundaryError::new(
@@ -60,5 +74,31 @@ pub(crate) fn cache_state(gameplay_db: &Path) -> Result<CacheState, BoundaryErro
         )));
     }
 
+    if mods_had_a_hand_in(gameplay_db).map_err(unreadable)? {
+        return Ok(CacheState::Modded);
+    }
     Ok(CacheState::Pristine)
+}
+
+/// Does the mod database beside `gameplay_db` say mods were active, or has it moved on since
+/// that file was written? The error is the detail for the log.
+fn mods_had_a_hand_in(gameplay_db: &Path) -> Result<bool, String> {
+    let path = gameplay_db.with_file_name(MODS_DATABASE_FILE_NAME);
+    let failed = |error: &dyn std::fmt::Display| format!("read {}: {error}", path.display());
+
+    let conn = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|error| failed(&error))?;
+    let activated: i64 = conn
+        .query_row("SELECT COUNT(*) FROM Mods WHERE Activated", [], |row| {
+            row.get(0)
+        })
+        .map_err(|error| failed(&error))?;
+    if activated > 0 {
+        return Ok(true);
+    }
+
+    let written = |file: &Path| std::fs::metadata(file).and_then(|meta| meta.modified());
+    let mods_written = written(&path).map_err(|error| failed(&error))?;
+    let gameplay_written = written(gameplay_db).map_err(|error| failed(&error))?;
+    Ok(mods_written > gameplay_written)
 }

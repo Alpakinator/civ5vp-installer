@@ -33,6 +33,9 @@ publishes binaries for.
   Vox Populi could be baked into a pack that did not have Vox Populi; it is now refused with
   what is missing, for instance "It needs Vox Populi", until the selection holds it. Your own
   ticked mods count, and so do the managed mods your choices install.
+- Modpack: game data changed by a mod other than the Community Patch is no longer saved as
+  the clean copy every later modpack is built from. Mods would otherwise be applied twice,
+  without any error. If you see this after an update, start the game once without mods.
 - Windows: compiled builds failed to link, because the `/DEF` path was split on the spaces in
   the installer's data folder (issue #1). Releases were unaffected.
 

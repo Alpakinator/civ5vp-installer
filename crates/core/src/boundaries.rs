@@ -241,7 +241,8 @@ pub trait ToolchainRunner: Send + Sync {
 pub enum CacheState {
     /// The vanilla base+DLC merge - usable as the Modpack base.
     Pristine,
-    /// A modded session wrote this file; the user must launch the game unmodded once.
+    /// A session with mods active wrote this file, as far as can be told from the cache
+    /// folder (ADR-0011); the user must launch the game unmodded once.
     Modded,
 }
 
