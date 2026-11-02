@@ -52,7 +52,8 @@ pub struct InstallOutcome {
     /// Claimed Files deployed, in a fixed order.
     pub deployed_files: Vec<ClaimedFile>,
     /// Where the DLL ended up in the game - `None` for a Flavor without the Community
-    /// Patch, which deploys no DLL.
+    /// Patch, which has none of its own to deploy. A DLL from a picked mod is part of that
+    /// mod, in the pack, and not reported here.
     pub built_dll: Option<PathBuf>,
     /// What this Deployment did to the game's Lua engine.
     pub engine: EngineOutcome,

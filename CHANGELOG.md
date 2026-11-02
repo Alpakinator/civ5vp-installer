@@ -10,9 +10,13 @@ publishes binaries for.
 
 - **A modpack of only your own mods**: "Neither - only your own mods, as a modpack" builds a
   modpack from the mods you tick in your MODS folder, with neither Community Patch nor Vox
-  Populi. Nothing is downloaded or compiled for it; the game runs its own DLL. "Install from"
-  and the Vox Populi intro are greyed out while it is selected, and an intro already swapped in
-  goes back.
+  Populi. Nothing is downloaded or compiled for it. "Install from" and the Vox Populi intro are
+  greyed out while it is selected, and an intro already swapped in goes back.
+- Modpack: with Neither selected, a mod that brings its own `CvGameCore_Expansion2.dll` can be
+  baked in, one at a time: ticking it greys out the others that have one, and the file goes into
+  the pack with the mod. Whether the game really loads a DLL from there for such a mod has not
+  been tried in game yet. Without one, the game runs its own DLL. Beside Community Patch or Vox
+  Populi these mods stay refused.
 
 ### Changed
 

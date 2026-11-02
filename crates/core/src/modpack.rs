@@ -327,7 +327,7 @@ impl ExtraModScan {
                 Ok(facts) => settled
                     .reason_dropped(&scanned.name)
                     .map(str::to_owned)
-                    .or_else(|| facts.missing(&settled.selection)),
+                    .or_else(|| facts.missing(&scanned.name, &settled.selection)),
             };
             match refusal {
                 None => offer.offered.push(scanned.name.clone()),
@@ -398,13 +398,16 @@ struct ModFacts {
     /// Each entry point whose target only a mod can bring: the entry point's file, and the
     /// target it plugs into.
     plugs_into: Vec<(String, &'static str)>,
+    /// The game DLL it carries, relative to its folder. At most one: more is a per-mod refusal.
+    dll: Option<PathBuf>,
 }
 
 impl ModFacts {
-    /// Why this mod cannot go into the pack beside the rest of `selection` - `None` when it
-    /// can. What it carries itself counts too.
-    fn missing(&self, selection: &Selection) -> Option<String> {
-        self.lacks(selection).or_else(|| self.clash(selection))
+    /// Why the mod `name` cannot go into the pack beside the rest of `selection` - `None` when
+    /// it can. What it carries itself counts too.
+    fn missing(&self, name: &str, selection: &Selection) -> Option<String> {
+        self.lacks(selection)
+            .or_else(|| self.clash(name, selection))
     }
 
     /// What it needs that `selection` does not hold. A smaller selection can only lack more.
@@ -413,10 +416,15 @@ impl ModFacts {
             .or_else(|| self.missing_hook_target(selection))
     }
 
-    /// Who in `selection` it cannot run beside, whichever of the two says so. Its own `<Blocks>`
-    /// name the other by a title; the other's name it by ID, so there it is called what the
-    /// selection calls it.
-    fn clash(&self, selection: &Selection) -> Option<String> {
+    /// Who in `selection` the mod `name` cannot run beside.
+    fn clash(&self, name: &str, selection: &Selection) -> Option<String> {
+        self.blocked(selection)
+            .or_else(|| self.second_dll(name, selection))
+    }
+
+    /// Who blocks it, whichever of the two says so. Its own `<Blocks>` name the other by a
+    /// title; the other's name it by ID, so there it is called what the selection calls it.
+    fn blocked(&self, selection: &Selection) -> Option<String> {
         let declared = self
             .blocks
             .iter()
@@ -430,6 +438,22 @@ impl ModFacts {
                 .map(|(_, by)| by.as_str())
         })?;
         Some(format!("it can't run alongside {against}"))
+    }
+
+    /// The game loads one DLL: is that place taken by something other than this mod?
+    fn second_dll(&self, name: &str, selection: &Selection) -> Option<String> {
+        self.dll.as_ref()?;
+        match selection.dll_owner.as_ref()? {
+            DllOwner::CommunityPatch => Some(
+                "it brings its own game DLL, and a pack with the Community Patch runs the \
+                 Community Patch's"
+                    .to_owned(),
+            ),
+            DllOwner::Mod(owner) if owner != name => Some(format!(
+                "it brings its own game DLL, and so does {owner}: only one can load"
+            )),
+            DllOwner::Mod(_) => None,
+        }
     }
 
     fn missing_dependencies(&self, selection: &Selection) -> Option<String> {
@@ -474,6 +498,14 @@ fn without_load_order(title: &str) -> &str {
         .map_or(title, |(_, name)| name)
 }
 
+/// Whose game DLL a pack runs, when it is not the game's own. A kind and not a name, so a
+/// player's mod in a folder called "Community Patch" is not taken for the real thing.
+#[derive(Debug, Clone)]
+enum DllOwner {
+    CommunityPatch,
+    Mod(String),
+}
+
 /// What a selection puts in the pack, as far as the cross-mod rules care.
 #[derive(Debug, Clone, Default)]
 struct Selection {
@@ -483,14 +515,28 @@ struct Selection {
     mod_ids: Vec<String>,
     /// The mod IDs its mods block, lowercase, each with the name of the mod that does.
     blocked: Vec<(String, String)>,
+    /// Who brings the game DLL. The first to bring one keeps the place.
+    dll_owner: Option<DllOwner>,
 }
 
 impl Selection {
+    /// A selection of nothing yet: only the Flavor has a say in it. The offer and the build
+    /// agree on this part, because a Flavor with the Community Patch has a DLL whichever way
+    /// it arrives, built or Shipped, and at offer time it may not have arrived.
+    fn for_flavor(flavor: &crate::Flavor) -> Self {
+        Self {
+            dll_owner: flavor
+                .includes_community_patch()
+                .then_some(DllOwner::CommunityPatch),
+            ..Self::default()
+        }
+    }
+
     /// What the managed set of `configuration` will bring, told from the configuration alone
     /// because the offer is shown before the sources are in hand. See
     /// [`COMMUNITY_PATCH_BRINGS`] for why the build does not go by this.
     fn managed_by(configuration: &InstallConfiguration) -> Self {
-        let mut selection = Self::default();
+        let mut selection = Self::for_flavor(&configuration.flavor);
         if configuration.flavor.includes_community_patch() {
             selection.add_targets(&COMMUNITY_PATCH_BRINGS);
         }
@@ -507,10 +553,10 @@ impl Selection {
         selection
     }
 
-    /// What these staged managed folders really bring.
-    fn staged(staged_mods: &[PathBuf]) -> Result<Self, InstallError> {
+    /// What these staged managed folders of a `flavor` really bring.
+    fn staged(staged_mods: &[PathBuf], flavor: &crate::Flavor) -> Result<Self, InstallError> {
         let targets = brought_ui_files();
-        let mut selection = Self::default();
+        let mut selection = Self::for_flavor(flavor);
         for staged in staged_mods {
             selection.add_targets(&ui_files_brought_by(staged, &targets));
             let Some(path) = modinfo::find(staged)? else {
@@ -544,6 +590,10 @@ impl Selection {
             if !facts.ids.contains(id) {
                 self.blocked.push((id.clone(), name.to_owned()));
             }
+        }
+        if facts.dll.is_some() {
+            self.dll_owner
+                .get_or_insert_with(|| DllOwner::Mod(name.to_owned()));
         }
     }
 }
@@ -688,7 +738,8 @@ fn overlaps<'a>(managed: &'a [Carrier<'a>], kept: &'a [Carrier<'a>]) -> Vec<Over
 /// either side settles it - so `ticked` order decides: a mod goes if it clashes with the managed
 /// set or an earlier mod, and managed mods always win. Clashes go one at a time, each after
 /// what lacks has settled, so a mod that was going anyway takes no neighbour with it and a chain
-/// loses only its middle. Every pass drops a mod or returns, so this ends.
+/// loses only its middle. Every pass drops a mod or returns, so this ends. A second game DLL
+/// ([`ModFacts::second_dll`]) is a clash like any other: either side going settles it.
 ///
 /// The offer and the build both go by this, so a pick the offer showed as whole is one the
 /// build will carry whole. Another rule would join [`ModFacts`] and [`Selection`], as a lack if
@@ -736,7 +787,7 @@ fn settle_selection<'a>(
 fn first_clash(kept: &[(&str, &ModFacts)], managed: &Selection) -> Option<(usize, String)> {
     let mut before = managed.clone();
     for (index, (name, facts)) in kept.iter().enumerate() {
-        if let Some(reason) = facts.clash(&before) {
+        if let Some(reason) = facts.clash(name, &before) {
             return Some((index, reason));
         }
         before.add(name, facts);
@@ -783,6 +834,20 @@ fn bakeable_mod_roots(folder: &Path) -> Result<(Vec<PathBuf>, ModFacts), Unbakea
         facts.blocks.extend(root_facts.blocks);
         facts.files.extend(root_facts.files);
     }
+    // Over the whole folder, because that is what gets staged. Which DLL can load depends on
+    // the rest of the selection; several in one mod is no choice the installer could make.
+    let mut dlls = Vec::new();
+    find_files_named(folder, &[BUILT_DLL_FILE_NAME], &mut dlls)
+        .map_err(|error| Unbakeable::Refused(error.user_message()))?;
+    if dlls.len() > 1 {
+        return Err(Unbakeable::Refused(
+            "it carries more than one copy of the game DLL, and only one can load".to_owned(),
+        ));
+    }
+    facts.dll = dlls
+        .first()
+        .and_then(|dll| dll.strip_prefix(folder).ok())
+        .map(Path::to_path_buf);
     Ok((roots, facts))
 }
 
@@ -816,14 +881,6 @@ fn why_not_bakeable(root: &Path) -> Result<ModFacts, Unbakeable> {
         return Err(Refused(format!(
             "it needs the Mods menu to run its {action} step when it is activated"
         )));
-    }
-    // The game loads one game DLL, and in a Modpack that is the installer's or the game's
-    // own, never one a baked-in mod brings.
-    let mut own_dll = Vec::new();
-    if find_files_named(root, &[BUILT_DLL_FILE_NAME], &mut own_dll).is_ok() && !own_dll.is_empty() {
-        return Err(Refused(
-            "it brings its own game DLL, and a modpack cannot carry one from a mod".to_owned(),
-        ));
     }
     let carries = |relative: &str| modinfo::resolve_case_insensitive(root, relative).is_some();
     let missing = |relative: &str| {
@@ -1017,7 +1074,7 @@ pub(crate) fn assemble(
             .map_err(|unbakeable| not_bakeable(name, &from, unbakeable.reason()))?;
         picks.push((name, from, roots, facts));
     }
-    let managed = Selection::staged(&staged_mods)?;
+    let managed = Selection::staged(&staged_mods, &plan.configuration.flavor)?;
     let candidates: Vec<(&str, &ModFacts)> = picks
         .iter()
         .map(|(name, _, _, facts)| (name.as_str(), facts))
@@ -1052,13 +1109,23 @@ pub(crate) fn assemble(
         progress.heads_up(Stage::Modpack, overlap.log_line());
     }
 
-    for (name, from, roots, _) in picks {
+    for (name, from, roots, facts) in picks {
         let destination = mods_dir.join(name);
         tree::copy_selected(
             &from,
             &destination,
             &crate::plan::SourceSelection::Everything,
         )?;
+        // A folder copy leaves every game DLL out, so the one the rules let through is put
+        // back: at the same place, because the mod's own files may expect it there. It goes
+        // and comes with the pack. No fingerprint, because nothing here is a Built DLL.
+        if let Some(dll) = &facts.dll {
+            let packed = destination.join(dll);
+            if let Some(parent) = packed.parent() {
+                tree::create_dir_all(parent)?;
+            }
+            tree::copy_file(&from.join(dll), &packed)?;
+        }
         progress.report(Stage::Modpack, format!("Baked {name} into the Modpack."));
         // Each mod root inside the copy - the folder itself, or a nested one - is where
         // its modinfo's paths resolve from.
@@ -1069,7 +1136,8 @@ pub(crate) fn assemble(
     }
 
     // The DLL, where the game's VFS will find it: in `(1) Community Patch`, which every
-    // Flavor with a DLL stages. A pack without the Community Patch runs the game's own.
+    // Flavor with a DLL stages. A pack without the Community Patch runs the game's own, or the
+    // one a pick brought.
     if let Some(built_dll) = built_dll {
         let dll_home = mods_dir.join(ClaimedFolder::CommunityPatch.folder_name());
         tree::create_dir_all(&dll_home)?;

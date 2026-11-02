@@ -603,6 +603,51 @@ fn a_mod_blocked_by_a_ticked_mod_comes_back_when_that_is_unticked() {
     assert!(harness.query_by_label(reason).is_none());
 }
 
+/// With Neither selected, one ticked mod's game DLL greys out the next by name, and unticking
+/// it brings that one back.
+#[test]
+fn a_second_game_dll_comes_back_when_the_first_is_unticked() {
+    use egui_kittest::kittest::NodeT as _;
+    let game = TempGame::new();
+    let mods = game.mods_folder();
+    for name in ["Alpha", "Beta"] {
+        fs::create_dir_all(mods.join(name)).unwrap();
+        fs::write(
+            mods.join(name).join(format!("{name}.modinfo")),
+            format!("<Mod id=\"{name}\" version=\"1\"/>"),
+        )
+        .unwrap();
+        fs::write(mods.join(name).join("CvGameCore_Expansion2.dll"), "MZ").unwrap();
+    }
+    let reason = "It brings its own game DLL, and so does Alpha: only one can load";
+
+    let mut harness = harness_over(game.launch(&game.locations()));
+    harness.step();
+    harness
+        .get_by_label("Install as a modpack - loads automatically, works in multiplayer")
+        .click();
+    harness.step();
+    harness
+        .get_by_label("Neither - only your own mods, as a modpack")
+        .click();
+    harness.step();
+    harness.step();
+    assert!(!harness.get_by_label("Beta").accesskit_node().is_disabled());
+
+    harness.get_by_label("Alpha").click_accesskit();
+    harness.step();
+    harness.step();
+    assert!(is_ticked(&mut harness, "Alpha"));
+    assert!(harness.get_by_label("Beta").accesskit_node().is_disabled());
+    harness.get_by_label(reason);
+
+    harness.get_by_label("Alpha").click_accesskit();
+    harness.step();
+    harness.step();
+    assert!(!harness.get_by_label("Beta").accesskit_node().is_disabled());
+    assert!(harness.query_by_label(reason).is_none());
+}
+
 /// Neither takes nothing from the Installation Source and has no use for the Vox Populi intro,
 /// so both are greyed out where they stand, and both are as the player left them when a Flavor
 /// with the Community Patch comes back.
@@ -1698,7 +1743,7 @@ fn every_screen_matches_its_baseline() {
         // The own-mods modpack's point is the mod list, which sits below the fold at the
         // design-minimum size: rendered tall enough to hold it.
         if screen == Screen::OwnModsModpack {
-            harness.set_size(egui::vec2(WINDOW[0], 1460.0));
+            harness.set_size(egui::vec2(WINDOW[0], 1540.0));
         }
         harness.run();
         results.add(harness.try_snapshot_options(screen.file_stem(), &options));

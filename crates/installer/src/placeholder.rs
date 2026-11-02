@@ -287,7 +287,7 @@ impl ModpackAssembler for PlaceholderModpackAssembler {
 /// The player's own mods a preview's extra-mod list shows, as `(folder, files)`: a plain
 /// database mod, a minimap overlay and a reworked minimap panel that it hooks into, and a
 /// map-generation hook with nothing in the selection to hook into.
-const PREVIEW_MODS: [(&str, &[(&str, &str)]); 5] = [
+const PREVIEW_MODS: [(&str, &[(&str, &str)]); 7] = [
     (
         "Better Minimap Overlay",
         &[
@@ -306,6 +306,26 @@ const PREVIEW_MODS: [(&str, &[(&str, &str)]); 5] = [
             "Even More Bonuses.modinfo",
             "<Mod id=\"preview-bonuses\" version=\"1\"/>",
         )],
+    ),
+    (
+        "Game Rules Rebalance",
+        &[
+            (
+                "Rebalance.modinfo",
+                "<Mod id=\"preview-rebalance\" version=\"1\"/>",
+            ),
+            ("CvGameCore_Expansion2.dll", ""),
+        ],
+    ),
+    (
+        "Realism Overhaul",
+        &[
+            (
+                "Realism.modinfo",
+                "<Mod id=\"preview-realism\" version=\"1\"/>",
+            ),
+            ("CvGameCore_Expansion2.dll", ""),
+        ],
     ),
     (
         "Map Generation Hook",

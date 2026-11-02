@@ -38,7 +38,8 @@ const EXCLUDED_NAMES: &[&str] = &[
 /// commit's Shipped DLL may be deployed (ADR-0001's correction): which DLL a configuration
 /// installs is the Core's decision - `(3b)`'s for a 43-civ install, `(1)`'s otherwise, and a
 /// compiled one when neither is current - and it is placed by Sync, once, at the end. A folder
-/// copy that carried its own DLL along would install a second, unasked-for answer.
+/// copy that carried its own DLL along would install a second, unasked-for answer. The Modpack
+/// puts back the one DLL that is an answer: a player's mod's, where the selection leaves room.
 pub(crate) fn is_excluded(name: &str) -> bool {
     if name.eq_ignore_ascii_case(BUILT_DLL_FILE_NAME) {
         return true;

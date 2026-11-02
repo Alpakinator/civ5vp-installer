@@ -15,9 +15,9 @@ Populi. That is now a third Flavor, **Own Mods Only**.
   toolchain runner are not called at all, so such a pack needs no network, no Toolchain, and
   not even a named Version or checkout. LuaJIT is the exception: it is a file of the game,
   not of any mod, and is still built when asked for.
-- **The pack runs the game's own DLL.** `Mods/` holds the picks alone; there is no
-  `(1) Community Patch` inside it for a DLL to live in. The databases are merged onto the
-  bare game, without Vox Populi's text.
+- **The pack runs the game's own DLL, unless a ticked mod brings one** (see the correction
+  below). `Mods/` holds the picks alone; there is no `(1) Community Patch` inside it for a
+  Built DLL to live in. The databases are merged onto the bare game, without Vox Populi's text.
 - **Only as a Modpack.** In a Mods Deployment the player's mods are in MODS already, so the
   configuration would install nothing. `Plan::build` refuses it with a sentence, and the shell
   greys out whichever of the two choices would make the pair, asking the Core
@@ -38,6 +38,32 @@ Populi. That is now a third Flavor, **Own Mods Only**.
 - Switching an existing Vox Populi Modpack to Own Mods Only replaces the pack wholesale, as
   any Modpack Deployment does, and removes `VPUI`, `UI_bc1` and the VPUI tips like any other
   Flavor that does not include them. MODS is still only read.
+
+## Correction: a mod may bring the game DLL when nothing else does
+
+The first version refused every mod carrying a `CvGameCore_Expansion2.dll`, on the reasoning
+that a Modpack's DLL is the Built DLL or the game's own. That is only true beside the Community
+Patch. A pack of Own Mods Only has the place free, and a DLL mod for the unpatched game is
+exactly what a player would want such a pack for.
+
+- **The game loads one DLL, so this is a cross-mod rule**, a clash in `settle_selection` beside
+  `<Blocks>`, live in the picker and again in the build. A mod with a DLL is refused in any
+  Flavor with the Community Patch. Without it, the first to bring one holds the place: the
+  others are refused by that mod's name and come back when it is unticked. Two ticked anyway,
+  from settings, keep the first in selection order.
+- **A mod with several copies is refused on its own**, in every Flavor: which one to run is not
+  a choice the installer can make for it.
+- **Staging puts the DLL back.** `tree::copy_selected` strips the file at every depth, which is
+  right for the managed mods (ADR-0001's correction), so `assemble` copies a kept mod's DLL
+  across afterwards, at its path inside the mod. The Sync of the stage is verbatim, and the pack
+  goes wholesale on Uninstall or on the next Modpack, so the DLL goes with it.
+- **It is the mod's file, not a Built DLL.** `built_dll` stays `None`, no fingerprint sidecar is
+  written, and the DLL reuse check, which looks in `(1) Community Patch`, does not see it.
+
+**Not seen in a running game.** Nobody has tested whether the game loads a DLL from inside a
+pack for a mod that is not the Community Patch. The tests show the file lands where the mod
+keeps it, not that the game runs it. Until that is checked in game, a player's pack with such a
+mod may run the game's own DLL under a database made for another.
 
 ## Correction: a hook has to fit the file it goes into
 

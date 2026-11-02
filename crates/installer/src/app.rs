@@ -526,11 +526,13 @@ impl InstallerApp {
                 app.flavor = Flavor::OwnModsOnly;
                 app.install_mode = InstallMode::Modpack;
                 // The overlay is tickable only because the panel rework beside it is ticked;
-                // the map hook has nothing in the selection to plug into.
+                // the map hook has nothing in the selection to plug into; and the rebalance's
+                // game DLL leaves no room for the overhaul's.
                 app.extra_mods_scan = placeholder::preview_extra_mods();
                 app.extra_mods_stated = true;
                 app.extra_mods_picked = vec![
                     "Better Minimap Overlay".to_owned(),
+                    "Game Rules Rebalance".to_owned(),
                     "Minimap Panel Rework".to_owned(),
                 ];
             }
@@ -790,7 +792,7 @@ impl InstallerApp {
             }
             ui.add_space(4.0);
             // 43 Civs is legal with every Flavor that has the Community Patch, with or without
-            // EUI. Without it there is no DLL for 43 Civs to change, so it is greyed out -
+            // EUI. Without it there is no Built DLL for 43 Civs to change, so it is greyed out -
             // keeping its tick for when a Flavor that has one comes back.
             let mut enabled = self.forty_three_civs == FortyThreeCivs::Enabled;
             let forty_three = ui

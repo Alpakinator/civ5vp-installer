@@ -497,12 +497,6 @@ fn a_mod_the_pack_cannot_carry_whole_is_listed_as_refused_with_the_reason() {
          <EntryPoint type=\"MiniMapOverlayAddin\" file=\"Overlay.lua\"/></EntryPoints></Mod>",
     );
     game.plant("MODS/Overlay/Overlay.lua", "-- fixture");
-    // Its own game DLL: the game loads one, and in a Modpack that is the Built DLL.
-    game.plant(
-        "MODS/Own DLL Mod/Own DLL Mod.modinfo",
-        "<Mod id=\"own-dll\" version=\"1\"/>",
-    );
-    game.plant("MODS/Own DLL Mod/CvGameCore_Expansion2.dll", "MZ");
     // The same overlay bringing the file it hooks into is fine.
     game.plant(
         "MODS/Overlay With Panel/Overlay.modinfo",
@@ -546,10 +540,6 @@ fn a_mod_the_pack_cannot_carry_whole_is_listed_as_refused_with_the_reason() {
                 "Overlay",
                 "part of it (Overlay.lua) plugs into a MiniMapPanel.lua that takes hooks, \
                  which none of the selected mods has"
-            ),
-            (
-                "Own DLL Mod",
-                "it brings its own game DLL, and a modpack cannot carry one from a mod"
             ),
         ]
     );
@@ -1368,6 +1358,256 @@ fn the_build_reads_the_blocks_of_the_managed_mods_really_staged() {
         error.user_message()
     );
     assert_eq!(game.files(), before, "rule 7: the game is untouched");
+}
+
+/// A mod with the game DLL in it, at `dll` inside its folder.
+fn plant_mod_with_dll(game: &GameFixture, folder: &str, dll: &str) {
+    game.plant(
+        &format!("MODS/{folder}/{folder}.modinfo"),
+        &format!("<Mod id=\"{folder}\" version=\"1\"/>"),
+    );
+    game.plant(&format!("MODS/{folder}/{dll}"), &format!("{folder}'s DLL"));
+}
+
+/// The game loads one DLL. Beside the Community Patch that is the Community Patch's, whatever
+/// else is ticked; without it the place is free.
+#[test]
+fn a_mod_with_its_own_dll_is_offered_only_without_the_community_patch() {
+    let game = modpack_game();
+    plant_mod_with_dll(&game, "Rebalance", "CvGameCore_Expansion2.dll");
+
+    assert_eq!(offer_for(&game, &neither(&[])).0, ["Rebalance"]);
+    assert_eq!(offer_for(&game, &neither(&["Rebalance"])).0, ["Rebalance"]);
+
+    for flavor in [
+        Flavor::CommunityPatch,
+        Flavor::VoxPopuli { eui: Eui::Disabled },
+    ] {
+        let (offered, refused) = offer_for(&game, &with_flavor(flavor, &["Rebalance"]));
+        assert!(offered.is_empty());
+        assert_eq!(
+            refused,
+            [
+                "Rebalance: it brings its own game DLL, and a pack with the Community Patch runs \
+              the Community Patch's"
+            ]
+        );
+    }
+}
+
+/// One mod's DLL takes the only place: the others are refused by its name until it is unticked.
+#[test]
+fn a_second_dll_is_refused_until_the_first_is_unticked() {
+    let game = modpack_game();
+    plant_mod_with_dll(&game, "Alpha", "CvGameCore_Expansion2.dll");
+    plant_mod_with_dll(&game, "Beta", "CvGameCore_Expansion2.dll");
+    plant_mod_blocking(&game, "Plain", "plain", &[]);
+
+    let (offered, refused) = offer_for(&game, &neither(&["Beta"]));
+    assert_eq!(offered, ["Beta", "Plain"]);
+    assert_eq!(
+        refused,
+        ["Alpha: it brings its own game DLL, and so does Beta: only one can load"]
+    );
+
+    assert_eq!(
+        offer_for(&game, &neither(&[])).0,
+        ["Alpha", "Beta", "Plain"]
+    );
+}
+
+/// Ticked together anyway - from a saved configuration - the first in the selection stays.
+#[test]
+fn of_two_ticked_mods_with_a_dll_the_first_is_kept() {
+    let game = modpack_game();
+    plant_mod_with_dll(&game, "Alpha", "CvGameCore_Expansion2.dll");
+    plant_mod_with_dll(&game, "Beta", "CvGameCore_Expansion2.dll");
+
+    let (offered, refused) = offer_for(&game, &neither(&["Alpha", "Beta"]));
+    assert_eq!(offered, ["Alpha"]);
+    assert_eq!(
+        refused,
+        ["Beta: it brings its own game DLL, and so does Alpha: only one can load"]
+    );
+
+    let (offered, refused) = offer_for(&game, &neither(&["Beta", "Alpha"]));
+    assert_eq!(offered, ["Beta"]);
+    assert_eq!(
+        refused,
+        ["Alpha: it brings its own game DLL, and so does Beta: only one can load"]
+    );
+}
+
+/// A mod that goes for another reason holds no place, and whatever leant on the mod that lost
+/// the place goes with it.
+#[test]
+fn the_dll_rule_settles_with_the_other_rules() {
+    let game = modpack_game();
+    plant_mod_with_dll(&game, "Alpha", "CvGameCore_Expansion2.dll");
+    plant_mod_with_dll(&game, "Beta", "CvGameCore_Expansion2.dll");
+    plant_mod_needing(&game, "Beta Addon", "beta-addon", &[("Beta", "Beta")]);
+    // Needs a mod that is nowhere, so its DLL never counted.
+    game.plant(
+        "MODS/Aardvark/Aardvark.modinfo",
+        "<Mod id=\"aardvark\" version=\"1\"><Dependencies>\
+         <Mod id=\"nowhere\" title=\"Nowhere\" /></Dependencies></Mod>",
+    );
+    game.plant("MODS/Aardvark/CvGameCore_Expansion2.dll", "Aardvark's DLL");
+
+    let (offered, _) = offer_for(&game, &neither(&["Aardvark", "Beta"]));
+    assert_eq!(offered, ["Beta", "Beta Addon"]);
+
+    let (offered, refused) = offer_for(&game, &neither(&["Alpha", "Beta", "Beta Addon"]));
+    assert_eq!(offered, ["Alpha"]);
+    assert_eq!(
+        refused,
+        [
+            "Aardvark: it needs Nowhere",
+            "Beta: it brings its own game DLL, and so does Alpha: only one can load",
+            "Beta Addon: it needs Beta",
+        ]
+    );
+}
+
+/// Two copies inside one mod have no right answer the installer could pick, whatever else is
+/// selected.
+#[test]
+fn a_mod_with_two_copies_of_the_dll_is_refused_by_itself() {
+    let game = modpack_game();
+    plant_mod_with_dll(&game, "Variants", "Standard/CvGameCore_Expansion2.dll");
+    game.plant("MODS/Variants/43 Civs/CvGameCore_Expansion2.dll", "another");
+    let reason = "Variants: it carries more than one copy of the game DLL, and only one can load";
+
+    let (offered, refused) = offer_for(&game, &neither(&["Variants"]));
+    assert!(offered.is_empty());
+    assert_eq!(refused, [reason]);
+    assert_eq!(
+        offer_for(
+            &game,
+            &with_flavor(Flavor::VoxPopuli { eui: Eui::Disabled }, &["Variants"])
+        )
+        .1,
+        [reason]
+    );
+}
+
+/// A DLL is copied only because this rule says so: every folder copy drops it, at every depth,
+/// so a mod's would be gone from the pack with nothing said. It stays where the mod keeps it,
+/// nothing about it looks like an installed Built DLL, and it leaves with the pack.
+#[test]
+fn a_mods_dll_stays_in_the_pack_where_the_mod_keeps_it() {
+    for dll in [
+        "CvGameCore_Expansion2.dll",
+        "Assets/Bin/cvgamecore_EXPANSION2.DLL",
+    ] {
+        let game = modpack_game();
+        plant_mod_with_dll(&game, "Rebalance", dll);
+        game.plant("MODS/Rebalance/Data/Rules.sql", "-- rules");
+        let (assembler, _) = FixtureModpackAssembler::new();
+        let core = Core::new(
+            Box::new(support::FailingSourceProvider),
+            Box::new(support::FailingToolchainRunner),
+            Box::new(assembler),
+            game.work_dir(),
+        );
+
+        let plan = core
+            .plan(&neither(&["Rebalance"]), &game.folders())
+            .unwrap();
+        let outcome = core
+            .execute(&plan, &ProgressReporter::silent())
+            .expect("nothing is fetched or built for a mod's own DLL");
+
+        let packed = format!("DLC/VP_MODPACK/Mods/Rebalance/{dll}");
+        assert_eq!(game.read(&packed), "Rebalance's DLL", "{dll}");
+        assert_eq!(
+            game.read("DLC/VP_MODPACK/Mods/Rebalance/Data/Rules.sql"),
+            "-- rules",
+            "the rest of the mod came along"
+        );
+        assert_eq!(
+            game.read(&format!("MODS/Rebalance/{dll}")),
+            "Rebalance's DLL",
+            "MODS is only read"
+        );
+
+        // The installer built nothing and promises nothing about this DLL.
+        assert_eq!(outcome.built_dll, None);
+        let mods = game.folders().dlc.join("VP_MODPACK/Mods");
+        assert!(!mods.join("(1) Community Patch").exists());
+        let fingerprints: Vec<_> = game
+            .files()
+            .into_iter()
+            .filter(|path| path.contains(".fingerprint"))
+            .collect();
+        assert!(fingerprints.is_empty(), "{fingerprints:?}");
+
+        core.uninstall(&game.folders(), &ProgressReporter::silent())
+            .unwrap();
+        assert!(!game.game_root().join("DLC/VP_MODPACK").exists());
+        assert_eq!(
+            game.read(&format!("MODS/Rebalance/{dll}")),
+            "Rebalance's DLL",
+            "the player's own mod is still theirs"
+        );
+    }
+}
+
+/// Going back to a Flavor with the Community Patch replaces the pack, and the mod's DLL with it.
+#[test]
+fn a_pack_with_the_community_patch_replaces_one_with_a_mods_dll() {
+    let game = modpack_game();
+    plant_mod_with_dll(&game, "Rebalance", "CvGameCore_Expansion2.dll");
+    let core = core_over(&game, FixtureModpackAssembler::ignored());
+
+    let plan = core
+        .plan(&neither(&["Rebalance"]), &game.folders())
+        .unwrap();
+    core.execute(&plan, &ProgressReporter::silent()).unwrap();
+    let plan = core.plan(&vox_populi_modpack(), &game.folders()).unwrap();
+    core.execute(&plan, &ProgressReporter::silent()).unwrap();
+
+    assert!(
+        !game
+            .game_root()
+            .join("DLC/VP_MODPACK/Mods/Rebalance")
+            .exists()
+    );
+}
+
+/// The build goes by the same rule, before the game is touched: a saved selection cannot put a
+/// second DLL in the pack.
+#[test]
+fn the_build_will_not_bake_a_second_dll() {
+    let game = modpack_game();
+    plant_mod_with_dll(&game, "Alpha", "CvGameCore_Expansion2.dll");
+    plant_mod_with_dll(&game, "Beta", "CvGameCore_Expansion2.dll");
+    let core = core_over(&game, FixtureModpackAssembler::ignored());
+
+    for (configuration, words) in [
+        (
+            neither(&["Alpha", "Beta"]),
+            "\"Beta\" cannot be baked into the Modpack: it brings its own game DLL, and so does \
+             Alpha: only one can load",
+        ),
+        (
+            with_flavor(Flavor::VoxPopuli { eui: Eui::Disabled }, &["Alpha"]),
+            "\"Alpha\" cannot be baked into the Modpack: it brings its own game DLL, and a pack \
+             with the Community Patch runs the Community Patch's",
+        ),
+    ] {
+        let before = game.files();
+        let plan = core.plan(&configuration, &game.folders()).unwrap();
+        let error = core
+            .execute(&plan, &ProgressReporter::silent())
+            .expect_err("only one DLL can load");
+        assert!(
+            error.user_message().contains(words),
+            "got: {}",
+            error.user_message()
+        );
+        assert_eq!(game.files(), before, "rule 7: the game is untouched");
+    }
 }
 
 /// Without the Community Patch the Vox Populi intro has no place: a saved configuration that

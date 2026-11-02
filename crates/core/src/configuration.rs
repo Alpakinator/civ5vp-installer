@@ -14,7 +14,8 @@ pub enum Flavor {
     VoxPopuli { eui: Eui },
     /// Neither: no Community Patch and no Vox Populi, only the player's own mods from the
     /// MODS folder, baked into a Modpack. Takes nothing from the Installation Source - no
-    /// Version is fetched and no DLL is built or deployed - and exists only as a Modpack:
+    /// Version is fetched and no DLL is built, so the game runs its own unless a picked mod
+    /// brings one (ADR-0010) - and exists only as a Modpack:
     /// in Mods mode those mods are in MODS already, so there would be nothing to install
     /// ([`Flavor::is_legal_with`]).
     OwnModsOnly,
@@ -293,7 +294,7 @@ impl InstallConfiguration {
         if self.luajit == LuaJitEngine::LuaJit {
             return true;
         }
-        // No Community Patch, no DLL - and nothing else here is compiled.
+        // No Community Patch, nothing to compile: a picked mod's DLL comes as it is.
         if !self.flavor.includes_community_patch() {
             return false;
         }
