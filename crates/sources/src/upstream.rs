@@ -69,6 +69,14 @@ pub struct UpstreamCache {
 impl UpstreamCache {
     /// `root` is the cache directory inside the App Data Store, created on first use; `url`
     /// is the repository to fetch from, which is [`UPSTREAM_URL`] everywhere except in tests.
+    /// The checkout, if one has been made - at whatever Version it was last left.
+    pub fn on_disk(&self) -> Option<PathBuf> {
+        self.root
+            .join(CACHE_MARKER)
+            .is_file()
+            .then(|| self.root.clone())
+    }
+
     pub fn new(root: impl Into<PathBuf>, url: impl Into<String>) -> Self {
         Self {
             root: root.into(),

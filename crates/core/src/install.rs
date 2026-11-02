@@ -99,6 +99,18 @@ impl Core {
         }
     }
 
+    /// Read the MODS folder for the extra-mod picker, along with the managed mods' file names
+    /// if `source` happens to be on disk already. Nothing is fetched: without it, the offer
+    /// just has less to say.
+    pub fn extra_mod_scan(
+        &self,
+        mods_folder: &Path,
+        source: &crate::InstallationSource,
+    ) -> crate::ExtraModScan {
+        crate::ExtraModScan::of(mods_folder)
+            .with_managed_files(self.source_provider.on_disk(source).as_deref())
+    }
+
     /// What the Version picker lists, straight from the source-provider boundary.
     pub fn available_versions(
         &self,

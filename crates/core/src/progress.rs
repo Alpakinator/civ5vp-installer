@@ -38,6 +38,9 @@ impl Stage {
 pub struct ProgressEvent {
     pub stage: Stage,
     pub message: String,
+    /// Worth keeping once the run has scrolled by: the shell writes it to the log file too.
+    /// Set by [`ProgressReporter::heads_up`], for what a player may want to look up later.
+    pub heads_up: bool,
 }
 
 /// Where the Core sends [`ProgressEvent`]s. Silent unless given a channel.
@@ -62,10 +65,20 @@ impl ProgressReporter {
 
     /// Report one event. A hung-up receiver is not an error - the install carries on.
     pub fn report(&self, stage: Stage, message: impl Into<String>) {
+        self.send(stage, message.into(), false);
+    }
+
+    /// Report something that is not a failure but should outlast the run.
+    pub fn heads_up(&self, stage: Stage, message: impl Into<String>) {
+        self.send(stage, message.into(), true);
+    }
+
+    fn send(&self, stage: Stage, message: String, heads_up: bool) {
         if let Some(sender) = &self.sender {
             let _ = sender.send(ProgressEvent {
                 stage,
-                message: message.into(),
+                message,
+                heads_up,
             });
         }
     }

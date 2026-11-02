@@ -84,6 +84,14 @@ pub trait SourceProvider: Send + Sync {
         progress: &ProgressReporter,
     ) -> Result<MaterializedSource, BoundaryError>;
 
+    /// Where `source` already sits on disk, if it does. Never fetches and never changes
+    /// anything, so it is safe while the player is still deciding, for things that are only
+    /// worth saying if they cost nothing to find out. An Upstream Cache answers with whatever
+    /// Version it last held, not necessarily the one chosen.
+    fn on_disk(&self, _source: &InstallationSource) -> Option<std::path::PathBuf> {
+        None
+    }
+
     /// The Versions the Upstream Cache can offer right now - what the picker lists.
     ///
     /// One remote round trip in production; a fixture in the fast suite. Nothing is fetched

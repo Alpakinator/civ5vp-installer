@@ -31,6 +31,13 @@ impl InstallationSources {
 }
 
 impl SourceProvider for InstallationSources {
+    fn on_disk(&self, source: &InstallationSource) -> Option<PathBuf> {
+        match source {
+            InstallationSource::UpstreamCache { .. } => self.upstream.on_disk(),
+            InstallationSource::LocalRepo { path } => path.is_dir().then(|| path.clone()),
+        }
+    }
+
     fn materialize(
         &self,
         source: &InstallationSource,

@@ -111,6 +111,44 @@ fn brought_ui_files() -> Vec<&'static str> {
         .collect()
 }
 
+/// The kinds of file that can shadow a file of the same bare name in another mod. The game's
+/// VFS finds these by name; art is not worth a player's attention.
+const SHADOWING_EXTENSIONS: [&str; 3] = ["lua", "xml", "sql"];
+
+/// A mod's files that can shadow another's: lowercase bare name to the name as spelled.
+type ShadowingFiles = BTreeMap<String, String>;
+
+/// Should a file of this name be compared across mods? Not the UI entry files: staging replaces
+/// those deliberately, in mod order, and hooks whichever copy ends up in the pack.
+fn can_shadow(name: &str) -> bool {
+    let lowercase = name.to_ascii_lowercase();
+    SHADOWING_EXTENSIONS
+        .iter()
+        .any(|extension| lowercase.ends_with(&format!(".{extension}")))
+        && !UI_ENTRY_FILES
+            .iter()
+            .any(|(file, _)| file.eq_ignore_ascii_case(name))
+}
+
+/// Every file under `dir` that [`can_shadow`], leaving out what a Deployment leaves out.
+fn add_shadowing_files(dir: &Path, files: &mut ShadowingFiles) {
+    for entry in sorted_dir(dir).unwrap_or_default() {
+        let Some(name) = entry.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if tree::is_excluded(name) {
+            continue;
+        }
+        if entry.is_dir() {
+            add_shadowing_files(&entry, files);
+        } else if can_shadow(name) {
+            files
+                .entry(name.to_ascii_lowercase())
+                .or_insert_with(|| name.to_owned());
+        }
+    }
+}
+
 /// Does this copy of an entry file do anything with the hooks appended to it?
 ///
 /// A UI file does when, as in the Community Patch's copies, a `__newindex` on `g_uiAddins` loads
@@ -156,6 +194,16 @@ pub fn extra_mod_offer(mods_folder: &Path, configuration: &InstallConfiguration)
 pub struct ExtraModScan {
     /// Sorted by folder name.
     mods: Vec<ScannedMod>,
+    /// The managed mods' files, for those whose source was on disk.
+    managed: Vec<ManagedFiles>,
+}
+
+/// One managed mod's files as they sit at the source, by top-level entry: which entries a
+/// Deployment takes depends on the configuration, and the scan does not know that yet.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ManagedFiles {
+    claimed: ClaimedFolder,
+    by_top_level: Vec<(String, ShadowingFiles)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -170,7 +218,7 @@ impl ExtraModScan {
     pub fn of(mods_folder: &Path) -> Self {
         let mut mods = Vec::new();
         let Ok(entries) = std::fs::read_dir(mods_folder) else {
-            return Self { mods };
+            return Self::default();
         };
         for entry in entries.flatten() {
             let path = entry.path();
@@ -188,7 +236,69 @@ impl ExtraModScan {
             mods.push(ScannedMod { name, facts });
         }
         mods.sort_unstable_by(|a, b| a.name.cmp(&b.name));
-        Self { mods }
+        Self {
+            mods,
+            managed: Vec::new(),
+        }
+    }
+
+    /// Add the managed mods' file names from a source already on disk.
+    pub(crate) fn with_managed_files(mut self, source_root: Option<&Path>) -> Self {
+        let Some(source_root) = source_root else {
+            return self;
+        };
+        for claimed in ClaimedFolder::ALL {
+            let folder = claimed
+                .folder_names()
+                .iter()
+                .map(|name| source_root.join(name))
+                .find(|folder| folder.is_dir());
+            let (Some(folder), Some(_)) = (folder, claimed.mod_id()) else {
+                continue;
+            };
+            let mut by_top_level = Vec::new();
+            for entry in sorted_dir(&folder).unwrap_or_default() {
+                let Some(name) = entry.file_name().and_then(|name| name.to_str()) else {
+                    continue;
+                };
+                let mut files = ShadowingFiles::new();
+                if entry.is_dir() {
+                    add_shadowing_files(&entry, &mut files);
+                } else if can_shadow(name) && !tree::is_excluded(name) {
+                    files.insert(name.to_ascii_lowercase(), name.to_owned());
+                }
+                by_top_level.push((name.to_owned(), files));
+            }
+            self.managed.push(ManagedFiles {
+                claimed,
+                by_top_level,
+            });
+        }
+        self
+    }
+
+    /// The managed mods `configuration` deploys whose files are known, with the parts of them
+    /// it takes. By reference: this runs every frame, and these lists are long.
+    fn managed_carriers(&self, configuration: &InstallConfiguration) -> Vec<Carrier<'_>> {
+        crate::plan::deployments_for(configuration)
+            .iter()
+            .filter_map(|deployment| {
+                let scanned = self
+                    .managed
+                    .iter()
+                    .find(|managed| managed.claimed == deployment.claimed)?;
+                Some(Carrier {
+                    name: without_load_order(deployment.claimed.folder_name()),
+                    managed: true,
+                    parts: scanned
+                        .by_top_level
+                        .iter()
+                        .filter(|(entry, _)| deployment.selection.admits(entry))
+                        .map(|(_, files)| files)
+                        .collect(),
+                })
+            })
+            .collect()
     }
 
     /// Which mods `configuration` can bake in, and why not the others.
@@ -227,6 +337,12 @@ impl ExtraModScan {
                 }),
             }
         }
+
+        let managed = self.managed_carriers(configuration);
+        let kept = settled.carriers();
+        for overlap in overlaps(&managed, &kept) {
+            offer.notes.extend(overlap.notes());
+        }
         offer
     }
 }
@@ -240,6 +356,18 @@ pub struct ExtraModOffer {
     pub offered: Vec<String>,
     /// The mods it cannot, sorted by folder name.
     pub refused: Vec<RefusedMod>,
+    /// Things worth knowing about the ticked mods, which change nothing about what can be
+    /// ticked: mods often replace each other's files on purpose.
+    pub notes: Vec<ModNote>,
+}
+
+/// Something to say under a ticked mod.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModNote {
+    /// Its folder name.
+    pub name: String,
+    /// In the player's words, as a clause.
+    pub note: String,
 }
 
 /// A mod in the MODS folder that a Modpack cannot carry whole.
@@ -261,6 +389,8 @@ struct ModFacts {
     needs: Vec<(String, String)>,
     /// What it cannot run beside, as ID and title.
     blocks: Vec<(String, String)>,
+    /// Its files that can shadow another mod's.
+    files: ShadowingFiles,
     /// The hook targets it carries ([`brought_ui_files`]) in a form that takes hooks
     /// ([`consumes_hooks`]), at any depth in any of its mod roots - the pack copies such a file
     /// into `UI/` from wherever it is.
@@ -420,6 +550,8 @@ impl Selection {
 
 /// What a selection settles into under the cross-mod rules.
 struct Settled<'a> {
+    /// The ticked mods the pack can carry beside each other, in `ticked` order.
+    kept: Vec<(&'a str, &'a ModFacts)>,
     /// The ticked mods the pack cannot carry beside the rest, each with the reason it had when it went. A clash can stop
     /// being true once the other mod goes too, and a mod dropped for one is still dropped.
     dropped: Vec<(&'a str, String)>,
@@ -427,13 +559,120 @@ struct Settled<'a> {
     selection: Selection,
 }
 
-impl Settled<'_> {
+impl<'a> Settled<'a> {
     fn reason_dropped(&self, name: &str) -> Option<&str> {
         self.dropped
             .iter()
             .find(|(dropped, _)| *dropped == name)
             .map(|(_, reason)| reason.as_str())
     }
+
+    fn carriers(&self) -> Vec<Carrier<'a>> {
+        self.kept
+            .iter()
+            .map(|(name, facts)| Carrier {
+                name,
+                managed: false,
+                parts: vec![&facts.files],
+            })
+            .collect()
+    }
+}
+
+/// A mod going into the pack, as far as same-named files go.
+struct Carrier<'a> {
+    name: &'a str,
+    managed: bool,
+    parts: Vec<&'a ShadowingFiles>,
+}
+
+/// Two mods going into the pack with files of the same bare name.
+struct Overlap<'a> {
+    earlier: &'a Carrier<'a>,
+    later: &'a Carrier<'a>,
+    /// As the later mod spells them, in name order.
+    files: Vec<&'a str>,
+}
+
+impl Overlap<'_> {
+    /// One note for each of the two, leaving out a managed mod, which has no row to put it
+    /// under. The later copy wins: it is the one staged last, and for a database update the one
+    /// applied last - whose copy the game's VFS picks for the rest is taken to go the same way,
+    /// as it is for map scripts, and has not been seen in a running game.
+    fn notes(&self) -> Vec<ModNote> {
+        let copies = if self.files.len() == 1 {
+            "copy wins"
+        } else {
+            "copies win"
+        };
+        let files = named_list(&self.files, 3);
+        let winner = self.later.name;
+        let note = |this: &Carrier, other: &Carrier| ModNote {
+            name: this.name.to_owned(),
+            note: format!("shares {files} with {}: {winner}'s {copies}", other.name),
+        };
+        let mut notes = Vec::new();
+        if !self.earlier.managed {
+            notes.push(note(self.earlier, self.later));
+        }
+        notes.push(note(self.later, self.earlier));
+        notes
+    }
+
+    /// The whole of it, for the log.
+    fn log_line(&self) -> String {
+        format!(
+            "{} and {} both have {}: {}'s {}.",
+            self.earlier.name,
+            self.later.name,
+            named_list(&self.files, self.files.len()),
+            self.later.name,
+            if self.files.len() == 1 {
+                "copy wins"
+            } else {
+                "copies win"
+            },
+        )
+    }
+}
+
+/// `A, B and C`, or `A, B and 3 more` past `limit` names.
+fn named_list(names: &[&str], limit: usize) -> String {
+    if names.len() > limit {
+        let more = names.len() - limit;
+        return format!("{} and {more} more", names[..limit].join(", "));
+    }
+    match names.split_last() {
+        Some((last, [])) => (*last).to_owned(),
+        Some((last, others)) => format!("{} and {last}", others.join(", ")),
+        None => String::new(),
+    }
+}
+
+/// Every pair going into the pack that shares a file name, in the order they are applied: each
+/// player's mod against the managed mods and the player's mods before it. Two managed mods
+/// sharing a name is how upstream is built, and nothing a player can act on.
+fn overlaps<'a>(managed: &'a [Carrier<'a>], kept: &'a [Carrier<'a>]) -> Vec<Overlap<'a>> {
+    let mut found = Vec::new();
+    for (index, later) in kept.iter().enumerate() {
+        for earlier in managed.iter().chain(&kept[..index]) {
+            let files: Vec<&str> = later
+                .parts
+                .iter()
+                .flat_map(|part| part.iter())
+                .filter(|(key, _)| earlier.parts.iter().any(|part| part.contains_key(*key)))
+                .map(|(_, name)| name.as_str())
+                .collect();
+            if !files.is_empty() {
+                found.push(Overlap {
+                    earlier,
+                    later,
+                    files,
+                });
+            }
+        }
+    }
+    found
 }
 
 /// The cross-mod rules, applied to a whole selection: which of the `ticked` mods the pack can
@@ -482,7 +721,11 @@ fn settle_selection<'a>(
             continue;
         }
         let Some((index, reason)) = first_clash(&kept, managed) else {
-            return Settled { dropped, selection };
+            return Settled {
+                kept,
+                dropped,
+                selection,
+            };
         };
         let (name, _) = kept.remove(index);
         dropped.push((name, reason));
@@ -538,6 +781,7 @@ fn bakeable_mod_roots(folder: &Path) -> Result<(Vec<PathBuf>, ModFacts), Unbakea
         facts.ids.extend(root_facts.ids);
         facts.needs.extend(root_facts.needs);
         facts.blocks.extend(root_facts.blocks);
+        facts.files.extend(root_facts.files);
     }
     Ok((roots, facts))
 }
@@ -633,6 +877,7 @@ fn why_not_bakeable(root: &Path) -> Result<ModFacts, Unbakeable> {
         }
     }
     facts.brings = ui_files_brought_by(root, &brought);
+    add_shadowing_files(root, &mut facts.files);
     Ok(facts)
 }
 
@@ -782,6 +1027,29 @@ pub(crate) fn assemble(
         if let Some(reason) = settled.reason_dropped(name) {
             return Err(not_bakeable(name, from, reason));
         }
+    }
+    // Never a reason to stop - mods replace each other's files on purpose - but it should
+    // outlast the run. Against what is really staged, unlike the picker's note.
+    let managed_files: Vec<(String, ShadowingFiles)> = staged_mods
+        .iter()
+        .map(|staged| {
+            let folder = staged.file_name().unwrap_or_default().to_string_lossy();
+            let mut files = ShadowingFiles::new();
+            add_shadowing_files(staged, &mut files);
+            (without_load_order(&folder).to_owned(), files)
+        })
+        .collect();
+    let managed_carriers: Vec<Carrier> = managed_files
+        .iter()
+        .map(|(name, files)| Carrier {
+            name,
+            managed: true,
+            parts: vec![files],
+        })
+        .collect();
+    let kept_carriers = settled.carriers();
+    for overlap in overlaps(&managed_carriers, &kept_carriers) {
+        progress.heads_up(Stage::Modpack, overlap.log_line());
     }
 
     for (name, from, roots, _) in picks {

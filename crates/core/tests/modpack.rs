@@ -1370,6 +1370,182 @@ fn the_build_reads_the_blocks_of_the_managed_mods_really_staged() {
     assert_eq!(game.files(), before, "rule 7: the game is untouched");
 }
 
+/// A small mod in MODS carrying these files.
+fn plant_mod_with_files(game: &GameFixture, folder: &str, files: &[&str]) {
+    game.plant(
+        &format!("MODS/{folder}/{folder}.modinfo"),
+        &format!("<Mod id=\"{folder}\" version=\"1\"/>"),
+    );
+    for file in files {
+        game.plant(&format!("MODS/{folder}/{file}"), "-- fixture");
+    }
+}
+
+/// The notes of the offer, as `mod: note`.
+fn notes_for(game: &GameFixture, configuration: &InstallConfiguration) -> Vec<String> {
+    civ5vp_core::extra_mod_offer(&game.folders().mods, configuration)
+        .notes
+        .iter()
+        .map(|note| format!("{}: {}", note.name, note.note))
+        .collect()
+}
+
+/// Mods often replace files on purpose, so this is a note and nothing more: both stay
+/// tickable, and each says who the other is and whose copy wins - the later in the selection,
+/// matched by bare name at any depth, ignoring case.
+#[test]
+fn two_ticked_mods_with_a_same_named_file_get_a_note_and_nothing_else() {
+    let game = modpack_game();
+    plant_mod_with_files(&game, "Alpha", &["Shared.lua"]);
+    plant_mod_with_files(&game, "Beta", &["Deep/Inside/SHARED.LUA"]);
+
+    assert_eq!(notes_for(&game, &neither(&["Alpha"])), Vec::<String>::new());
+
+    let both = neither(&["Alpha", "Beta"]);
+    assert_eq!(
+        notes_for(&game, &both),
+        [
+            "Alpha: shares SHARED.LUA with Beta: Beta's copy wins",
+            "Beta: shares SHARED.LUA with Alpha: Beta's copy wins",
+        ]
+    );
+    let (offered, refused) = offer_for(&game, &both);
+    assert_eq!(offered, ["Alpha", "Beta"]);
+    assert_eq!(refused, Vec::<String>::new());
+
+    assert_eq!(
+        notes_for(&game, &neither(&["Beta", "Alpha"])),
+        [
+            "Beta: shares Shared.lua with Alpha: Alpha's copy wins",
+            "Alpha: shares Shared.lua with Beta: Alpha's copy wins",
+        ],
+        "the selection's order decides"
+    );
+}
+
+/// `.lua`, `.xml` and `.sql` only. The UI entry files are left out: staging replaces those by
+/// design and hooks whichever copy ends up in the pack. A file repeated inside one mod is that
+/// mod's own affair.
+#[test]
+fn only_files_that_can_shadow_each_other_get_a_note() {
+    let game = modpack_game();
+    plant_mod_with_files(
+        &game,
+        "Alpha",
+        &[
+            "Art.dds",
+            "InGame.lua",
+            "MapGenerator.lua",
+            "Notes.txt",
+            "Twice.lua",
+            "Sub/Twice.lua",
+        ],
+    );
+    plant_mod_with_files(
+        &game,
+        "Beta",
+        &["Art.dds", "Sub/INGAME.lua", "MapGenerator.lua", "Notes.txt"],
+    );
+
+    assert_eq!(
+        notes_for(&game, &neither(&["Alpha", "Beta"])),
+        Vec::<String>::new()
+    );
+}
+
+/// A mod overriding a lot of files gets one line, not one per file.
+#[test]
+fn a_long_list_of_shared_files_is_cut_short() {
+    let game = modpack_game();
+    let files = ["A.lua", "B.xml", "C.sql", "D.lua", "E.lua"];
+    plant_mod_with_files(&game, "Alpha", &files);
+    plant_mod_with_files(&game, "Beta", &files);
+
+    assert_eq!(
+        notes_for(&game, &neither(&["Alpha", "Beta"]))[0],
+        "Alpha: shares A.lua, B.xml, C.sql and 2 more with Beta: Beta's copies win"
+    );
+}
+
+/// A mod that was refused is not going in, so it shadows nothing.
+#[test]
+fn a_refused_mod_gets_and_causes_no_note() {
+    let game = modpack_game();
+    plant_mod_with_files(&game, "Alpha", &["Shared.lua"]);
+    plant_mod_with_files(&game, "Beta", &["Shared.lua"]);
+    plant_mod_blocking(&game, "Beta", "Beta", &[("Alpha", "Alpha")]);
+
+    assert_eq!(
+        notes_for(&game, &neither(&["Alpha", "Beta"])),
+        Vec::<String>::new()
+    );
+}
+
+/// The managed mods count when their files are on disk, by what the configuration really
+/// deploys: with EUI, `(2)`'s `LUA` folder stays behind, and a mod's copy shadows nothing there.
+/// A player's mod comes after them, so its copy wins. With nothing fetched there is nothing to
+/// say, and nothing is said.
+#[test]
+fn a_file_shared_with_a_managed_mod_gets_a_note_when_the_source_is_on_disk() {
+    let game = modpack_game();
+    plant_mod_with_files(&game, "Alpha", &["PlotHelpManager.lua"]);
+    let core = core_over(&game, FixtureModpackAssembler::ignored());
+    let vox_populi = modpack_with(&["Alpha"]);
+
+    let scan = core.extra_mod_scan(&game.folders().mods, &vox_populi.source);
+    let notes = scan.offer(&vox_populi).notes;
+    assert_eq!(notes.len(), 1, "{notes:?}");
+    assert_eq!(notes[0].name, "Alpha");
+    assert_eq!(
+        notes[0].note,
+        "shares PlotHelpManager.lua with Vox Populi: Alpha's copy wins"
+    );
+
+    let with_eui = with_flavor(Flavor::VoxPopuli { eui: Eui::Enabled }, &["Alpha"]);
+    assert_eq!(scan.offer(&with_eui).notes, Vec::new());
+
+    let not_fetched = civ5vp_core::ExtraModScan::of(&game.folders().mods);
+    assert_eq!(not_fetched.offer(&vox_populi).notes, Vec::new());
+}
+
+/// The build goes ahead, bakes both, and leaves the note in the log - against the managed mods
+/// too, whose files are in hand by then.
+#[test]
+fn the_build_proceeds_and_logs_same_named_files() {
+    let game = modpack_game();
+    plant_mod_with_files(&game, "Alpha", &["PlotHelpManager.lua", "Shared.lua"]);
+    plant_mod_with_files(&game, "Beta", &["Shared.lua"]);
+    let core = core_over(&game, FixtureModpackAssembler::ignored());
+
+    let plan = core
+        .plan(&modpack_with(&["Alpha", "Beta"]), &game.folders())
+        .unwrap();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    core.execute(&plan, &ProgressReporter::to_channel(sender))
+        .unwrap();
+
+    let heads_ups: Vec<String> = receiver
+        .try_iter()
+        .filter(|event| event.heads_up)
+        .map(|event| event.message)
+        .collect();
+    assert_eq!(
+        heads_ups,
+        [
+            "Vox Populi and Alpha both have PlotHelpManager.lua: Alpha's copy wins.",
+            "Alpha and Beta both have Shared.lua: Beta's copy wins.",
+        ]
+    );
+    for baked in ["Alpha/Shared.lua", "Beta/Shared.lua"] {
+        assert!(
+            game.game_root()
+                .join("DLC/VP_MODPACK/Mods")
+                .join(baked)
+                .exists()
+        );
+    }
+}
+
 /// A pick that can no longer be carried whole - edited since it was offered - stops the
 /// build before the game is touched, rather than baking in part of it.
 #[test]

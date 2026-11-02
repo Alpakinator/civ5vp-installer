@@ -14,6 +14,9 @@ publishes binaries for.
 
 ### Changed
 
+- Modpack: ticked mods that carry a file of the same name get a note saying which copy wins,
+  in the list and in the log. It is only a note: mods often replace files on purpose, so
+  nothing is unticked and the build goes ahead.
 - The header's hex tile names what you are installing, and changes the moment you choose:
   "VP" for Vox Populi, "CBP" for Community Patch alone, "MOD" for a pack of your own mods.
 

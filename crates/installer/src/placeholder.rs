@@ -42,6 +42,13 @@ pub fn core(work_dir: PathBuf) -> Core {
 pub struct DirectorySourceProvider;
 
 impl SourceProvider for DirectorySourceProvider {
+    fn on_disk(&self, source: &InstallationSource) -> Option<PathBuf> {
+        match source {
+            InstallationSource::LocalRepo { path } => path.is_dir().then(|| path.clone()),
+            InstallationSource::UpstreamCache { .. } => None,
+        }
+    }
+
     fn materialize(
         &self,
         source: &InstallationSource,
@@ -290,6 +297,7 @@ const PREVIEW_MODS: [(&str, &[(&str, &str)]); 5] = [
                  <EntryPoint type=\"MiniMapOverlayAddin\" file=\"Overlay.lua\"/></EntryPoints></Mod>",
             ),
             ("Overlay.lua", ""),
+            ("MinimapStyle.xml", ""),
         ],
     ),
     (
@@ -323,6 +331,7 @@ const PREVIEW_MODS: [(&str, &[(&str, &str)]); 5] = [
         "Minimap Panel Rework",
         &[
             ("Panel.modinfo", "<Mod id=\"preview-panel\" version=\"1\"/>"),
+            ("UI/MinimapStyle.xml", ""),
             (
                 "UI/MiniMapPanel.lua",
                 "local g_uiAddins = {};\n\

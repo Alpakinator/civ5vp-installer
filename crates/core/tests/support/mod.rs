@@ -65,6 +65,10 @@ impl FixtureSourceProvider {
 }
 
 impl SourceProvider for FixtureSourceProvider {
+    fn on_disk(&self, _source: &InstallationSource) -> Option<PathBuf> {
+        Some(self.root.clone())
+    }
+
     fn materialize(
         &self,
         _source: &InstallationSource,

@@ -603,6 +603,46 @@ fn a_mod_blocked_by_a_ticked_mod_comes_back_when_that_is_unticked() {
     assert!(harness.query_by_label(reason).is_none());
 }
 
+/// Two ticked mods with a file of the same name: a note under each, and neither is disabled.
+#[test]
+fn a_note_appears_under_ticked_mods_that_share_a_file() {
+    use egui_kittest::kittest::NodeT as _;
+    let game = TempGame::new();
+    let mods = game.mods_folder();
+    for name in ["Alpha", "Beta"] {
+        fs::create_dir_all(mods.join(name)).unwrap();
+        fs::write(
+            mods.join(name).join(format!("{name}.modinfo")),
+            format!("<Mod id=\"{name}\" version=\"1\"/>"),
+        )
+        .unwrap();
+        fs::write(mods.join(name).join("Shared.lua"), "-- fixture").unwrap();
+    }
+    let note = "Shares Shared.lua with Beta: Beta's copy wins";
+
+    let mut harness = harness_over(game.launch(&game.locations()));
+    harness.step();
+    harness
+        .get_by_label("Install as a modpack - loads automatically, works in multiplayer")
+        .click();
+    harness.step();
+    harness.get_by_label("Alpha").click_accesskit();
+    harness.step();
+    harness.step();
+    assert!(harness.query_by_label(note).is_none());
+
+    harness.get_by_label("Beta").click_accesskit();
+    harness.step();
+    harness.step();
+    harness.get_by_label(note);
+    assert!(!harness.get_by_label("Beta").accesskit_node().is_disabled());
+
+    harness.get_by_label("Beta").click_accesskit();
+    harness.step();
+    harness.step();
+    assert!(harness.query_by_label(note).is_none());
+}
+
 /// What a Modpack build needs of the game: the base UI entry files and a pristine cache
 /// (the placeholder assembler reads the marker, exactly like the Core-seam fixture).
 fn plant_what_a_modpack_build_needs(game: &TempGame) {
@@ -1609,7 +1649,7 @@ fn every_screen_matches_its_baseline() {
         // The own-mods modpack's point is the mod list, which sits below the fold at the
         // design-minimum size: rendered tall enough to hold it.
         if screen == Screen::OwnModsModpack {
-            harness.set_size(egui::vec2(WINDOW[0], 1410.0));
+            harness.set_size(egui::vec2(WINDOW[0], 1460.0));
         }
         harness.run();
         results.add(harness.try_snapshot_options(screen.file_stem(), &options));

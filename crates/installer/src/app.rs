@@ -908,6 +908,9 @@ impl InstallerApp {
                                 .request_discard("which mods can be baked in follows the ticks");
                             chosen = true;
                         }
+                        for note in self.extra_mods.notes.iter().filter(|n| n.name == name) {
+                            note_under_mod(ui, &note.note);
+                        }
                     }
                     // The ones it cannot, after the ones it can and never mixed in with them:
                     // greyed out, so they cannot be ticked, each with the reason under it. A
@@ -922,19 +925,7 @@ impl InstallerApp {
                             ui.add_enabled_ui(false, |ui| {
                                 deco::checkbox(ui, &mut false, &refused.name);
                             });
-                            let indent = ui.spacing().icon_width + ui.spacing().icon_spacing;
-                            egui::Frame::NONE
-                                .inner_margin(egui::Margin {
-                                    left: indent as i8,
-                                    ..egui::Margin::ZERO
-                                })
-                                .show(ui, |ui| {
-                                    ui.label(
-                                        egui::RichText::new(sentence_case(&refused.reason))
-                                            .small()
-                                            .color(theme::PARCHMENT_DIM),
-                                    );
-                                });
+                            note_under_mod(ui, &refused.reason);
                         }
                     }
                 }
@@ -1226,7 +1217,9 @@ impl InstallerApp {
     fn refresh_extra_mods(&mut self) {
         if !self.extra_mods_stated {
             self.extra_mods_scan = match &self.resolved {
-                Ok(folders) => civ5vp_core::ExtraModScan::of(&folders.mods),
+                Ok(folders) => self
+                    .core
+                    .extra_mod_scan(&folders.mods, &self.configuration().source),
                 Err(_) => civ5vp_core::ExtraModScan::default(),
             };
         }
@@ -2000,7 +1993,7 @@ impl InstallerApp {
 
         let mut lines = Vec::new();
         while let Ok(event) = run.progress.try_recv() {
-            lines.push(format!("{}: {}", event.stage.label(), event.message));
+            lines.push(activity_line(&event));
         }
 
         let finished = match run.result.try_recv() {
@@ -2039,7 +2032,7 @@ impl InstallerApp {
             // still be sitting in the channel. Without this the tail of Sync - the lines
             // saying what was actually installed - would be dropped.
             while let Ok(event) = run.progress.try_recv() {
-                lines.push(format!("{}: {}", event.stage.label(), event.message));
+                lines.push(activity_line(&event));
             }
             // A failed run that signs off with "Finished" is how a user comes to believe the
             // mod is installed when it is not - the red notice above says otherwise, but the
@@ -2056,6 +2049,32 @@ impl InstallerApp {
             self.running = Some(run);
         }
     }
+}
+
+/// A line of small print under a mod's row, lined up with its name.
+fn note_under_mod(ui: &mut egui::Ui, clause: &str) {
+    let indent = ui.spacing().icon_width + ui.spacing().icon_spacing;
+    egui::Frame::NONE
+        .inner_margin(egui::Margin {
+            left: indent as i8,
+            ..egui::Margin::ZERO
+        })
+        .show(ui, |ui| {
+            ui.label(
+                egui::RichText::new(sentence_case(clause))
+                    .small()
+                    .color(theme::PARCHMENT_DIM),
+            );
+        });
+}
+
+/// One line of the run for the activity log - and for the log file too, if it asks to be kept.
+fn activity_line(event: &ProgressEvent) -> String {
+    let line = format!("{}: {}", event.stage.label(), event.message);
+    if event.heads_up {
+        crate::log_detail(&line);
+    }
+    line
 }
 
 /// What one folder row reported this frame.
