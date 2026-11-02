@@ -4,6 +4,18 @@ Notable changes, newest first. Versions follow [semantic versioning](https://sem
 and each one is the tag the [releases page](https://github.com/Alpakinator/civ5vp-installer/releases)
 publishes binaries for.
 
+## 0.1.10 - 2026-11-02
+
+### Fixed
+
+- Modpack: values in a mod's XML are now stored exactly as the game stores them when it
+  activates the mod, checked against the game's own loader. `NULL` and empty values mean no
+  value, `true`/`false` become 1/0 on any column, and text between tags loses its outer
+  spaces and keeps its line endings. Before, a `default="NULL"` column held the text "NULL"
+  during the build and SQL testing it gave the wrong answer: Vox Populi's Scientific
+  Revolution policy got Great Person rate rows for Generals, Admirals and Prophets it should
+  not have. 277 text strings were also off, and 21 landmarks had `True` where the game has 1.
+
 ## 0.1.9 - 2026-11-02
 
 ### Added
