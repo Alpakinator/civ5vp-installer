@@ -450,10 +450,12 @@ pub fn compiler_args(
         // nowhere else for them to come from. Turning this on fails at link with three
         // undefined symbols and twenty-odd references each - verified, 2026-08-25.
         //
-        // It is also the one flag here that upstream's `build_vp_clang.py` does not pass,
-        // which is unexplained: their build links against the same runtime. The likeliest
-        // reading is that their clang emulates an older MSVC, for which clang-cl defaults
-        // thread-safe statics off, but that has not been confirmed.
+        // It is also the one flag here that upstream's clang scripts do not pass, and they
+        // don't need it. clang-cl copies the MSVC it finds on PATH. Upstream's CI puts VC9's
+        // `cl.exe` there, so its clang copies MSVC 2008 (`-fms-compatibility-version=15.0`),
+        // which means C++11 with thread-safe statics off by default. Here there is no `cl.exe`,
+        // so clang copies MSVC 2022 (19.33): C++14, and thread-safe statics on unless this
+        // flag says otherwise. Verified with `clang-cl -###`, 2026-11-10.
         "/Zc:threadSafeInit-",
         "/Zi",
     ]
