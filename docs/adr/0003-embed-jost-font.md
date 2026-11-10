@@ -8,5 +8,6 @@ repository *redistributes* the font file, which its license forbids.
 The installer now embeds **Jost** (`assets/fonts/Jost-400-Book.ttf`), an OFL-1.1-licensed
 geometric sans in the same Futura lineage Tw Cen MT descends from - the closest freely
 redistributable match in feel. The OFL text accompanies the font at
-`assets/fonts/OFL.txt`, as the license requires. All other art is original work in the
-Civ5 art-deco style (game assets used as visual reference only, never shipped).
+`assets/fonts/OFL.txt`, as the license requires. No game asset is shipped. The skin's
+backdrop painting and corner fans are the game's own, read from the player's installation at
+runtime (ADR-0012); everything else is painted in code.

@@ -18,6 +18,7 @@ pub mod app;
 pub mod browse;
 pub mod cli;
 pub mod deco;
+pub mod game_art;
 pub mod placeholder;
 pub mod reveal;
 pub mod screenshot;

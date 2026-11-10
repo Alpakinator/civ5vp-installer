@@ -17,6 +17,7 @@ OPTIONS:
     --size <WxH>         Window size in points, e.g. 900x990. Repeat for several sizes.
                          Default: 900x990
     --scale <factor>     DPI scale, e.g. 1.5. Repeat for several scales. Default: 1
+    --game-art <dir>     Draw the screens over the game art in this Civilization V folder
     -h, --help           Show this message
 ";
 
@@ -29,6 +30,9 @@ pub struct ScreenshotOptions {
     /// Sizes in points. Every screen is rendered at every size and every scale.
     pub sizes: Vec<[f32; 2]>,
     pub scales: Vec<f32>,
+    /// A Civilization V folder to read the skin's game art from. Without it the screens are
+    /// drawn as on a machine with no game: a plain navy page and no fans.
+    pub game_art: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -43,6 +47,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Command, String> 
     let mut directory: Option<PathBuf> = None;
     let mut sizes: Vec<[f32; 2]> = Vec::new();
     let mut scales: Vec<f32> = Vec::new();
+    let mut game_art: Option<PathBuf> = None;
 
     let mut args = args.into_iter();
     while let Some(argument) = args.next() {
@@ -66,6 +71,12 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Command, String> 
                     .ok_or_else(|| "--scale needs a value like 1.5".to_owned())?;
                 scales.push(parse_scale(&value)?);
             }
+            "--game-art" => {
+                let value = args
+                    .next()
+                    .ok_or_else(|| "--game-art needs a Civilization V folder".to_owned())?;
+                game_art = Some(PathBuf::from(value));
+            }
             other => return Err(format!("unknown argument: {other}")),
         }
     }
@@ -79,9 +90,10 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Command, String> 
                 sizes
             },
             scales: if scales.is_empty() { vec![1.0] } else { scales },
+            game_art,
         })),
-        None if !sizes.is_empty() || !scales.is_empty() => {
-            Err("--size and --scale only apply to --screenshot".to_owned())
+        None if !sizes.is_empty() || !scales.is_empty() || game_art.is_some() => {
+            Err("--size, --scale and --game-art only apply to --screenshot".to_owned())
         }
         None => Ok(Command::RunApp),
     }

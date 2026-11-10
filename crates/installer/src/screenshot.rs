@@ -49,6 +49,10 @@ pub fn run(options: &ScreenshotOptions) -> Result<(), String> {
         phase: Phase::SettingScale,
         frames_in_phase: 0,
         problems: Arc::clone(&problems),
+        art: options
+            .game_art
+            .as_deref()
+            .map(crate::game_art::GameArt::read),
     };
 
     let native_options = crate::native_options(
@@ -96,6 +100,9 @@ struct ScreenshotRun {
     phase: Phase,
     frames_in_phase: u32,
     problems: Arc<Mutex<Vec<String>>>,
+    /// The game art to draw every screen over, read before the first frame and handed to the
+    /// skin on it.
+    art: Option<crate::game_art::GameArt>,
 }
 
 /// Frames to wait for a resize/rescale to take effect before giving up and moving on.
@@ -125,6 +132,9 @@ impl eframe::App for ScreenshotRun {
             return;
         };
 
+        if let Some(art) = self.art.take() {
+            crate::deco::install_art(&ctx, art);
+        }
         if self.preview.is_none() {
             self.preview = Some(InstallerApp::preview(job.screen));
             ctx.set_pixels_per_point(job.scale);

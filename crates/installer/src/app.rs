@@ -208,9 +208,11 @@ pub struct InstallerApp {
     running: Option<RunningInstall>,
     /// What the clock beside "Installing…" reads in a preview, which has no run to time.
     preview_elapsed: Option<Duration>,
-    /// Whether the art-deco theme has been installed on the context yet. Fonts and style
-    /// are set once per context, not per frame - rebuilding the font atlas is not free.
+    /// Whether the theme has been installed on the context yet. Fonts and style are set once
+    /// per context, not per frame - rebuilding the font atlas is not free.
     skinned: bool,
+    /// The game's own pictures the skin is drawn with, and which game they were read from.
+    art: ArtState,
     /// The App Data Store's measured size, when the storage panel is open. `None` between
     /// looks - measuring a multi-gigabyte store is not a per-frame job.
     store_size: Option<u64>,
@@ -241,6 +243,26 @@ pub struct InstallerApp {
     checkout_ref: Option<CheckoutRef>,
     checkout_ref_for: String,
     checkout_ref_read: Option<Instant>,
+}
+
+/// The game's pictures for the skin (`game_art`): which game they were last read from, and
+/// the read still under way, if one is.
+struct ArtState {
+    /// Whether to read any. A launch does; a preview never, as its folders are illustrative -
+    /// `--screenshot --game-art` hands the skin its art itself.
+    wanted: bool,
+    read_for: Option<PathBuf>,
+    loading: Option<Receiver<(PathBuf, crate::game_art::GameArt)>>,
+}
+
+impl Default for ArtState {
+    fn default() -> Self {
+        Self {
+            wanted: true,
+            read_for: None,
+            loading: None,
+        }
+    }
 }
 
 /// The first `max` characters of a commit summary, with an ellipsis when it was cut -
@@ -435,6 +457,7 @@ impl InstallerApp {
             running: None,
             preview_elapsed: None,
             skinned: false,
+            art: ArtState::default(),
             store_size: None,
             first_run_note,
             installed_version: None,
@@ -505,6 +528,10 @@ impl InstallerApp {
             running: None,
             preview_elapsed: None,
             skinned: false,
+            art: ArtState {
+                wanted: false,
+                ..ArtState::default()
+            },
             store_size: None,
             first_run_note: None,
             installed_version: None,
@@ -616,10 +643,22 @@ impl InstallerApp {
             self.skinned = true;
         }
         self.poll();
+        self.keep_art(ui.ctx());
+        deco::backdrop(ui);
         deco::page(ui.style()).show(ui, |ui| {
             // Fill the window rather than shrink-wrapping the widgets, so the page
             // background covers the whole surface.
             ui.set_min_size(ui.available_size());
+            // The top bar stays put while the page scrolls under it, as the Civilopedia's
+            // does. The build's own version rides at its right: the one moment anyone looks
+            // for it is while checking it against the newer-version notice below, or while
+            // writing a bug report. The tile follows the Flavor. It is drawn before the choice
+            // below is read, so a click there discards this frame and redraws it at once.
+            deco::header(
+                ui,
+                ["Civilization 5", emblem(&self.flavor), "Installer"],
+                Some(&format!("v{}", crate::update::CURRENT_VERSION)),
+            );
             // The whole page scrolls: the extra-mod list and a long activity
             // log can outgrow any window, and on small screens even the base layout does.
             egui::ScrollArea::vertical()
@@ -630,6 +669,7 @@ impl InstallerApp {
                 .content_margin(egui::Margin {
                     left: deco::PAGE_MARGIN,
                     right: deco::PAGE_MARGIN,
+                    top: deco::BELOW_TOP_BAR as i8,
                     ..egui::Margin::ZERO
                 })
                 .show(ui, |ui| {
@@ -642,28 +682,19 @@ impl InstallerApp {
     }
 
     fn contents(&mut self, ui: &mut egui::Ui) {
-        // The build's own version rides in the header's right corner, just above the
-        // rule: the one moment anyone looks for it is while checking it against the
-        // newer-version notice below, or while writing a bug report.
-        // The tile follows the Flavor. It is drawn before the choice below is read, so a
-        // click there discards this frame and redraws it at once.
-        deco::header(
+        deco::page_note(
             ui,
-            ["Civilization 5", emblem(&self.flavor), "Installer"],
-            Some(&format!("v{}", crate::update::CURRENT_VERSION)),
-        );
-        ui.label(
             egui::RichText::new(
                 "Pick a version to download, or point the installer at your own checkout. \
                  A release brings its own mod DLL; anything else is built here.",
             )
-            .small()
-            .color(theme::PARCHMENT_DIM),
+            .small(),
         );
         if let Some(tag) = &self.newer_installer {
             // One sentence and a link, no auto-update machinery.
             ui.horizontal(|ui| {
-                ui.label(
+                deco::page_label(
+                    ui,
                     egui::RichText::new(format!("A newer installer ({tag}) is available:"))
                         .color(theme::GOLD_BRIGHT),
                 );
@@ -988,7 +1019,8 @@ impl InstallerApp {
             && let Some(note) = &self.first_run_note
         {
             ui.vertical_centered(|ui| {
-                ui.label(
+                deco::page_label(
+                    ui,
                     egui::RichText::new(note.as_str())
                         .small()
                         .color(theme::PARCHMENT_DIM),
@@ -1023,7 +1055,7 @@ impl InstallerApp {
         let line = self.status_line();
         match &self.status {
             Status::Ready => {
-                ui.label(egui::RichText::new(line).color(theme::PARCHMENT_DIM));
+                deco::page_label(ui, egui::RichText::new(line).color(theme::PARCHMENT_DIM));
             }
             Status::Installing => {
                 deco::progress(ui, None);
@@ -1037,9 +1069,10 @@ impl InstallerApp {
                     .map(|run| run.started.elapsed())
                     .or(self.preview_elapsed);
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new(line).color(theme::GOLD_BRIGHT));
+                    deco::page_label(ui, egui::RichText::new(line).color(theme::GOLD_BRIGHT));
                     if let Some(elapsed) = elapsed {
-                        ui.label(
+                        deco::page_label(
+                            ui,
                             egui::RichText::new(elapsed_label(elapsed)).color(theme::PARCHMENT_DIM),
                         );
                     }
@@ -1048,7 +1081,7 @@ impl InstallerApp {
             Status::Installed { .. } => {
                 deco::progress(ui, Some(1.0));
                 ui.add_space(2.0);
-                ui.label(egui::RichText::new(line).color(theme::LAUREL));
+                deco::page_label(ui, egui::RichText::new(line).color(theme::LAUREL));
             }
             Status::Failed { .. } => {
                 deco::notice(ui, theme::EMBER, |ui| {
@@ -1999,6 +2032,45 @@ impl InstallerApp {
     }
 
     /// Drain whatever the worker thread has produced since the last frame.
+    /// Read the game's pictures for the skin whenever the game folder settles on a new game,
+    /// and drop them when it no longer names one. Read on a thread of their own - a 9 MB
+    /// archive member from a spinning disk is not a frame's work - and handed to the skin when
+    /// they arrive, if the folder still names the game they were read from.
+    fn keep_art(&mut self, ctx: &egui::Context) {
+        if let Some(loading) = &self.art.loading
+            && let Ok((root, art)) = loading.try_recv()
+        {
+            self.art.loading = None;
+            if self.art.read_for.as_ref() == Some(&root) {
+                deco::install_art(ctx, art);
+            }
+        }
+        if !self.art.wanted {
+            return;
+        }
+        let root = self
+            .resolved
+            .as_ref()
+            .ok()
+            .map(|folders| folders.game_root.clone());
+        if root == self.art.read_for {
+            return;
+        }
+        self.art.read_for.clone_from(&root);
+        deco::remove_art(ctx);
+        let Some(root) = root else {
+            return;
+        };
+        let (send, receive) = channel();
+        let repaint = ctx.clone();
+        std::thread::spawn(move || {
+            let art = crate::game_art::GameArt::read(&root);
+            let _ = send.send((root, art));
+            repaint.request_repaint();
+        });
+        self.art.loading = Some(receive);
+    }
+
     fn poll(&mut self) {
         if let Some(check) = &self.update_check
             && let Ok(tag) = check.try_recv()

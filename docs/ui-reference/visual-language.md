@@ -1,184 +1,186 @@
-# Visual Language - the installer's art-deco skin
+# Visual Language - the installer's Civ V skin
 
-**This document is the source the skin is generated from.** Ticket 09's rule: components are
-built from this prose, not from screenshots. The captures that may sit beside this file are
-for *checking* the result afterwards, never an input. Every colour, line, and proportion in
+**This document is the source the skin is generated from.** Every colour, line and proportion in
 `crates/installer/src/theme.rs` and `crates/installer/src/deco.rs` must trace to a sentence
 here; when the skin changes, this file changes in the same commit.
 
-All artwork described here is original. Nothing is extracted from, traced over, or measured
-out of the game's files (ADR-0003).
+The skin is the Vox Populi Civilopedia's Civ V style (`web/src/civ5.css` in that project),
+carried over to egui, so the installer and the Civilopedia read as one family. It replaced the
+installer's own art-deco skin (chamfered frames lit at 45°, a centred hex crest), which the
+Civilopedia had first copied and then left.
 
 ## Intent
 
-Civilization V frames its interface like a 1930s exposition poster: deep night-blue grounds,
-warm parchment lettering, and machined gold trim. Ornament is disciplined - a few strong
-motifs (lit rims, hex crowns, rules) applied sparingly on large
-calm surfaces. The installer should read as a small, well-made instrument from that same
-workshop: dark, warm, symmetrical, with gold used as a *line* colour far more often than as
-a *fill* colour.
+The Civilopedia lays the game's own paintings behind see-through navy panels framed in a thin
+gold rim lit from straight above. Ornament is the game's: a gold fan in each panel's top
+corners, warm glowing headings. The page is calm and dark, the painting gives it depth, and
+gold is a line colour, not a fill.
+
+## Game art
+
+Two pieces of the skin are the game's, read at runtime from the player's own installation and
+never shipped (`game_art.rs`, ADR-0012):
+
+- **The backdrop**: the base game's main-menu painting, `CivilzationVAtlas.dds` in
+  `Resource/DX9/UITextures.fpk` - the one behind the Civilopedia's home page. It covers the
+  window: scaled to fill it, centred, cropped at the edges, fixed while the page scrolls.
+- **The fans**: the Wonder popup's `TopLeftCorner.dds` and `TopRightCorner.dds`, Brave New
+  World's copies first. Each is lit as the rim it lies under, as the Civilopedia's build does:
+  every row scaled by a factor passing from the rim's top tone to its side tone over the first
+  10 px, so the fan's gold meets the rim at the rim's brightness.
+
+Without a readable game (no game folder yet, a damaged archive), the page is plain Page navy
+and panels have no fans. Everything else is unchanged, so the skin never depends on the art.
 
 ## Palette
 
-The palette is three families - navy grounds, parchment inks, gold trim - plus two accent
-tones for outcomes. Backgrounds get darker as surfaces get deeper (page → panel wells);
-text gets brighter as it gets more important.
-
 ### Navy grounds
 
-| Name        | Hex       | Role |
-| ----------- | --------- | ---- |
-| Page navy   | `#0E1A28` | The window background. Everything sits on this. |
-| Panel navy  | `#152638` | Fill of framed panels - one step up from the page. |
-| Raised navy | `#1C3350` | Interactive surfaces at rest: buttons, hovered rows. |
-| Well navy   | `#0A1420` | Sunken troughs: text-entry fields, the progress trough. Darker than the page - a well, not a plate. |
+| Name         | Hex       | Role |
+| ------------ | --------- | ---- |
+| Page navy    | `#0E1A28` | Under the backdrop; the page when there is none. The top bar, at 92%. |
+| Panel navy   | `#152638` | Panels, at 92%: see-through to the painting. Opaque for what floats over the page - dropdown lists, the file browser. |
+| Raised navy  | `#1C3350` | Buttons at rest. |
+| Raised hover | `#234068` | A button hovered, pressed or open. |
+| Well navy    | `#0A1420` | Sunken: text fields, checkboxes, radio buttons, the progress trough. |
+
+The 92% is the Civilopedia owner's, chosen from 80 to 95 in steps of one.
 
 ### Parchment inks
 
 | Name             | Hex       | Role |
 | ---------------- | --------- | ---- |
-| Parchment        | `#E6D8B0` | Body text. The default ink on navy. |
-| Parchment bright | `#F4EACC` | The title and text that must carry: headings, button labels. |
-| Parchment dim    | `#AC9F7C` | Secondary text: quiet status lines, activity-log detail. |
+| Parchment        | `#E6D8B0` | Body text. |
+| Parchment bright | `#F4EACC` | Button labels, the wordmark. |
+| Parchment dim    | `#AC9F7C` | Secondary text, the version, fine print. |
+| Heading          | `#F8E7B0` | Section headings, with their glow (`#E7B450`). |
 
-### Gold trim
+### Gold
 
 | Name        | Hex       | Role |
 | ----------- | --------- | ---- |
-| Gold bright | `#E7C565` | Emphasis lines: hovered borders, panel captions. |
-| Gold        | `#C3963C` | The standard trim line: outer panel frames, progress fill, divider diamonds. |
-| Gold dark   | `#7E6226` | Recessed trim: inner frame lines, resting widget borders, the quiet ends of a divider. |
+| Gold bright | `#E7C565` | The emblem, a radio's pearl, a checkbox's tick, the progress fill's top. |
+| Gold        | `#C3963C` | The hatched stripes. |
+| Gold dark   | `#7E6226` | The progress fill's foot; text selection. |
+
+### Rims
+
+A rim has three tones, top, side, bottom. It holds its top tone along the top, passes into the
+side tone over 10 px down the sides, and into the bottom tone along the bottom: lit from
+straight above. A box under 20 px tall passes over half its height instead.
+
+| Strength | Top       | Side      | Bottom    | Used for |
+| -------- | --------- | --------- | --------- | -------- |
+| Panel    | `#C2A66B` | `#8A6F42` | `#5A4422` | Panels, buttons and fields at rest, the hex tile, the progress trough. |
+| Quiet    | `#857350` | `#64553A` | `#463A28` | Checkboxes and radio buttons at rest; anything disabled. |
+| Lit      | `#D9BF84` | as Panel  | as Panel  | Hovered, pressed or open. A checkbox or radio takes the Panel rim instead. |
+| Focus    | `#EAD29A` | `#B4955A` | as Panel  | Keyboard focus, in place of an outline. |
+
+Two strengths, so the eye lands on the content and on what is active rather than on a grid of
+equal outlines.
 
 ### Outcome accents
 
 | Name   | Hex       | Role |
 | ------ | --------- | ---- |
-| Laurel | `#9DBB61` | Success - "installed". Used for text and notice borders only, never large fills. |
-| Ember  | `#C96A45` | Failure and refusal. Same restraint: text and border tint, never a filled alarm box. |
+| Laurel | `#9DBB61` | Success - text only. |
+| Ember  | `#C96A45` | Failure and refusal - a notice's rim and text. |
 
-Rules of use: gold is trim - the only gold *fills* are the progress bar's fill and a
-pressed button. Accents colour words and borders, not areas. There is no pure white and no
-pure black anywhere.
+A notice's rim is its accent down the sides, 25% toward Parchment bright along the top and 45%
+toward black along the bottom.
 
 ## Typography
 
-One face: **Jost** (embedded, ADR-0003 - OFL), a geometric sans of exactly the
-period the ornament comes from. It is used for every piece of UI text. No italics, no
-synthetic bold; hierarchy comes from size and colour.
+One face, **Jost** (embedded, ADR-0003, OFL). No italics, no synthetic bold.
 
-| Style   | Size | Colour           | Use |
-| ------- | ---- | ---------------- | --- |
-| Display | 26 px | Parchment bright | The window title, once, in the header. |
-| Caption | 17 px | Gold bright      | Panel captions ("What to install"). |
-| Body    | 16 px | Parchment        | Everything conversational. |
-| Button  | 17 px | Parchment bright | Button labels. |
-| Small   | 13 px | Parchment dim    | Activity-log lines, fine print. |
+| Style    | Size  | Colour           | Use |
+| -------- | ----- | ---------------- | --- |
+| Heading  | 19 px | Heading, glowing | Section headings ("What to install"). |
+| Wordmark | 17 px, 2.5 px tracking, capitals | Parchment bright | The top bar's words. |
+| Emblem   | 19 px | Gold bright      | The letters on the hex tile; smaller as needed to clear its rim. |
+| Body     | 16 px | Parchment        | Everything conversational. |
+| Button   | 17 px | Parchment bright | Button labels; the primary action's too. |
+| Small    | 13 px | Parchment dim    | Fine print, the activity log, the version. |
 
-## Motif vocabulary
+**Glow.** A heading glows warm gold as the game's titles do: the Civilopedia's text-shadow
+(6 px of `#E7B450` at 75%, 14 px at 35%, a black drop) approximated without blur - the name
+painted in rings at 1.5 px and 4 px in faint glow colour, a black copy 1 px down, then the name.
 
-Four motifs, and only these four. Restraint is the style.
+**Page note.** The strap line under the top bar is Small in Parchment bright on a plate of black
+at 59% (alpha 150), shrink-wrapped to the text with 8 × 3 px of air and 4 px corners, so it
+reads over the brightest part of the painting.
 
-1. **Lit rim.** Every border is one metal edge, 2 px deep, lying just inside the shape's
-   outline, after Civilization V's own frames (`grid9framegold8`): a face pixel and a shade
-   pixel inside it. Light comes from the top-left corner, at 45°, so each stretch is toned
-   by the way it faces - the face brightens towards a pale highlight on top and left edges
-   and falls to bronze on the right and bottom; the shade stays dark except on the faces
-   turned to the light. Everything else that is shaded takes the same light: the progress
-   fill's bevel, a panel's groove, the shadows under the file browser and dropdowns, which
-   fall down and to the right. The rim is faceted like a machined frame: each straight stretch is one
-   colour from end to end, set only by the way it faces, and stretches meet on a mitre at
-   the corner - so the light never shifts along an edge, and every edge facing the same way,
-   on any piece, is the same colour. A *raised* rim
-   (panels, plates, buttons) catches the light on its outward faces; a *sunken* one (text
-   boxes, the progress trough, a pressed button) on its far wall.
-2. **Hex crown.** The game's own map tile - a pointy-top hexagon - set inside a second
-   outline of itself 5 px out, which shows above and below whatever crosses the tile, its
-   upright sides carried to stand on it. Used once, around the header's emblem, as a raised
-   rim.
-3. **Rule.** A rim seen edge-on, lit as any upward-facing stretch is: its face row over its
-   shade row. In the header it runs out from the points of the title plates to the edges of
-   the page, fading as it goes.
-4. **Hatched fill.** Diagonal 45° Gold stripes (3 px wide, 9 px apart, ≈ 55% opacity) inside
-   a well - the "working" state of the progress bar, when there is no fraction to show.
+**Text on the painting.** Other lettering laid straight on the page rather than in a panel - the
+status line, the first-run note - carries the game's text shadow: a soft dark haze
+behind the line (black at 65%, 14 px blur) and a black drop 1 px down. Only while a painting is
+behind it; on plain navy it needs none.
 
-## Line weights
+## Shapes
 
-- **2 px** - every border and rule: the lit rim. One line, never doubled.
-- Emphasis is the metal, not the width: a hovered widget's rim is struck in Gold bright.
-- Straight stretches of a rim sit on whole pixels, so each of its two rows is one crisp
-  pixel, not two half-lit ones. Slopes are only ever parallel to the hex's own edges.
+- **Corners**: every box is rounded to 6 px - panels, buttons, fields, the progress trough, and
+  the boxes egui draws itself (dropdown rows, the file browser). A checkbox is rounded to 3 px.
+- **Rim**: 2 px, lying just inside the shape's outline, with a one-physical-pixel feather either
+  side. Each point is the tone its height gives it, so the rim is the same at any size.
+- **Fill**: inside the rim and no further, so a see-through fill never darkens the rim.
+- **The hex tile**: a pointy-top hexagon, the game's map tile. The one shape not rounded: the
+  top bar's emblem sits on one, 19 px from centre to point, and every radio button is one.
 
-## Corner treatments
+## Components
 
-- **Painted panels:** chamfered corners, 8 px cut at 45°, the rim following the cut. Never
-  rounded.
-- **Painted widgets** (buttons, path boxes, the version box): chamfered corners, 4 px cut at
-  45°, painted by the shell rather than by egui - egui draws widget frames as rounded
-  rectangles and has no chamfer, so the frame is drawn underneath and the widget's own is
-  suppressed (`deco::button`, `deco::text_field`, `deco::plate`).
-- **Radio buttons**: a hex tile, pointy-top as the game's map tiles stand, with a smaller
-  filled hex inside the one chosen. Painted by the shell (`deco::radio_value`); egui's own is
-  a circle, and a circle is the one shape this skin does not have.
-- **Everything else** (checks, and every part of the embedded file browser): square,
-  zero radius. Nothing in this skin is rounded; deco is straight lines and 45° cuts, and a
-  radius - however small - is the one shape it does not have. Where the cut cannot be painted,
-  square is at least in the language.
-- Chamfers are always 45° and always symmetrical.
+**Top bar.** The Civilopedia's masthead: 46 px across the window's top edge, Page navy at 92%,
+staying put while the page scrolls under it. It stands on a rule (below) that holds solid for
+62% of the width and then fades out to the right. On the window's centre, the wordmark:
+"CIVILIZATION 5", the hex tile with the emblem, "INSTALLER", 7 px between word and tile - set
+the way the Civilopedia's logo sets its VP inside the word. The tile is Panel navy in the Panel
+rim; the emblem names what is being installed (VP, CBP, MOD). The version sits at the right,
+20 px in, in Small.
 
-## Proportions and spacing
+**Panel.** Panel navy at 92% in the Panel rim, 10 px padding, full content width. A fan in each
+top corner, 24 px square from the rim's outer corner, cut to the panel's rounded inner box, so
+the rim lies over its outer edge. An optional section heading at the top.
 
-- Window: 900 × 640 points is both the default and the minimum - the layout is designed
-  down to that size and the window will not shrink further.
-- Page margin: 20 px on every side of the window.
-- Header: ≈ 77 px tall - the VP tile in its hex outline, the title plates, the rule.
-- Panels: 10 px internal padding; 6 px vertical rhythm between panels.
-- Grid (label/field rows): 12 px column gap, 4 px row gap; fields 360 px wide.
-- Buttons: minimum 150 × 30 px for the primary action; label centred.
-- Progress bar: 14 px tall, full content width, 3 px between trough frame and fill.
-- The activity log is the flexible element: it takes exactly the height that remains and
-  scrolls inside itself, pinned to the newest line, so no screen ever overflows the page.
+**Section heading.** The name in Heading style, then a rule running on from it, 0.6 em after the
+name, to the panel's inner edge, its top 0.3 em above the name's baseline.
 
-## Component recipes
+**Rule.** Two 1 px rows: the Panel rim's top tone over its side tone. The heading's rule, the
+divider inside a panel, and the top bar's foot.
 
-**Panel.** Panel-navy octagon (8 px chamfer) filled under the content, a raised Gold rim on
-its edge, 10 px padding. An optional caption in Caption style sits at the top-left inside the
-frame, followed by 6 px of air. Panels span the full content width.
+**Button.** Raised navy in the Panel rim, Button-style label. Hovered or pressed: Raised hover in
+the Lit rim. Keyboard focus: the Focus rim. Disabled: Panel navy in the Quiet rim, label
+Parchment dim.
 
-**Header.** "VP" in Gold bright at 31 px, a fifth above Display, in a pointy-top hex tile on
-the window's exact horizontal centre. Two plates flank it 3 px clear of its sides, tall
-enough to meet the corners of the outline around the tile and ending in a point whose edges
-meet at 120°, a hex's own corner; "CIVILIZATION 5" and "INSTALLER" sit on them in spaced
-capitals (19 px, 3 px tracking), each centred on its plate, and the plates are equal so the
-whole stays symmetrical. Tile and plates have Panel-navy faces and raised Gold rims. The hex
-crown frames the tile above and below the plates, and the rule runs out from the plates'
-points to the page edges, the version resting on its right end. Rendered once per window.
+**Text field.** Well navy in the Panel rim. While typed in, the fill lifts to Panel navy.
 
-**Button.** Raised-navy fill, a raised Gold-dark rim, Button-style parchment-bright label.
-Hover: the rim is struck in Gold bright and the fill lightens one step. Pressed: the rim
-sinks, the fill flips to Gold, the label to Page navy - the one moment gold is a fill. Disabled: fill
-falls to Panel navy, label to Parchment dim, border stays Gold dark.
+**Checkbox.** A Well navy box rounded to 3 px in the Quiet rim; Panel rim under the pointer.
+Ticked: the Civilopedia's tick, 2 px Gold bright.
 
-**Text field.** Well-navy trough, a sunken Gold-dark rim, Body parchment text; the caret and
-selection use Gold. Focus strikes the rim in Gold bright.
+**Radio button.** A Well navy hex tile in the Quiet rim, its points a pixel above and below the
+mark's square so it carries the checkboxes' weight; Panel rim under the pointer. Chosen: a
+smaller Gold bright tile inside, centre to point a quarter of the mark's height, in a faint glow.
 
-**Choice marks (radio / checkbox).** A well-navy hex (radio) or square with 1.5 px cuts
-(checkbox), with a sunken Gold-dark rim. The chosen mark is a parchment hex or tick. Label in
-Body parchment.
+**Dropdown list, file browser.** egui's own: opaque Panel navy, a 2 px border in the rim's side
+tone, 6 px corners. Shadows `#0A1420` at 70%, cast down and to the right: 6 px offset and 5 px
+blur for a dropdown, 12 px and 16 px for a window.
 
-**Groove.** The divider inside a panel: a cut across it, two 1 px rows of Gold dark - the
-upper wall in shadow, the lower one lit.
+**Progress bar.** 14 px, a Well navy trough in the Panel rim. Determinate: a fill inset 3 px,
+Gold bright at the top shading to Gold dark at the foot - lit from above, as the rims are.
+Indeterminate: 45° Gold stripes, 3 px wide and 9 px apart, at 55% opacity. Never animated.
 
-**Progress bar.** A well-navy trough with a sunken Gold-dark rim (3 px chamfer). Determinate: a Gold fill from the left, inset 3 px, with a 1 px bevel lit along its top
-and left edges and shaded along its bottom and right. Indeterminate: the hatched-fill motif across the whole
-trough. Never animated in still renders.
+**Notice.** A panel in its accent's rim, no fans, its fill Panel navy warmed very slightly
+toward the accent. The text stays parchment - the rim carries the tone.
 
-**Notice.** A panel variant whose rim is struck in an outcome accent (Laurel or Ember) and
-whose fill is Panel navy warmed very slightly toward the accent. The text stays parchment -
-the border carries the tone.
+## Proportions
+
+- Window: 900 × 640 points is both the default and the minimum.
+- Page margin: 20 px either side and below; 10 px between the top bar and the page.
+- Panels: 10 px internal padding; 6 px between panels.
+- Buttons: minimum 150 × 30 px for the primary action.
+- The activity log takes the height that remains and scrolls inside itself, pinned to the
+  newest line.
 
 ## Screen composition
 
-Every screen is: header, then panels, on the page ground - nothing floats outside a frame
-except the status line and the primary button. The status line sits under the button in
-Body size, coloured by outcome: Parchment dim at rest, Gold bright while working, Laurel on
-success, Ember on failure. No screen leaves any surface in an unthemed colour.
+Every screen is the top bar, then panels, over the painting. Outside a panel there are only the
+strap line, the primary buttons, the status line (Parchment dim at rest, Gold bright while
+working, Laurel on success), the progress bar and the storage toggle. No surface is left in an
+unthemed colour.

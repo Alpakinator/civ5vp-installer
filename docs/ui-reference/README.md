@@ -4,7 +4,7 @@ Screenshots of Civilization V's own interface, kept here as **visual reference o
 
 ## What this is for
 
-Ticket 09 styles the installer in Civ5's art-deco language. These captures are how that work gets *checked* - render a screen with `cargo run -- --screenshot <dir>`, put it beside the reference, and judge whether they read as the same visual family.
+Ticket 09 styles the installer as part of Civ5, now in the Vox Populi Civilopedia's Civ V look (`visual-language.md`). These captures are how that work gets *checked* - render a screen with `cargo run -- --screenshot <dir>`, put it beside the reference, and judge whether they read as the same visual family.
 
 ## What this is not for
 
@@ -12,7 +12,7 @@ Ticket 09 styles the installer in Civ5's art-deco language. These captures are h
 
 ## Licensing
 
-No file in this directory is ever shipped, embedded, or redistributed in the installer binary. All installer artwork is original work in the same visual language - see ADR-0003. Keep this directory out of any release artifact.
+No file in this directory is ever shipped, embedded, or redistributed in the installer binary. The only game art the installer draws is read from the player's own installation at runtime (ADR-0012); see ADR-0003. Keep this directory out of any release artifact.
 
 ## What's useful to capture
 
