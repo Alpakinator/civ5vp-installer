@@ -23,12 +23,13 @@ pub const SDK_ISO: PinnedDownload = PinnedDownload {
 /// The clang major version the docker-branch build is proven against
 /// (`docs/pinned-artifacts.md` §2). Part of the Toolchain identity, not an incidental detail.
 ///
-/// Before moving past 18: newer clang in this build's mode (MSVC 19.33, C++14; see
-/// `/Zc:threadSafeInit-` in `build/flags.rs`) turns on sized deallocation. Every `delete` then
-/// calls `operator delete(void*, unsigned int)`, which msvcr90 doesn't have, so the link fails
-/// until `-fno-sized-deallocation` is passed. Checked 2026-11-10 on a one-line `delete`:
-/// 18.1.8 calls the plain `??3@YAXPAX@Z`, 23.1.3 the sized `??3@YAXPAXI@Z`. Upstream's CI hit
-/// the same link failure with clang 20.1.8 once `/std:c++14` was forced.
+/// Newer clang turns on sized deallocation: from clang 19, at C++14 and up, every `delete`
+/// calls `operator delete(void*, unsigned int)`, which msvcr90 doesn't have. The build already
+/// covers that: `vc9-crt-compat.cpp` (`build/mod.rs`) defines both sized forms and forwards
+/// them to the plain ones. Checked 2026-11-10 on a one-line `delete`: 18.1.8 calls the plain
+/// `??3@YAXPAX@Z` in every mode, 23.1.3 the sized `??3@YAXPAXI@Z` at C++14 and C++17.
+/// Upstream's CI scripts have no such shim, so there the link fails without
+/// `/Zc:sizedDealloc-`.
 pub const LLVM_VERSION: &str = "18.1.8";
 
 /// What the compiler is asked to target: Win32 x86.
