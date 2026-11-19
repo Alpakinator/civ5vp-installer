@@ -74,10 +74,12 @@ pub enum Screen {
     /// "MOD", and the mod list shows a mod that is offered only because another one ticked
     /// brings the file it plugs into.
     OwnModsModpack,
+    /// The Ready page with the "What to install" list open: each choice's card and emblem.
+    ChoosingFlavor,
 }
 
 impl Screen {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::FoldersNeeded,
         Self::Ready,
         Self::Installing,
@@ -86,6 +88,7 @@ impl Screen {
         Self::Browsing,
         Self::CommunityPatchOnly,
         Self::OwnModsModpack,
+        Self::ChoosingFlavor,
     ];
 
     /// Used to name the PNG this screen renders to.
@@ -99,6 +102,7 @@ impl Screen {
             Self::Browsing => "browsing",
             Self::CommunityPatchOnly => "ready-community-patch",
             Self::OwnModsModpack => "ready-own-mods-modpack",
+            Self::ChoosingFlavor => "choosing-what-to-install",
         }
     }
 }
@@ -229,6 +233,9 @@ pub struct InstallerApp {
     locations: SearchLocations,
     /// The file browser, while one is open. Presentation state: which window is up.
     browsing: Option<Browsing>,
+    /// Open the "What to install" list on the next frame: a preview's way of showing it open,
+    /// since which popup is open lives in egui's memory rather than here.
+    open_flavor_list: bool,
     /// The Version label the Build Fingerprint sidecar says is installed, and the Install Mode
     /// it was read for. Cached rather than read per frame - it is a file on disk, and the
     /// answer only moves when the folders, the mode, or an install does.
@@ -275,9 +282,6 @@ fn truncated(summary: &str, max: usize) -> String {
     taken
 }
 
-/// How far a caption is pushed in to clear the radio button above it.
-const RADIO_INDENT: f32 = 22.0;
-
 /// How many Releases back the unofficial-versions list reaches.
 ///
 /// Two: the changes since the newest Release, and the changes that *became* it. One was not
@@ -293,26 +297,36 @@ const SPANNED_RELEASES: usize = 2;
 /// cannot offer the illegal one without a rule of its own to enforce. [`Flavor`] makes the
 /// same guarantee at the type level; this is that guarantee drawn. The last one is legal only
 /// as a modpack, which the Core rules on and the panel draws (see [`Flavor::is_legal_with`]).
-fn flavor_choices() -> [(Flavor, &'static str, Option<&'static str>); 4] {
+fn flavor_choices() -> [deco::EmblemChoice<Flavor>; 4] {
+    // The emblems are the selection's letters the way players abbreviate it, as the header's
+    // tile has them, with EUI under VP where it comes too.
     [
-        (Flavor::CommunityPatch, "Community Patch only", None),
-        (
-            Flavor::VoxPopuli { eui: Eui::Disabled },
-            "Community Patch + Vox Populi",
-            None,
-        ),
-        (
-            Flavor::VoxPopuli { eui: Eui::Enabled },
-            "Community Patch + Vox Populi + EUI",
-            // The other two names are the mods as people say them; this one is an
-            // abbreviation, so it gets spelled out once underneath.
-            Some("EUI - enhanced user interface"),
-        ),
-        (
-            Flavor::OwnModsOnly,
-            "Neither - only your own mods, as a modpack",
-            None,
-        ),
+        deco::EmblemChoice {
+            value: Flavor::CommunityPatch,
+            emblem: &["CBP"],
+            label: "Community Patch only",
+            note: None,
+        },
+        deco::EmblemChoice {
+            value: Flavor::VoxPopuli { eui: Eui::Disabled },
+            emblem: &["VP"],
+            label: "Community Patch + Vox Populi",
+            note: None,
+        },
+        deco::EmblemChoice {
+            value: Flavor::VoxPopuli { eui: Eui::Enabled },
+            emblem: &["VP", "EUI"],
+            label: "Community Patch + Vox Populi + EUI",
+            // The other names are the mods as people say them; this one is an abbreviation,
+            // so it is spelled out once beside it.
+            note: Some("enhanced user interface"),
+        },
+        deco::EmblemChoice {
+            value: Flavor::OwnModsOnly,
+            emblem: &["MOD"],
+            label: "Neither - only your own mods, as a modpack",
+            note: None,
+        },
     ]
 }
 
@@ -470,6 +484,7 @@ impl InstallerApp {
             newer_installer: None,
             locations: locations.clone(),
             browsing: None,
+            open_flavor_list: false,
         };
         // Detected folders are worth remembering too: the next launch then starts from them
         // without searching.
@@ -545,10 +560,12 @@ impl InstallerApp {
             // A preview never detects anything: the paths above are stated, not found.
             locations: SearchLocations::default(),
             browsing: None,
+            open_flavor_list: false,
         };
         match screen {
             Screen::Ready => {}
             Screen::CommunityPatchOnly => app.flavor = Flavor::CommunityPatch,
+            Screen::ChoosingFlavor => app.open_flavor_list = true,
             Screen::OwnModsModpack => {
                 app.flavor = Flavor::OwnModsOnly;
                 app.install_mode = InstallMode::Modpack;
@@ -788,33 +805,32 @@ impl InstallerApp {
         ui.add_space(6.0);
         let mut chosen = false;
         deco::panel(ui, Some("What to install"), |ui| {
-            for (choice, label, caption) in flavor_choices() {
-                if deco::radio_value(ui, &mut self.flavor, choice, label).changed() {
-                    // Picking a Flavor the Install Mode rules out moves the mode with it: the
-                    // line itself says "as a modpack", so the click means that as well.
-                    if !self.flavor.is_legal_with(self.install_mode) {
-                        self.install_mode = InstallMode::Modpack;
-                    }
-                    // The header above names the Flavor and has been drawn already; redraw
-                    // the frame rather than show the old name until the mouse next moves.
-                    ui.ctx()
-                        .request_discard("the header's emblem follows the Flavor");
-                    chosen = true;
-                }
-                if let Some(caption) = caption {
-                    ui.horizontal(|ui| {
-                        // Clear of the radio button, so the caption reads as belonging to
-                        // the line above it rather than as a fourth choice.
-                        ui.add_space(RADIO_INDENT);
-                        ui.label(
-                            egui::RichText::new(caption)
-                                .small()
-                                .color(theme::PARCHMENT_DIM),
-                        );
-                    });
-                }
+            // One dropdown rather than four radios: the Civilopedia search's cards, each with
+            // the selection's emblem. "Mods to install" names it to a screen reader; the
+            // panel's heading is a label of its own.
+            if std::mem::take(&mut self.open_flavor_list) {
+                deco::open_emblem_dropdown(ui, "flavor");
             }
-            ui.add_space(4.0);
+            let picked = deco::emblem_dropdown(
+                ui,
+                "flavor",
+                "Mods to install",
+                &mut self.flavor,
+                &flavor_choices(),
+            );
+            if picked.changed() {
+                // Picking a Flavor the Install Mode rules out moves the mode with it: the
+                // line itself says "as a modpack", so the click means that as well.
+                if !self.flavor.is_legal_with(self.install_mode) {
+                    self.install_mode = InstallMode::Modpack;
+                }
+                // The header above names the Flavor and has been drawn already; redraw
+                // the frame rather than show the old name until the mouse next moves.
+                ui.ctx()
+                    .request_discard("the header's emblem follows the Flavor");
+                chosen = true;
+            }
+            ui.add_space(6.0);
             // 43 Civs is legal with every Flavor that has the Community Patch, with or without
             // EUI. Without it there is no Built DLL for 43 Civs to change, so it is greyed out -
             // keeping its tick for when a Flavor that has one comes back.

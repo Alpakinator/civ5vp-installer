@@ -41,10 +41,11 @@ pub fn chrome_glass() -> Color32 {
 
 // ── Parchment inks ───────────────────────────────────────────────────────────
 
-/// Body text - the default ink on navy.
-pub const PARCHMENT: Color32 = Color32::from_rgb(0xE6, 0xD8, 0xB0);
-/// Headings and button labels.
-pub const PARCHMENT_BRIGHT: Color32 = Color32::from_rgb(0xF4, 0xEA, 0xCC);
+/// Body text - the default ink on navy. This and Parchment bright are the Civilopedia's
+/// `#E6D8B0` and `#F4EACC` at 93%, so that a section heading is the brightest text on the page.
+pub const PARCHMENT: Color32 = Color32::from_rgb(0xD6, 0xC9, 0xA4);
+/// Button labels, the wordmark, what is lit under the pointer.
+pub const PARCHMENT_BRIGHT: Color32 = Color32::from_rgb(0xE3, 0xDA, 0xBE);
 /// Secondary text: quiet status lines, activity-log detail.
 pub const PARCHMENT_DIM: Color32 = Color32::from_rgb(0xAC, 0x9F, 0x7C);
 
@@ -59,7 +60,7 @@ pub const GOLD_DARK: Color32 = Color32::from_rgb(0x7E, 0x62, 0x26);
 
 /// A section heading's warm gold, brighter than the gold of the trim.
 pub const HEADING: Color32 = Color32::from_rgb(0xF8, 0xE7, 0xB0);
-/// The glow round a heading, as the game's titles have.
+/// A faint warm glow, round the header tile's emblem and a chosen radio button's pearl.
 pub const HEADING_GLOW: Color32 = Color32::from_rgb(0xE7, 0xB4, 0x50);
 
 // ── The rims ─────────────────────────────────────────────────────────────────
@@ -91,7 +92,7 @@ pub const EMBER: Color32 = Color32::from_rgb(0xC9, 0x6A, 0x45);
 
 /// The type scale, as named in the visual language. `Display` is egui's `Heading`; `Caption`,
 /// a section heading, is drawn by `deco`, so it has no `TextStyle` of its own.
-pub const CAPTION_SIZE: f32 = 19.0;
+pub const CAPTION_SIZE: f32 = 21.0;
 /// The primary button's label.
 pub const BUTTON_LARGE_SIZE: f32 = 17.0;
 

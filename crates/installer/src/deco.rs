@@ -4,9 +4,9 @@
 //! The look is the Vox Populi Civilopedia's Civ V style (`docs/ui-reference/visual-language.md`):
 //! rounded boxes in a 2 px gold rim lit from straight above, see-through navy panels over the
 //! game's own main-menu painting, a corner fan in each panel's top corners, and section
-//! headings that glow warm gold with a rule running on from the name. The painting and the
-//! fans are the game's, read from the player's installation at runtime (`game_art`,
-//! ADR-0012); everything else here is painted in code.
+//! headings in warm gold with a rule running on from the name. The painting, the fans
+//! and a card's ring and glass are the game's, read from the player's installation at runtime
+//! (`game_art`, ADR-0012); everything else here is painted in code.
 //!
 //! Presentation only: these functions lay out and paint, and decide nothing.
 
@@ -43,6 +43,8 @@ pub const BELOW_TOP_BAR: f32 = 10.0;
 struct Art {
     backdrop: Option<egui::TextureHandle>,
     fans: Option<[egui::TextureHandle; 2]>,
+    /// The ring and the glass a card's emblem is drawn with, only ever together.
+    emblem: Option<[egui::TextureHandle; 2]>,
 }
 
 fn art_id() -> egui::Id {
@@ -66,7 +68,22 @@ pub fn install_art(ctx: &egui::Context, art: crate::game_art::GameArt) {
             ctx.load_texture("fan-right", right, small),
         ]
     });
-    ctx.data_mut(|data| data.insert_temp(art_id(), Art { backdrop, fans }));
+    let emblem = art.icon_frame.zip(art.bare_disc).map(|(ring, glass)| {
+        [
+            ctx.load_texture("icon-frame", ring, small),
+            ctx.load_texture("bare-disc", glass, small),
+        ]
+    });
+    ctx.data_mut(|data| {
+        data.insert_temp(
+            art_id(),
+            Art {
+                backdrop,
+                fans,
+                emblem,
+            },
+        );
+    });
 }
 
 /// Go without the game's pictures: the game folder is gone or was never found.
@@ -238,24 +255,27 @@ fn lerp(from: Color32, to: Color32, t: f32) -> Color32 {
 /// The outline of a rectangle with its corners rounded to `radius`, clockwise from the top
 /// of its left side, as a polygon fine enough that no facet shows at `pixels_per_point`.
 fn rounded(rect: Rect, radius: f32, pixels_per_point: f32) -> Vec<Pos2> {
-    let radius = radius.min(rect.width() / 2.0).min(rect.height() / 2.0);
-    if radius <= 0.0 {
-        return vec![
-            rect.left_top(),
-            rect.right_top(),
-            rect.right_bottom(),
-            rect.left_bottom(),
-        ];
-    }
-    let steps = ((radius * pixels_per_point).ceil() as usize).clamp(3, 24);
+    rounded_each(rect, [radius; 4], pixels_per_point)
+}
+
+/// [`rounded`], each corner to its own radius: top left, top right, bottom right, bottom left.
+fn rounded_each(rect: Rect, radii: [f32; 4], pixels_per_point: f32) -> Vec<Pos2> {
+    let most = (rect.width() / 2.0).min(rect.height() / 2.0);
+    let radii = radii.map(|radius| radius.clamp(0.0, most));
     let corners = [
-        (pos2(rect.left() + radius, rect.top() + radius), 180.0_f32),
-        (pos2(rect.right() - radius, rect.top() + radius), 270.0),
-        (pos2(rect.right() - radius, rect.bottom() - radius), 0.0),
-        (pos2(rect.left() + radius, rect.bottom() - radius), 90.0),
+        (rect.left_top(), vec2(1.0, 1.0), 180.0_f32),
+        (rect.right_top(), vec2(-1.0, 1.0), 270.0),
+        (rect.right_bottom(), vec2(-1.0, -1.0), 0.0),
+        (rect.left_bottom(), vec2(1.0, -1.0), 90.0),
     ];
-    let mut points: Vec<Pos2> = Vec::with_capacity(4 * (steps + 1));
-    for (centre, start) in corners {
+    let mut points: Vec<Pos2> = Vec::new();
+    for ((corner, inward, start), radius) in corners.into_iter().zip(radii) {
+        if radius <= 0.0 {
+            points.push(corner);
+            continue;
+        }
+        let centre = corner + inward * radius;
+        let steps = ((radius * pixels_per_point).ceil() as usize).clamp(3, 24);
         for step in 0..=steps {
             let angle = (start + 90.0 * step as f32 / steps as f32).to_radians();
             let point = centre + radius * vec2(angle.cos(), angle.sin());
@@ -441,26 +461,6 @@ fn shadowed(painter: &egui::Painter, at: Pos2, galley: &Arc<egui::Galley>, colou
     painter.galley(at, galley.clone(), colour);
 }
 
-/// `galley` painted `around` times in a ring of `radius` in `colour`: a glow or a haze, since
-/// egui has no blur.
-fn halo(
-    painter: &egui::Painter,
-    at: Pos2,
-    galley: &Arc<egui::Galley>,
-    colour: Color32,
-    radius: f32,
-    around: usize,
-) {
-    for step in 0..around {
-        let angle = std::f32::consts::TAU * step as f32 / around as f32;
-        painter.galley_with_override_text_color(
-            at + radius * vec2(angle.cos(), angle.sin()),
-            galley.clone(),
-            colour,
-        );
-    }
-}
-
 /// A label laid straight on the page rather than in a panel, which carries its shadow so it
 /// reads over the painting behind it. Wraps as a label does.
 pub fn page_label(ui: &mut egui::Ui, text: egui::RichText) -> egui::Response {
@@ -612,8 +612,8 @@ fn fan(panel: Rect, texture: egui::TextureId, right: bool, ppp: f32) -> Shape {
     Shape::mesh(mesh)
 }
 
-/// A section's heading: its name glowing warm gold, as the game's titles do, with a rule
-/// running on from it to the panel's edge, standing on the name's baseline.
+/// A section's heading: its name in warm gold over a dark drop a pixel down, with no glow, and a
+/// rule running on from it to the panel's edge, standing on the name's baseline.
 fn section_heading(ui: &mut egui::Ui, caption: &str) {
     let galley = egui::WidgetText::from(
         egui::RichText::new(caption)
@@ -635,23 +635,6 @@ fn section_heading(ui: &mut egui::Ui, caption: &str) {
         return;
     }
     let painter = ui.painter();
-    let glow = theme::HEADING_GLOW;
-    halo(
-        painter,
-        rect.min,
-        &galley,
-        glow.gamma_multiply(0.045),
-        4.0,
-        16,
-    );
-    halo(
-        painter,
-        rect.min,
-        &galley,
-        glow.gamma_multiply(0.08),
-        1.5,
-        12,
-    );
     painter.galley_with_override_text_color(
         rect.min + vec2(0.0, 1.0),
         galley.clone(),
@@ -730,8 +713,8 @@ pub fn hairline(ui: &mut egui::Ui) {
 
 /// The top bar, the Civilopedia's masthead: page navy see-through to the painting, across the
 /// window's top edge, standing on a rule that fades out towards the right. On it, at the left,
-/// the wordmark - `before`, `emblem` on a hex tile, `after`, as the Civilopedia's sets its VP
-/// - and `corner` at the right.
+/// the wordmark - `before`, `emblem` engraved on a hex tile of glass, `after`, as the
+/// Civilopedia's sets its VP - and `corner` at the right.
 pub fn header(ui: &mut egui::Ui, [before, emblem, after]: [&str; 3], corner: Option<&str>) {
     let label = format!("{before} {emblem} {after}");
     let (bar, response) =
@@ -761,28 +744,12 @@ pub fn header(ui: &mut egui::Ui, [before, emblem, after]: [&str; 3], corner: Opt
             egui::TextStyle::Heading,
         )
     };
-    // The words as a nameplate sets them, spaced capitals; the tile's letters a size up, so
-    // the eye lands on what is being installed.
+    // The words as a nameplate sets them, spaced capitals.
     let before = set(before.to_uppercase(), WORD_SIZE, WORD_TRACKING);
     let after = set(after.to_uppercase(), WORD_SIZE, WORD_TRACKING);
     let middle = (bar.top() + (bar.height() - RIM) / 2.0).round_to_pixels(ppp);
     let tile_radius = TILE_RADIUS;
     let tile_half_width = (tile_radius * HEX_WIDTH_RATIO).round();
-    // Two letters fit the tile at the full size; a longer emblem is set smaller, by just as
-    // much as it needs to clear the tile's rim.
-    let room = 2.0 * (tile_half_width - RIM - 2.0);
-    let emblem = {
-        let full = set(emblem.to_owned(), EMBLEM_SIZE, 0.0);
-        if full.size().x <= room {
-            full
-        } else {
-            set(
-                emblem.to_owned(),
-                (EMBLEM_SIZE * room / full.size().x).floor(),
-                0.0,
-            )
-        }
-    };
 
     let shadow = has_backdrop(ui.ctx());
     let word = |galley: &Arc<egui::Galley>, x: f32| {
@@ -799,22 +766,20 @@ pub fn header(ui: &mut egui::Ui, [before, emblem, after]: [&str; 3], corner: Opt
     word(&before, x);
     x += before.size().x + TILE_GAP;
     let centre = pos2(x + tile_half_width, middle).round_to_pixels(ppp);
+    // The tile is the dropdown's emblem cut to the map tile's shape: the same glass, running
+    // to the rim and no further, and the same engraved letters.
     let tile = hexagon(centre, tile_radius);
-    painter.add(filled(&tile, theme::PANEL_NAVY));
+    let glass = offset_path(&tile, centre, RIM - 0.5);
+    painter.add(hex_glass(ui, centre, &glass));
     painter.add(rim(&tile, Tones::PANEL, pixel_of(ui)));
-    let emblem_at = pos2(
-        centre.x - emblem.size().x / 2.0,
-        centre.y - emblem.size().y / 2.0 + TEXT_DROP,
-    );
-    halo(
-        painter,
-        emblem_at,
-        &emblem,
-        theme::HEADING_GLOW.gamma_multiply(0.1),
-        2.0,
-        12,
-    );
-    painter.galley(emblem_at, emblem.clone(), theme::GOLD_BRIGHT);
+    // The letters fit the circle the hexagon's flat sides touch, so a wide emblem clears the
+    // rim at the sides as a narrow one does.
+    let flat = glass
+        .iter()
+        .map(|corner| corner.distance(centre))
+        .fold(0.0, f32::max)
+        * HEX_WIDTH_RATIO;
+    engrave(ui, centre, flat, &[emblem]);
     x = centre.x + tile_half_width + TILE_GAP;
     word(&after, x);
 
@@ -835,8 +800,6 @@ const TEXT_DROP: f32 = 1.0;
 /// The wordmark's words: size and tracking.
 const WORD_SIZE: f32 = 17.0;
 const WORD_TRACKING: f32 = 2.5;
-/// The emblem's size: the largest type in the bar.
-const EMBLEM_SIZE: f32 = 19.0;
 /// The tile's centre-to-point radius: as tall as the bar leaves room for.
 const TILE_RADIUS: f32 = 19.0;
 /// The air either side of the tile.
@@ -1151,4 +1114,816 @@ fn choice(
         );
     }
     response
+}
+
+// ── The emblem dropdown ──────────────────────────────────────────────────────
+
+/// One line of an [`emblem_dropdown`]: the value it picks, the letters engraved on its emblem
+/// (a line each), its words, and small print after them for what the words abbreviate.
+pub struct EmblemChoice<T> {
+    pub value: T,
+    pub emblem: &'static [&'static str],
+    pub label: &'static str,
+    pub note: Option<&'static str>,
+}
+
+/// A card's ring across, which is also the card's height: the Civilopedia's 32 px cards, grown
+/// as the installer's lettering is larger than the Civilopedia's (16 to 15 and more).
+const CARD_RING: f32 = 36.0;
+/// The rounding of a card box's right end: the Civilopedia's card radius.
+const CARD_RADIUS: f32 = 9.0;
+/// Between the ring and the words, and the words and their note: the Civilopedia's 0.4 em.
+const CARD_GAP: f32 = 7.0;
+/// After the words, inside a card's right end: 0.6 em.
+const CARD_END: f32 = 10.0;
+/// Between the cards in the open list.
+const CARD_SPACING: f32 = 3.0;
+/// The open list's padding round its cards, across and down.
+const LIST_PADDING: egui::Margin = egui::Margin::symmetric(8, 6);
+/// Between the closed box and the list under it.
+const LIST_GAP: f32 = 3.0;
+/// The closed box's arrow, and how far in from the box's right edge it ends.
+const ARROW: egui::Vec2 = vec2(9.0, 6.0);
+const ARROW_INSET: f32 = 7.0;
+/// How bright a card's ring is drawn in the list: at rest, and hovered or chosen.
+const RING_QUIET: f32 = 0.68;
+const RING_ACTIVE: f32 = 0.85;
+
+/// A dropdown whose lines are the Civilopedia's cards: each an emblem in the game's ring as its
+/// left edge, and a box from under the ring's centre holding the words. Closed, it is the chosen
+/// line's card, raised, with an arrow at its right end; open, a list of the cards, the chosen
+/// one's words in gold. To AccessKit it is a combo box called `name` whose value is the chosen
+/// line's words, and each card an option.
+pub fn emblem_dropdown<T: PartialEq + Clone>(
+    ui: &mut egui::Ui,
+    id_salt: &str,
+    name: &str,
+    current: &mut T,
+    choices: &[EmblemChoice<T>],
+) -> egui::Response {
+    let id = ui.make_persistent_id(id_salt);
+    let popup_id = id.with("popup");
+    let open = egui::Popup::is_id_open(ui.ctx(), popup_id);
+    let texts: Vec<(Arc<egui::Galley>, Option<Arc<egui::Galley>>)> = choices
+        .iter()
+        .map(|choice| emblem_texts(ui, choice))
+        .collect();
+    // Every card is as wide as the longest line, and the box as wide as the list, so the list
+    // hangs flush under the box.
+    let words = texts
+        .iter()
+        .map(|(label, note)| {
+            label.size().x + note.as_ref().map_or(0.0, |note| CARD_GAP + note.size().x)
+        })
+        .fold(0.0, f32::max);
+    let list_frame = egui::Frame::menu(ui.style()).inner_margin(LIST_PADDING);
+    let list_margin = list_frame.total_margin().sum().x;
+    let width = (CARD_RING + CARD_GAP + words + CARD_END + list_margin)
+        .max(CARD_RING + CARD_GAP + words + CARD_GAP + ARROW.x + ARROW_INSET);
+    let card_width = width - list_margin;
+    let chosen = choices
+        .iter()
+        .position(|choice| choice.value == *current)
+        .unwrap_or(0);
+
+    let (rect, _) = ui.allocate_exact_size(vec2(width, CARD_RING), egui::Sense::hover());
+    let mut response = ui.interact(rect, id, egui::Sense::click());
+    let label = choices.get(chosen).map_or("", |choice| choice.label);
+    response.widget_info(|| {
+        let mut info = egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, ui.is_enabled(), name);
+        info.current_text_value = Some(label.to_owned());
+        info
+    });
+    if ui.is_rect_visible(rect) {
+        let enabled = response.enabled();
+        let tones = if enabled && open && !response.has_focus() {
+            Tones::LIT
+        } else {
+            tones_for(&response)
+        };
+        let fill = match tones {
+            _ if !enabled => theme::PANEL_NAVY,
+            Tones::PANEL => theme::RAISED_NAVY,
+            _ => theme::RAISED_HOVER,
+        };
+        let ink = if enabled {
+            theme::PARCHMENT_BRIGHT
+        } else {
+            theme::PARCHMENT_DIM
+        };
+        let ring = card(ui, rect, fill, tones, false);
+        if let (Some(choice), Some((label, note))) = (choices.get(chosen), texts.get(chosen)) {
+            emblem(ui, ring, 1.0, choice.emblem);
+            card_words(ui, ring, label, note.as_ref(), ink);
+        }
+        let right = rect.right() - ARROW_INSET;
+        let arrow = Rect::from_min_max(
+            pos2(right - ARROW.x, rect.center().y - ARROW.y / 2.0),
+            pos2(right, rect.center().y + ARROW.y / 2.0),
+        );
+        ui.painter().add(Shape::convex_polygon(
+            vec![arrow.left_top(), arrow.right_top(), arrow.center_bottom()],
+            ink,
+            Stroke::NONE,
+        ));
+    }
+
+    let mut changed = false;
+    egui::Popup::menu(&response)
+        .id(popup_id)
+        .width(width)
+        .gap(LIST_GAP)
+        .frame(list_frame)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
+        .show(|ui| {
+            ui.spacing_mut().item_spacing.y = CARD_SPACING;
+            for (choice, (label, note)) in choices.iter().zip(&texts) {
+                let selected = choice.value == *current;
+                let (rect, row) =
+                    ui.allocate_exact_size(vec2(card_width, CARD_RING), egui::Sense::click());
+                row.widget_info(|| {
+                    egui::WidgetInfo::selected(
+                        egui::WidgetType::SelectableLabel,
+                        ui.is_enabled(),
+                        selected,
+                        choice.label,
+                    )
+                });
+                if ui.is_rect_visible(rect) {
+                    // At rest a card is quiet, its rim and ring dimmed; hovered, pressed or
+                    // chosen it takes the panel's rim and a brighter ring, and hovered or
+                    // pressed its fill lightens. The chosen one's words are gold.
+                    let lit = row.hovered() || row.is_pointer_button_down_on();
+                    let tones = if row.has_focus() && !row.hovered() {
+                        Tones::FOCUS
+                    } else if lit || selected {
+                        Tones::PANEL
+                    } else {
+                        Tones::QUIET
+                    };
+                    let fill = if lit || row.has_focus() {
+                        theme::RAISED_HOVER
+                    } else {
+                        theme::RAISED_NAVY
+                    };
+                    let ink = if selected {
+                        theme::GOLD_BRIGHT
+                    } else if lit || row.has_focus() {
+                        theme::PARCHMENT_BRIGHT
+                    } else {
+                        theme::PARCHMENT
+                    };
+                    let brightness = if lit || selected || row.has_focus() {
+                        RING_ACTIVE
+                    } else {
+                        RING_QUIET
+                    };
+                    let ring = card(ui, rect, fill, tones, true);
+                    emblem(ui, ring, brightness, choice.emblem);
+                    card_words(ui, ring, label, note.as_ref(), ink);
+                }
+                if row.clicked() && !selected {
+                    *current = choice.value.clone();
+                    changed = true;
+                }
+            }
+        });
+    if changed {
+        response.mark_changed();
+    }
+    response
+}
+
+/// Open the [`emblem_dropdown`] that `ui` is about to show under `id_salt`.
+pub fn open_emblem_dropdown(ui: &egui::Ui, id_salt: &str) {
+    egui::Popup::open_id(ui.ctx(), ui.make_persistent_id(id_salt).with("popup"));
+}
+
+/// A line's words in the Body style, as a Civilopedia card's name is in the page's, and its note
+/// in the Small one.
+fn emblem_texts<T>(
+    ui: &egui::Ui,
+    choice: &EmblemChoice<T>,
+) -> (Arc<egui::Galley>, Option<Arc<egui::Galley>>) {
+    let galley = |text: egui::RichText, style: egui::TextStyle| {
+        egui::WidgetText::from(text).into_galley(
+            ui,
+            Some(egui::TextWrapMode::Extend),
+            f32::INFINITY,
+            style,
+        )
+    };
+    let label = galley(
+        egui::RichText::new(choice.label).color(theme::PARCHMENT_BRIGHT),
+        egui::TextStyle::Body,
+    );
+    let note = choice.note.map(|note| {
+        galley(
+            egui::RichText::new(note)
+                .small()
+                .color(theme::PARCHMENT_DIM),
+            egui::TextStyle::Small,
+        )
+    });
+    (label, note)
+}
+
+/// A card in `rect`: the square of its ring at its left, as tall as the card, and its box from
+/// under the ring's centre to the card's right, so that the ring is the card's left edge and the
+/// box's top and bottom run straight into the ring's tangents. The box's left end is square and
+/// lies under the ring; its right end is rounded. `fill` inside a rim of `tones`, and the game's
+/// shading over the fill if `shaded`. Returns the ring's square, for the emblem.
+fn card(ui: &egui::Ui, rect: Rect, fill: Color32, tones: Tones, shaded: bool) -> Rect {
+    let ppp = ui.ctx().pixels_per_point();
+    let rect = rect.round_to_pixels(ppp);
+    let ring = Rect::from_min_size(rect.min, egui::Vec2::splat(rect.height()));
+    let body = Rect::from_min_max(pos2(ring.center().x, rect.top()), rect.max);
+    let radii = [0.0, CARD_RADIUS, CARD_RADIUS, 0.0];
+    let painter = ui.painter();
+    painter.add(shaded_fill(body, radii, fill, shaded, ppp));
+    painter.add(rim(&rounded_each(body, radii, ppp), tones, pixel_of(ui)));
+    ring
+}
+
+/// The shading the game lays over its boxes (`Grid9Black8`), as the Civilopedia's cards wear it:
+/// a thin sheen along the top, the lower half sinking darker, and a faint blue light thrown back
+/// along the bottom. Each stop is a depth into the box inside its rim, in points from the top or
+/// as a share of the height, the colour, and its opacity over the fill.
+fn shade_stops(height: f32) -> [(f32, [u8; 3], f32); 7] {
+    [
+        (0.0, [255, 255, 255], 0.096),
+        (3.0, [255, 255, 255], 0.03),
+        (6.0, [0, 0, 0], 0.0),
+        (0.3 * height, [0, 0, 0], 0.0),
+        (0.78 * height, [0, 0, 0], 0.24),
+        (height - 5.0, [0, 0, 0], 0.24),
+        (height, [70, 140, 220], 0.12),
+    ]
+}
+
+/// The shading `depth` points into a box `height` tall, over `fill`: its stops blended as a CSS
+/// gradient blends them, each no higher than the one before.
+fn shaded_tone(fill: Color32, depth: f32, height: f32) -> Color32 {
+    let mut stops = shade_stops(height);
+    for k in 1..stops.len() {
+        stops[k].0 = stops[k].0.max(stops[k - 1].0);
+    }
+    // Each stop's colour premultiplied by its opacity, so a fade to clear does not darken.
+    let premultiplied =
+        |(_, rgb, alpha): (f32, [u8; 3], f32)| (rgb.map(|c| f32::from(c) * alpha), alpha);
+    let (colour, alpha) = match stops.iter().position(|stop| depth < stop.0) {
+        None => premultiplied(stops[stops.len() - 1]),
+        Some(0) => premultiplied(stops[0]),
+        Some(next) => {
+            let (a, b) = (stops[next - 1], stops[next]);
+            let t = ((depth - a.0) / (b.0 - a.0).max(f32::EPSILON)).clamp(0.0, 1.0);
+            let ((from, from_alpha), (to, to_alpha)) = (premultiplied(a), premultiplied(b));
+            (
+                [0, 1, 2].map(|k| from[k] + (to[k] - from[k]) * t),
+                from_alpha + (to_alpha - from_alpha) * t,
+            )
+        }
+    };
+    let over = |base: u8, k: usize| (f32::from(base) * (1.0 - alpha) + colour[k]).round() as u8;
+    Color32::from_rgb(over(fill.r(), 0), over(fill.g(), 1), over(fill.b(), 2))
+}
+
+/// A box's fill, running under its rim as [`filled`]'s does, with each corner rounded to its
+/// own radius and, if `shaded`, the game's shading over it. Built as strips across the box, a
+/// strip's edges at every stop of the shading and every pixel through the rounded corners, each
+/// edge in its depth's tone, so the shading is exact and the corners round.
+fn shaded_fill(body: Rect, radii: [f32; 4], fill: Color32, shaded: bool, ppp: f32) -> Shape {
+    let inset = RIM - 0.5;
+    let inner = body.shrink(inset);
+    let radii = radii.map(|radius| (radius - inset).max(0.0));
+    let padding = body.shrink(RIM);
+    let pixel = 1.0 / ppp;
+    let mut heights = vec![inner.top(), inner.bottom()];
+    if shaded {
+        heights.extend(
+            shade_stops(padding.height())
+                .iter()
+                .map(|stop| padding.top() + stop.0),
+        );
+    }
+    let corner = radii.iter().copied().fold(0.0, f32::max);
+    let mut y = inner.top();
+    while y < inner.top() + corner {
+        heights.extend([y, inner.bottom() - (y - inner.top())]);
+        y += pixel;
+    }
+    heights.retain(|y| (inner.top()..=inner.bottom()).contains(y));
+    heights.sort_by(f32::total_cmp);
+    heights.dedup_by(|a, b| (*a - *b).abs() < 1e-3);
+
+    // How far a side is drawn in at `y` by its top and bottom corners.
+    let indent = |y: f32, top: f32, bottom: f32| {
+        let (from_top, from_bottom) = (y - inner.top(), inner.bottom() - y);
+        let cut = |radius: f32, from: f32| {
+            let d = radius - from;
+            radius - (radius * radius - d * d).max(0.0).sqrt()
+        };
+        if from_top < top {
+            cut(top, from_top)
+        } else if from_bottom < bottom {
+            cut(bottom, from_bottom)
+        } else {
+            0.0
+        }
+    };
+    let mut mesh = egui::Mesh::default();
+    for (k, &y) in heights.iter().enumerate() {
+        let tone = if shaded {
+            shaded_tone(fill, y - padding.top(), padding.height())
+        } else {
+            fill
+        };
+        mesh.colored_vertex(pos2(inner.left() + indent(y, radii[0], radii[3]), y), tone);
+        mesh.colored_vertex(pos2(inner.right() - indent(y, radii[1], radii[2]), y), tone);
+        if k > 0 {
+            let (a, b, c, d) = (
+                2 * k as u32 - 2,
+                2 * k as u32 - 1,
+                2 * k as u32,
+                2 * k as u32 + 1,
+            );
+            mesh.add_triangle(a, b, d);
+            mesh.add_triangle(a, d, c);
+        }
+    }
+    Shape::mesh(mesh)
+}
+
+/// A card's words: its name a gap after the ring, centred on the card's height, in `ink`, and
+/// its note after the name on the same baseline, in Parchment dim.
+fn card_words(
+    ui: &egui::Ui,
+    ring: Rect,
+    label: &Arc<egui::Galley>,
+    note: Option<&Arc<egui::Galley>>,
+    ink: Color32,
+) {
+    let painter = ui.painter();
+    let at = pos2(
+        ring.right() + CARD_GAP,
+        ring.center().y - label.size().y / 2.0,
+    )
+    .round_to_pixels(ui.ctx().pixels_per_point());
+    painter.galley_with_override_text_color(at, label.clone(), ink);
+    if let Some(note) = note {
+        let baseline = |galley: &egui::Galley| {
+            galley
+                .rows
+                .first()
+                .and_then(|row| row.row.glyphs.first().map(|glyph| row.pos.y + glyph.pos.y))
+                .unwrap_or(galley.size().y * 0.8)
+        };
+        painter.galley_with_override_text_color(
+            pos2(
+                at.x + label.size().x + CARD_GAP,
+                at.y + baseline(label) - baseline(note),
+            )
+            .round_to_pixels(ui.ctx().pixels_per_point()),
+            note.clone(),
+            theme::PARCHMENT_DIM,
+        );
+    }
+}
+
+// ── The emblem ───────────────────────────────────────────────────────────────
+
+/// `IconFrame64` in its own pixels: its size; its ring's centre and outer radius, as the
+/// Civilopedia measures them (`card_ring`), where a card's box meets the ring's tangents; and
+/// the centre and radius of its black hole, where the glass goes.
+const FRAME_SIZE: f32 = 64.0;
+const RING_CENTRE: egui::Vec2 = vec2(31.84, 31.72);
+const RING_RADIUS: f32 = 25.73;
+const HOLE_CENTRE: egui::Vec2 = vec2(32.01, 31.97);
+const HOLE_RADIUS: f32 = 22.0;
+/// `45x45BaseFrame` in its own pixels: its size, and its glass's centre and the radius out to
+/// which it is still glass, short of the dark line where its gold begins.
+const DISC_SIZE: f32 = 45.0;
+const DISC_CENTRE: egui::Vec2 = vec2(22.56, 22.41);
+const DISC_RADIUS: f32 = 17.0;
+
+/// An emblem in `ring`, the square of a card's ring: the game's frame for its 64 px icons,
+/// drawn `brightness` bright, the glass of the game's bare round button filling the frame's
+/// hole, and `lines` engraved on the glass, centred on it. Without the game's art, the frame and
+/// the glass are drawn in code to the same measure.
+fn emblem(ui: &egui::Ui, ring: Rect, brightness: f32, lines: &[&str]) {
+    let painter = ui.painter();
+    let pixel = pixel_of(ui);
+    // One of the frame's pixels, in points.
+    let k = ring.width() / (2.0 * RING_RADIUS);
+    let centre = ring.center();
+    let hole_centre = centre + (HOLE_CENTRE - RING_CENTRE) * k;
+    let hole = HOLE_RADIUS * k;
+    let shade = Color32::from_gray((255.0 * brightness).round() as u8);
+    if let Some([frame, glass]) = art(ui.ctx()).and_then(|art| art.emblem) {
+        painter.image(
+            frame.id(),
+            Rect::from_min_size(centre - RING_CENTRE * k, egui::Vec2::splat(FRAME_SIZE * k)),
+            Rect::from_min_max(Pos2::ZERO, pos2(1.0, 1.0)),
+            shade,
+        );
+        painter.add(glass_disc(glass.id(), hole_centre, hole, pixel));
+    } else {
+        painter.add(drawn_ring(centre, RING_RADIUS * k, hole, shade, pixel));
+        painter.add(drawn_glass(hole_centre, hole, pixel));
+    }
+    engrave(ui, hole_centre, hole, lines);
+}
+
+/// The bare button's glass laid in a hole of `radius` at `centre`: its glass out to
+/// [`DISC_RADIUS`], stretched to the hole, with half a pixel's feather either side of the edge.
+/// Sampled once, at the size it is drawn.
+fn glass_disc(texture: egui::TextureId, centre: Pos2, radius: f32, pixel: f32) -> Shape {
+    let mut mesh = egui::Mesh::with_texture(texture);
+    let uv = |offset: egui::Vec2| {
+        ((DISC_CENTRE + offset * (DISC_RADIUS / radius)) / DISC_SIZE).to_pos2()
+    };
+    let vertex = |offset: egui::Vec2, color: Color32| egui::epaint::Vertex {
+        pos: centre + offset,
+        uv: uv(offset),
+        color,
+    };
+    mesh.vertices.push(vertex(egui::Vec2::ZERO, Color32::WHITE));
+    let around = 72;
+    for step in 0..around {
+        let angle = std::f32::consts::TAU * step as f32 / around as f32;
+        let direction = vec2(angle.cos(), angle.sin());
+        mesh.vertices
+            .push(vertex(direction * (radius - pixel / 2.0), Color32::WHITE));
+        mesh.vertices.push(vertex(
+            direction * (radius + pixel / 2.0),
+            Color32::TRANSPARENT,
+        ));
+    }
+    for step in 0..around {
+        let next = (step + 1) % around;
+        let (inner, outer) = (1 + 2 * step, 2 + 2 * step);
+        let (inner_next, outer_next) = (1 + 2 * next, 2 + 2 * next);
+        mesh.add_triangle(0, inner, inner_next);
+        mesh.add_triangle(inner, outer, outer_next);
+        mesh.add_triangle(inner, outer_next, inner_next);
+    }
+    Shape::mesh(mesh)
+}
+
+/// `IconFrame64`'s gold as it runs round the ring, lit from above: near white at the top, gold
+/// down the sides, bronze at the foot.
+const RING_TOP: Color32 = Color32::from_rgb(0xFF, 0xFD, 0xF3);
+const RING_SIDE: Color32 = Color32::from_rgb(0xD6, 0xBE, 0x8E);
+const RING_FOOT: Color32 = Color32::from_rgb(0x9A, 0x7E, 0x48);
+
+/// A ring of `IconFrame64`'s measure drawn in code, for when the game's art is not to hand: a
+/// band of gold from the hole out to `outer`, brightest across its middle, shaded by `shade`,
+/// with a pixel's feather outside and the hole's black inside.
+fn drawn_ring(centre: Pos2, outer: f32, hole: f32, shade: Color32, pixel: f32) -> Shape {
+    let lit = |colour: Color32| {
+        Color32::from_rgb(
+            (u16::from(colour.r()) * u16::from(shade.r()) / 255) as u8,
+            (u16::from(colour.g()) * u16::from(shade.g()) / 255) as u8,
+            (u16::from(colour.b()) * u16::from(shade.b()) / 255) as u8,
+        )
+    };
+    let gold = |at: Pos2, across: f32| {
+        let down = ((at.y - centre.y) / outer).clamp(-1.0, 1.0);
+        let tone = if down < 0.0 {
+            lerp(RING_SIDE, RING_TOP, (-down).powf(1.5))
+        } else {
+            lerp(RING_SIDE, RING_FOOT, down.powf(1.2))
+        };
+        // Rounded metal: full at the crest, a fifth darker at either edge.
+        let crest = 1.0 - 0.2 * ((across - 0.45) / 0.55).abs().min(1.0).powi(2);
+        lit(lerp(Color32::BLACK, tone, crest))
+    };
+    let bands: [(f32, f32, BandTone<'_>); 3] = [
+        (hole - pixel, hole, &|_, _| Color32::BLACK),
+        (hole, outer, &|at, r| gold(at, (r - hole) / (outer - hole))),
+        (outer, outer + pixel, &|at, r| {
+            if r > outer {
+                Color32::TRANSPARENT
+            } else {
+                gold(at, 1.0)
+            }
+        }),
+    ];
+    let mut mesh = egui::Mesh::default();
+    for (inner, outer, tone) in bands {
+        ring_band(&mut mesh, centre, inner, outer, tone);
+    }
+    Shape::mesh(mesh)
+}
+
+/// The glass of `45x45BaseFrame`, drawn in code to fill a hole of `radius` at `centre`: grey
+/// gloss under the top, near black across the middle, deepening to blue toward the foot, and
+/// darker toward the rim, most on the left.
+fn drawn_glass(centre: Pos2, radius: f32, pixel: f32) -> Shape {
+    let tone = |at: Pos2, _: f32| drawn_glass_tone(at, centre, radius);
+    let mut mesh = egui::Mesh::default();
+    let rings = 12;
+    for ring in 0..rings {
+        let (inner, outer) = (
+            radius * ring as f32 / rings as f32,
+            radius * (ring + 1) as f32 / rings as f32,
+        );
+        ring_band(&mut mesh, centre, inner, outer, &tone);
+    }
+    ring_band(&mut mesh, centre, radius, radius + pixel / 2.0, &|at, r| {
+        if r > radius {
+            Color32::TRANSPARENT
+        } else {
+            tone(at, r)
+        }
+    });
+    Shape::mesh(mesh)
+}
+
+/// A colour for each point of a band round a centre, given the point and its distance out.
+type BandTone<'a> = &'a dyn Fn(Pos2, f32) -> Color32;
+
+/// Down the glass's middle, top to foot, as `45x45BaseFrame` has it: at each height, as a share
+/// of the radius from the centre, its tone.
+const GLASS_DOWN: [(f32, Color32); 9] = [
+    (-1.0, Color32::from_rgb(0x80, 0x80, 0x80)),
+    (-0.85, Color32::from_rgb(0x6C, 0x6C, 0x6C)),
+    (-0.61, Color32::from_rgb(0x4C, 0x4C, 0x4C)),
+    (-0.38, Color32::from_rgb(0x31, 0x31, 0x33)),
+    (-0.14, Color32::from_rgb(0x17, 0x1A, 0x23)),
+    (0.0, Color32::from_rgb(0x0C, 0x12, 0x22)),
+    (0.33, Color32::from_rgb(0x00, 0x08, 0x24)),
+    (0.68, Color32::from_rgb(0x00, 0x0E, 0x3C)),
+    (1.0, Color32::from_rgb(0x00, 0x18, 0x66)),
+];
+
+/// The drawn glass's tone at `at`, on glass of `radius` at `centre`: its middle's tone at that
+/// height, darkened toward the rim, most on the left.
+fn drawn_glass_tone(at: Pos2, centre: Pos2, radius: f32) -> Color32 {
+    let (x, y) = ((at.x - centre.x) / radius, (at.y - centre.y) / radius);
+    let colour =
+        GLASS_DOWN
+            .windows(2)
+            .find(|pair| y <= pair[1].0)
+            .map_or(GLASS_DOWN[8].1, |pair| {
+                lerp(
+                    pair[0].1,
+                    pair[1].1,
+                    ((y - pair[0].0) / (pair[1].0 - pair[0].0)).clamp(0.0, 1.0),
+                )
+            });
+    let reach = (x * x + y * y).sqrt();
+    let rim = ((reach - 0.75) / 0.25).clamp(0.0, 1.0) * (0.55 - 0.35 * x);
+    lerp(colour, Color32::BLACK, rim.clamp(0.0, 1.0))
+}
+
+/// The glass cut to a hexagon: `corners`, the hexagon's six points round `centre`, filled with
+/// the glass of the bare button (or the drawn glass without the game's art) as if a disc of it
+/// reached just past the points - so the glass runs to the hexagon's edge and no further, its
+/// dark rim showing only toward the points. Built as nested hexagons, each side cut in eight,
+/// so the drawn glass's tones fall where they should.
+fn hex_glass(ui: &egui::Ui, centre: Pos2, corners: &[Pos2]) -> Shape {
+    let radius = corners
+        .iter()
+        .map(|corner| corner.distance(centre))
+        .fold(0.0, f32::max);
+    let texture = art(ui.ctx())
+        .and_then(|art| art.emblem)
+        .map(|[_, glass]| glass.id());
+    let mut mesh = texture.map_or_else(egui::Mesh::default, egui::Mesh::with_texture);
+    let (rings, cuts) = (8u32, 8u32);
+    let around = corners.len() as u32 * cuts;
+    for ring in 0..=rings {
+        let scale = ring as f32 / rings as f32;
+        for side in 0..corners.len() {
+            let (from, to) = (corners[side], corners[(side + 1) % corners.len()]);
+            for cut in 0..cuts {
+                let along = from + (to - from) * (cut as f32 / cuts as f32);
+                let at = centre + (along - centre) * scale;
+                let vertex = match texture {
+                    // A hair inside the glass's own edge at the points, so its gold never shows.
+                    Some(_) => egui::epaint::Vertex {
+                        pos: at,
+                        uv: ((DISC_CENTRE + (at - centre) * (0.97 * DISC_RADIUS / radius))
+                            / DISC_SIZE)
+                            .to_pos2(),
+                        color: Color32::WHITE,
+                    },
+                    None => egui::epaint::Vertex {
+                        pos: at,
+                        uv: egui::epaint::WHITE_UV,
+                        color: drawn_glass_tone(at, centre, radius),
+                    },
+                };
+                mesh.vertices.push(vertex);
+            }
+        }
+    }
+    for ring in 0..rings {
+        for step in 0..around {
+            let next = (step + 1) % around;
+            let (a, b) = (ring * around + step, ring * around + next);
+            let (c, d) = (a + around, b + around);
+            mesh.add_triangle(a, b, d);
+            mesh.add_triangle(a, d, c);
+        }
+    }
+    Shape::mesh(mesh)
+}
+
+/// A band round `centre` from `inner` to `outer`, each of its points coloured by `tone`.
+fn ring_band(mesh: &mut egui::Mesh, centre: Pos2, inner: f32, outer: f32, tone: BandTone<'_>) {
+    let around = 72u32;
+    let base = mesh.vertices.len() as u32;
+    for step in 0..around {
+        let angle = std::f32::consts::TAU * step as f32 / around as f32;
+        for r in [inner, outer] {
+            let at = centre + r * vec2(angle.cos(), angle.sin());
+            mesh.colored_vertex(at, tone(at, r));
+        }
+    }
+    for step in 0..around {
+        let next = (step + 1) % around;
+        let (a, b, c, d) = (
+            base + 2 * step,
+            base + 2 * step + 1,
+            base + 2 * next,
+            base + 2 * next + 1,
+        );
+        mesh.add_triangle(a, b, c);
+        mesh.add_triangle(b, d, c);
+    }
+}
+
+/// The engraved letters: cream at the top darkening to gold at the foot, at these heights down
+/// a line's letters - the Civilopedia's link buttons' fill.
+const ENGRAVING: [(f32, Color32); 4] = [
+    (0.0, Color32::from_rgb(0xFE, 0xFE, 0xEC)),
+    (0.5, Color32::from_rgb(0xEF, 0xEE, 0xD2)),
+    (0.85, Color32::from_rgb(0xDC, 0xD9, 0xB4)),
+    (1.0, Color32::from_rgb(0xC8, 0xBF, 0x94)),
+];
+/// How much of the glass the letters may cover: across, and down for one line or for all of
+/// several, as shares of the glass's radius. The Civilopedia's logos span about seven tenths of
+/// the disc.
+const ENGRAVING_ACROSS: f32 = 1.38;
+const ENGRAVING_DOWN: f32 = 0.84;
+const ENGRAVING_DOWN_LINES: f32 = 1.12;
+
+/// `lines` engraved on the glass of `radius` at `centre`, as the Civilopedia engraves its link
+/// buttons' logos: each line as large as fits its share of the glass, the block centred on its
+/// ink; a soft dark shadow cast down and a little right, then the letters in the engraving's
+/// gradient, drawn once in the font's own weight.
+fn engrave(ui: &egui::Ui, centre: Pos2, radius: f32, lines: &[&str]) {
+    if lines.is_empty() {
+        return;
+    }
+    let painter = ui.painter();
+    let ppp = ui.ctx().pixels_per_point();
+    let galley = |text: &str, size: f32| {
+        let mut job = egui::text::LayoutJob::single_section(
+            text.to_owned(),
+            egui::TextFormat {
+                font_id: egui::FontId::proportional(size),
+                color: Color32::WHITE,
+                ..Default::default()
+            },
+        );
+        job.wrap.max_width = f32::INFINITY;
+        ui.fonts_mut(|fonts| fonts.layout_job(job))
+    };
+    // The first of several lines takes the larger share of the height.
+    let (down, first_share) = if lines.len() > 1 {
+        (ENGRAVING_DOWN_LINES, 0.56)
+    } else {
+        (ENGRAVING_DOWN, 1.0)
+    };
+    let gap = radius * 0.12;
+    let room = vec2(
+        radius * ENGRAVING_ACROSS,
+        radius * down - gap * (lines.len() - 1) as f32,
+    );
+    let mut laid: Vec<(Arc<egui::Galley>, Rect)> = Vec::new();
+    for (index, line) in lines.iter().enumerate() {
+        let share = if index == 0 {
+            first_share
+        } else {
+            (1.0 - first_share) / (lines.len() - 1) as f32
+        };
+        let probe = ink_of(&galley(line, 20.0));
+        let size =
+            20.0 * (room.x / probe.width().max(1.0)).min(room.y * share / probe.height().max(1.0));
+        let line = galley(line, size.max(6.0));
+        let ink = ink_of(&line);
+        laid.push((line, ink));
+    }
+    let total =
+        laid.iter().map(|(_, ink)| ink.height()).sum::<f32>() + gap * (laid.len() - 1) as f32;
+    let mut top = centre.y - total / 2.0;
+    // The shadow, in the glass's own pixels as the Civilopedia's filter has it: cast 0.45 right
+    // and 0.9 down, blurred 0.7, at eight tenths black. Drawn as a few soft copies.
+    let unit = radius / DISC_RADIUS;
+    let cast = vec2(0.45, 0.9) * unit;
+    let spread = 0.7 * unit;
+    for (line, ink) in laid {
+        let at = pos2(centre.x - ink.center().x, top - ink.top()).round_to_pixels(ppp);
+        top += ink.height() + gap;
+        painter.galley_with_override_text_color(
+            at + cast,
+            line.clone(),
+            Color32::from_black_alpha(115),
+        );
+        for step in 0..6 {
+            let angle = std::f32::consts::TAU * step as f32 / 6.0;
+            painter.galley_with_override_text_color(
+                at + cast + spread * vec2(angle.cos(), angle.sin()),
+                line.clone(),
+                Color32::from_black_alpha(30),
+            );
+        }
+        painter.galley(at, graded(&line, ink), Color32::WHITE);
+    }
+}
+
+/// `galley` with its letters coloured down `ink`, the box its letters cover, in the engraving's
+/// gradient: each glyph cut across at the gradient's stops, so the tone between two cuts is the
+/// gradient's own, and each cut in its height's tone.
+fn graded(galley: &Arc<egui::Galley>, ink: Rect) -> Arc<egui::Galley> {
+    let tone = |y: f32| {
+        let t = ((y - ink.top()) / ink.height().max(f32::EPSILON)).clamp(0.0, 1.0);
+        ENGRAVING
+            .windows(2)
+            .find(|pair| t <= pair[1].0)
+            .map_or(ENGRAVING[3].1, |pair| {
+                lerp(
+                    pair[0].1,
+                    pair[1].1,
+                    (t - pair[0].0) / (pair[1].0 - pair[0].0),
+                )
+            })
+    };
+    let mut graded = (**galley).clone();
+    let (mut vertices, mut indices) = (0, 0);
+    for placed in &mut graded.rows {
+        let mut row = (*placed.row).clone();
+        let source = std::mem::take(&mut row.visuals.mesh);
+        let mut mesh = egui::Mesh::with_texture(source.texture_id);
+        for quad in source.vertices[row.visuals.glyph_vertex_range.clone()].chunks_exact(4) {
+            let [left_top, right_top, left_bottom, right_bottom] =
+                [quad[0], quad[1], quad[2], quad[3]];
+            let (top, bottom) = (left_top.pos.y, left_bottom.pos.y);
+            let mut cuts = vec![top, bottom];
+            cuts.extend(
+                ENGRAVING
+                    .iter()
+                    .map(|(t, _)| ink.top() + t * ink.height() - placed.pos.y)
+                    .filter(|y| *y > top && *y < bottom),
+            );
+            cuts.sort_by(f32::total_cmp);
+            let mut previous: Option<u32> = None;
+            for y in cuts {
+                let t = (y - top) / (bottom - top).max(f32::EPSILON);
+                let colour = tone(placed.pos.y + y);
+                let first = mesh.vertices.len() as u32;
+                for (upper, lower) in [(left_top, left_bottom), (right_top, right_bottom)] {
+                    mesh.vertices.push(egui::epaint::Vertex {
+                        pos: upper.pos + (lower.pos - upper.pos) * t,
+                        uv: upper.uv + (lower.uv - upper.uv) * t,
+                        color: colour,
+                    });
+                }
+                if let Some(above) = previous {
+                    mesh.add_triangle(above, above + 1, first);
+                    mesh.add_triangle(first, above + 1, first + 1);
+                }
+                previous = Some(first);
+            }
+        }
+        row.visuals.glyph_index_start = 0;
+        row.visuals.glyph_vertex_range = 0..mesh.vertices.len();
+        vertices += mesh.vertices.len();
+        indices += mesh.indices.len();
+        row.visuals.mesh = mesh;
+        placed.row = Arc::new(row);
+    }
+    graded.num_vertices = vertices;
+    graded.num_indices = indices;
+    Arc::new(graded)
+}
+
+/// Where a galley's letters actually put ink, relative to its top left: the union of its
+/// glyphs' rectangles, rather than its line's.
+fn ink_of(galley: &egui::Galley) -> Rect {
+    let mut ink = Rect::NOTHING;
+    for row in &galley.rows {
+        for glyph in &row.row.glyphs {
+            let min = row.pos + glyph.pos.to_vec2() + glyph.uv_rect.offset;
+            ink = ink.union(Rect::from_min_size(min, glyph.uv_rect.size));
+        }
+    }
+    if ink.is_positive() {
+        ink
+    } else {
+        Rect::from_min_size(Pos2::ZERO, galley.size())
+    }
 }

@@ -186,6 +186,32 @@ fn field_value(harness: &mut Harness<'_, InstallerApp>, label: &str) -> String {
     harness.get_by_label(label).value().unwrap_or_default()
 }
 
+/// What the "What to install" list is called to a screen reader. The panel's heading is a
+/// label of its own, so the list has a name of its own.
+const FLAVOR_LIST: &str = "Mods to install";
+
+/// Pick what to install the way a player does: open the list, click the line.
+#[track_caller]
+fn pick_flavor(harness: &mut Harness<'_, InstallerApp>, label: &str) {
+    harness.get_by_label(FLAVOR_LIST).click();
+    // Two frames: egui lays a new popup out once unseen, and it takes clicks from the next.
+    harness.step();
+    harness.step();
+    harness.get_by_label(label).click();
+    harness.step();
+}
+
+/// The line the "What to install" list shows as chosen: its value, as a screen reader reads
+/// a closed dropdown.
+fn chosen_flavor(harness: &mut Harness<'_, InstallerApp>) -> String {
+    use egui_kittest::kittest::NodeT as _;
+    harness
+        .get_by_label(FLAVOR_LIST)
+        .accesskit_node()
+        .value()
+        .unwrap_or_default()
+}
+
 /// Whether a radio button or checkbox is on, read the way a screen reader reads it.
 #[track_caller]
 fn is_ticked(harness: &mut Harness<'_, InstallerApp>, label: &str) -> bool {
@@ -293,7 +319,7 @@ fn clicking_install_deploys_the_community_patch() {
     );
 
     enter_dev_mode(&mut harness, &miniature_repo().display().to_string());
-    harness.get_by_label("Community Patch only").click();
+    pick_flavor(&mut harness, "Community Patch only");
     harness.get_by_label("Install").click();
     wait_for_the_install_to_finish(&mut harness);
     assert!(
@@ -340,9 +366,7 @@ fn picking_vox_populi_with_eui_installs_the_whole_thing() {
     harness.step();
     enter_dev_mode(&mut harness, &miniature_repo().display().to_string());
 
-    harness
-        .get_by_label("Community Patch + Vox Populi + EUI")
-        .click();
+    pick_flavor(&mut harness, "Community Patch + Vox Populi + EUI");
     harness.get_by_label("Install").click();
     wait_for_the_install_to_finish(&mut harness);
 
@@ -465,9 +489,7 @@ fn a_mod_is_offered_while_the_selection_brings_what_it_plugs_into() {
             .is_disabled()
     );
 
-    harness
-        .get_by_label("Neither - only your own mods, as a modpack")
-        .click();
+    pick_flavor(&mut harness, "Neither - only your own mods, as a modpack");
     harness.step();
     assert!(
         harness
@@ -537,7 +559,7 @@ fn a_mod_is_offered_while_the_selection_holds_what_it_depends_on() {
     harness.step();
     assert!(is_ticked(&mut harness, "For VP"));
 
-    harness.get_by_label("Community Patch only").click();
+    pick_flavor(&mut harness, "Community Patch only");
     harness.step();
     assert!(
         harness
@@ -548,7 +570,7 @@ fn a_mod_is_offered_while_the_selection_holds_what_it_depends_on() {
     assert!(!is_ticked(&mut harness, "For VP"));
     harness.get_by_label(reason);
 
-    harness.get_by_label("Community Patch + Vox Populi").click();
+    pick_flavor(&mut harness, "Community Patch + Vox Populi");
     harness.step();
     assert!(
         !harness
@@ -627,9 +649,7 @@ fn a_second_game_dll_comes_back_when_the_first_is_unticked() {
         .get_by_label("Install as a modpack - loads automatically, works in multiplayer")
         .click();
     harness.step();
-    harness
-        .get_by_label("Neither - only your own mods, as a modpack")
-        .click();
+    pick_flavor(&mut harness, "Neither - only your own mods, as a modpack");
     harness.step();
     harness.step();
     assert!(!harness.get_by_label("Beta").accesskit_node().is_disabled());
@@ -673,9 +693,7 @@ fn neither_greys_out_the_source_and_the_intro_and_keeps_them() {
         assert!(!harness.get_by_label(row).accesskit_node().is_disabled());
     }
 
-    harness
-        .get_by_label("Neither - only your own mods, as a modpack")
-        .click();
+    pick_flavor(&mut harness, "Neither - only your own mods, as a modpack");
     harness.step();
     harness.step();
     assert!(harness.get_by_label(intro).accesskit_node().is_disabled());
@@ -687,7 +705,7 @@ fn neither_greys_out_the_source_and_the_intro_and_keeps_them() {
         );
     }
 
-    harness.get_by_label("Community Patch + Vox Populi").click();
+    pick_flavor(&mut harness, "Community Patch + Vox Populi");
     harness.step();
     harness.step();
     assert!(!harness.get_by_label(intro).accesskit_node().is_disabled());
@@ -770,7 +788,7 @@ fn the_emblem_names_what_the_selection_installs() {
     // A first launch suggests Vox Populi.
     harness.get_by_label("Civilization 5 VP Installer");
 
-    harness.get_by_label("Community Patch only").click();
+    pick_flavor(&mut harness, "Community Patch only");
     harness.step();
     harness.get_by_label("Civilization 5 CBP Installer");
 
@@ -778,13 +796,11 @@ fn the_emblem_names_what_the_selection_installs() {
         .get_by_label("Install as a modpack - loads automatically, works in multiplayer")
         .click();
     harness.step();
-    harness
-        .get_by_label("Neither - only your own mods, as a modpack")
-        .click();
+    pick_flavor(&mut harness, "Neither - only your own mods, as a modpack");
     harness.step();
     harness.get_by_label("Civilization 5 MOD Installer");
 
-    harness.get_by_label("Community Patch + Vox Populi").click();
+    pick_flavor(&mut harness, "Community Patch + Vox Populi");
     harness.step();
     harness.get_by_label("Civilization 5 VP Installer");
 }
@@ -805,6 +821,9 @@ fn neither_and_installing_as_mods_cannot_be_picked_together() {
     let forty_three = "43 Civs - room for 43 civilizations on a map";
 
     assert!(is_ticked(&mut harness, as_mods));
+    harness.get_by_label(FLAVOR_LIST).click();
+    harness.step();
+    harness.step();
     assert!(!harness.get_by_label(neither).accesskit_node().is_disabled());
     assert!(
         !harness
@@ -817,7 +836,7 @@ fn neither_and_installing_as_mods_cannot_be_picked_together() {
     harness.step();
     harness.step();
 
-    assert!(is_ticked(&mut harness, neither));
+    assert_eq!(chosen_flavor(&mut harness), neither);
     assert!(is_ticked(&mut harness, as_a_modpack));
     assert_eq!(
         remembered_configuration(&game).install_mode,
@@ -852,9 +871,7 @@ fn a_modpack_of_only_your_own_mods_is_built_from_the_screen() {
         .get_by_label("Install as a modpack - loads automatically, works in multiplayer")
         .click();
     harness.step();
-    harness
-        .get_by_label("Neither - only your own mods, as a modpack")
-        .click();
+    pick_flavor(&mut harness, "Neither - only your own mods, as a modpack");
     harness.step();
     // Below the fold at the design-minimum size, like Install: pressed the way a screen
     // reader presses it.
@@ -897,7 +914,7 @@ fn picking_the_modpack_mode_builds_a_modpack_and_is_remembered() {
     let mut harness = harness_over(game.launch(&game.locations()));
     harness.step();
     enter_dev_mode(&mut harness, &miniature_repo().display().to_string());
-    harness.get_by_label("Community Patch + Vox Populi").click();
+    pick_flavor(&mut harness, "Community Patch + Vox Populi");
     harness
         .get_by_label("Install as a modpack - loads automatically, works in multiplayer")
         .click();
@@ -961,14 +978,12 @@ fn switching_the_flavor_down_removes_what_no_longer_belongs() {
     harness.step();
     enter_dev_mode(&mut harness, &miniature_repo().display().to_string());
 
-    harness
-        .get_by_label("Community Patch + Vox Populi + EUI")
-        .click();
+    pick_flavor(&mut harness, "Community Patch + Vox Populi + EUI");
     harness.get_by_label("Install").click();
     wait_for_the_install_to_finish(&mut harness);
     assert!(game.mods_folder().join("(2) Vox Populi").exists());
 
-    harness.get_by_label("Community Patch only").click();
+    pick_flavor(&mut harness, "Community Patch only");
     harness.get_by_label("Install").click();
     wait_for_the_install_to_finish(&mut harness);
 
@@ -1035,7 +1050,7 @@ fn a_flavor_chosen_before_anything_else_is_remembered() {
     harness.step();
 
     // No source folder typed - only the Flavor and the toggle are touched.
-    harness.get_by_label("Community Patch only").click();
+    pick_flavor(&mut harness, "Community Patch only");
     harness
         .get_by_label("43 Civs - room for 43 civilizations on a map")
         .click();
@@ -1044,7 +1059,7 @@ fn a_flavor_chosen_before_anything_else_is_remembered() {
     let mut next = harness_over(game.launch(&game.nowhere()));
     next.step();
     assert!(
-        is_ticked(&mut next, "Community Patch only"),
+        chosen_flavor(&mut next) == "Community Patch only",
         "the Flavor should have been remembered",
     );
     assert!(
@@ -1107,14 +1122,12 @@ fn luajit_in_a_modpack_with_the_community_patch_says_what_to_do_if_it_fails() {
     harness.step();
     harness.get_by_label(note);
 
-    harness
-        .get_by_label("Neither - only your own mods, as a modpack")
-        .click();
+    pick_flavor(&mut harness, "Neither - only your own mods, as a modpack");
     harness.step();
     harness.step();
     assert!(harness.query_by_label(note).is_none(), "own mods only");
 
-    harness.get_by_label("Community Patch only").click();
+    pick_flavor(&mut harness, "Community Patch only");
     harness.step();
     harness.step();
     harness.get_by_label(note);
@@ -1857,7 +1870,7 @@ fn the_first_run_cost_is_announced_until_the_toolchain_exists() {
         "building from a checkout needs the toolchain, so the cost must be announced"
     );
 
-    harness.get_by_label("Community Patch only").click();
+    pick_flavor(&mut harness, "Community Patch only");
     harness.get_by_label("Install").click();
     wait_for_the_install_to_finish(&mut harness);
     assert!(

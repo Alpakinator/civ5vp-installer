@@ -1,11 +1,12 @@
 //! The game's own interface art, read from the player's installed copy of Civilization V.
 //!
 //! The skin is the Vox Populi Civilopedia's (visual language, "Game art"): the base game's
-//! main-menu painting behind the page, and the Wonder popup's corner fans in each panel's top
-//! corners. None of it is in this binary. It is read at runtime from the game folder the
+//! main-menu painting behind the page, the Wonder popup's corner fans in each panel's top
+//! corners, and a card's ring - the game's frame for its 64 px icons, with the glass of its
+//! round buttons in the ring's hole. None of it is in this binary. It is read at runtime from the game folder the
 //! player already has, the way the Civilopedia reads it at build time, so nothing of
 //! Firaxis's is redistributed (ADR-0012). Without a readable game, the skin goes without it:
-//! the page is plain navy and the panels have no fans.
+//! the page is plain navy, the panels have no fans, and a card's ring is drawn in code.
 //!
 //! Read only. Nothing here writes anywhere, so it stands outside the Claimed Folders rule
 //! entirely (rule 6) - and it never fails loudly: art that is missing or unreadable is a
@@ -14,7 +15,8 @@
 //! The format, as `tools/civ5_art.py` in the Civilopedia reads it: an FPK v6 archive is a
 //! bounded index followed by uncompressed members. An interface texture is a DDS whose pixels
 //! are packed in square blocks, each block placed in the picture by a companion `-index.dds`
-//! texture; decoding it straight as a DDS scrambles it.
+//! texture; decoding it straight as a DDS scrambles it. A small texture can be a plain one, its
+//! pixels in order and no index beside it.
 
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
@@ -26,7 +28,21 @@ pub struct GameArt {
     pub backdrop: Option<egui::ColorImage>,
     /// The Wonder popup's top-left and top-right corners, lit to the rim they lie under.
     pub fans: Option<[egui::ColorImage; 2]>,
+    /// `IconFrame64`: the game's gold ring for its 64 px icons, its hole black, which the
+    /// Civilopedia's cards draw their icons in.
+    pub icon_frame: Option<egui::ColorImage>,
+    /// `45x45BaseFrame`: the main menu's round button with nothing on it, a glass disc in a
+    /// gold frame. Its glass is the ground the emblems are engraved on.
+    pub bare_disc: Option<egui::ColorImage>,
 }
+
+/// The interface archives, latest layer first: Brave New World's, which Vox Populi requires,
+/// then Gods & Kings', then the base game's.
+const LAYERS: [&str; 3] = [
+    "Expansion2UITextures.fpk",
+    "Expansion1UITextures.fpk",
+    "UITextures.fpk",
+];
 
 impl GameArt {
     /// Whatever of the art `game_root` holds. Each piece is read on its own, so a game
@@ -52,20 +68,36 @@ impl GameArt {
         if fans.is_none() {
             crate::log_detail("Game art: no corner fans in the game's interface archives.");
         }
+        // The ring and the disc are measured once, at their own size (`deco`, the emblem): one
+        // of another size is not the game's.
+        let sized = |name: &str, side: usize| {
+            let found = LAYERS
+                .iter()
+                .find_map(|archive| picture(&dx9.join(archive), name).ok())
+                .filter(|picture| picture.size == [side, side]);
+            if found.is_none() {
+                crate::log_detail(&format!(
+                    "Game art: no {side} px {name} in the game's interface archives."
+                ));
+            }
+            found
+        };
         Self {
             backdrop: backdrop.ok(),
             fans,
+            icon_frame: sized("IconFrame64.dds", 64),
+            bare_disc: sized("45x45BaseFrame.dds", 45),
         }
     }
 }
 
-/// One interface texture, decoded.
+/// One interface texture, decoded, with its index if it has one.
 fn picture(archive: &Path, name: &str) -> Result<egui::ColorImage, String> {
     let index_name = format!("{}-index.dds", name.trim_end_matches(".dds"));
     let mut archive = Archive::open(archive)?;
     let texture = archive.read(name)?;
-    let index = archive.read(&index_name)?;
-    decode(&texture, &index)
+    let index = archive.read(&index_name).ok();
+    decode(&texture, index.as_deref())
 }
 
 // ── FPK ──────────────────────────────────────────────────────────────────────
@@ -188,10 +220,32 @@ fn rows(data: &[u8], width: usize, height: usize, bytes: usize) -> Result<Vec<u8
 }
 
 /// An interface texture put back together: each square block of `texture` placed where
-/// `index` says. Only the 32-bit BGRA kind the art here uses is read.
-fn decode(texture: &[u8], index: &[u8]) -> Result<egui::ColorImage, String> {
+/// `index` says, or, for a plain texture with no index, its pixels as they are. Only the 32-bit
+/// BGRA kind the art here uses is read.
+fn decode(texture: &[u8], index: Option<&[u8]>) -> Result<egui::ColorImage, String> {
     let (width, height) = dimensions(texture)?;
+    let format = [88, 92, 96, 100, 104].map(|at| u32_at(texture, at));
+    if u32_at(texture, 84)? != 0
+        || format.iter().any(Result::is_err)
+        || format.map(Result::unwrap_or_default) != [32, 0xFF_0000, 0xFF00, 0xFF, 0xFF00_0000]
+    {
+        return Err("not a 32-bit BGRA texture".to_owned());
+    }
+    let pixels = rows(texture, width, height, 4)?;
     let marker = &texture[116..121];
+    let Some(index) = index else {
+        if &marker[..2] == b"BC" {
+            return Err("a block-indexed texture without its index".to_owned());
+        }
+        let rgba: Vec<u8> = pixels
+            .chunks_exact(4)
+            .flat_map(|bgra| [bgra[2], bgra[1], bgra[0], bgra[3]])
+            .collect();
+        return Ok(egui::ColorImage::from_rgba_unmultiplied(
+            [width, height],
+            &rgba,
+        ));
+    };
     if &marker[..2] != b"BC" {
         return Err("not a block-indexed interface texture".to_owned());
     }
@@ -200,17 +254,9 @@ fn decode(texture: &[u8], index: &[u8]) -> Result<egui::ColorImage, String> {
         .and_then(|digits| usize::from_str_radix(digits, 16).ok())
         .filter(|block| block.is_power_of_two() && *block <= 512)
         .ok_or_else(|| "unreadable block size".to_owned())?;
-    let format = [88, 92, 96, 100, 104].map(|at| u32_at(texture, at));
-    if u32_at(texture, 84)? != 0
-        || format.iter().any(Result::is_err)
-        || format.map(Result::unwrap_or_default) != [32, 0xFF_0000, 0xFF00, 0xFF, 0xFF00_0000]
-    {
-        return Err("not a 32-bit BGRA texture".to_owned());
-    }
     if width % block != 0 || height % block != 0 {
         return Err("texture is not whole blocks".to_owned());
     }
-    let pixels = rows(texture, width, height, 4)?;
 
     let (index_width, index_height) = dimensions(index)?;
     let index_bytes = match u32_at(index, 88)? {
@@ -337,7 +383,7 @@ mod tests {
         index.extend(1u16.to_le_bytes());
         index.extend(0u16.to_le_bytes());
 
-        let Ok(picture) = decode(&texture, &index) else {
+        let Ok(picture) = decode(&texture, Some(&index)) else {
             unreachable!("a well-formed texture decodes")
         };
         assert_eq!(picture.size, [2, 4]);
@@ -353,7 +399,24 @@ mod tests {
         texture.extend([0; 16]);
         let mut index = dds(1, 1, 16, [0; 4], b"BC002");
         index.extend(1u16.to_le_bytes());
-        assert!(decode(&texture, &index).is_err());
+        assert!(decode(&texture, Some(&index)).is_err());
+    }
+
+    /// A plain texture, as `45x45BaseFrame` is, comes back pixel for pixel; a block-indexed one
+    /// without its index is refused rather than read scrambled.
+    #[test]
+    fn a_texture_without_an_index_is_read_as_it_is() {
+        let mut plain = dds(2, 1, 32, [0xFF_0000, 0xFF00, 0xFF, 0xFF00_0000], b"COLOR");
+        plain.extend([0, 0, 255, 255, 255, 0, 0, 255]);
+        let Ok(picture) = decode(&plain, None) else {
+            unreachable!("a plain texture decodes")
+        };
+        assert_eq!(picture.size, [2, 1]);
+        assert_eq!(picture.pixels, [egui::Color32::RED, egui::Color32::BLUE]);
+
+        let mut packed = dds(2, 2, 32, [0xFF_0000, 0xFF00, 0xFF, 0xFF00_0000], b"BC002");
+        packed.extend([0; 16]);
+        assert!(decode(&packed, None).is_err());
     }
 
     /// An archive with two members is read back by name, whatever the case.
@@ -398,5 +461,7 @@ mod tests {
         let art = GameArt::read(Path::new("/nowhere/at/all"));
         assert!(art.backdrop.is_none());
         assert!(art.fans.is_none());
+        assert!(art.icon_frame.is_none());
+        assert!(art.bare_disc.is_none());
     }
 }

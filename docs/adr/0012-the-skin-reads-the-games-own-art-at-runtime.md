@@ -14,3 +14,14 @@ plain navy page and fanless panels. That fallback is also what CI's snapshot bas
 
 Considered: painting an original backdrop and fans in code (no painting comes close to the
 game's own), and shipping the extracted art (redistribution, which ADR-0003 forbids).
+
+## Addition (the emblem dropdown)
+
+The "What to install" dropdown draws its lines as the Civilopedia's cards, so two more textures
+are read the same way: `IconFrame64.dds`, the ring the Civilopedia's cards draw their icons in,
+and `45x45BaseFrame.dds`, the bare round button whose glass its link buttons engrave. The second
+is a plain texture with no block index, which `game_art.rs` now reads too. Without the game's
+art, the ring and the glass are drawn in code to the same measure, so the dropdown never depends
+on the art either. Both are fixed-size bitmaps: at 2× they are drawn larger than their own pixels
+and soften a little, as the Civilopedia's do on such screens; the letters and boxes, drawn in
+code, stay sharp at every scale.
