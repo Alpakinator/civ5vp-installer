@@ -1,0 +1,52 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Mod id="3645dbca-bdfb-4d86-bdc5-46cb5a426cc2" version="1">
+  <Properties>
+    <Name>(4a) Squads for VP</Name>
+    <Teaser>Squads for Vox Populi</Teaser>
+    <Description>Group units &amp; move them together.</Description>
+    <Authors>Vern</Authors>
+    <SpecialThanks>Gwennog</SpecialThanks>
+    <HideSetupGame>0</HideSetupGame>
+    <AffectsSavedGames>0</AffectsSavedGames>
+    <SupportsSinglePlayer>1</SupportsSinglePlayer>
+    <SupportsMultiplayer>1</SupportsMultiplayer>
+    <SupportsHotSeat>1</SupportsHotSeat>
+    <SupportsMac>1</SupportsMac>
+    <ReloadAudioSystem>0</ReloadAudioSystem>
+    <ReloadLandmarkSystem>0</ReloadLandmarkSystem>
+    <ReloadStrategicViewSystem>0</ReloadStrategicViewSystem>
+    <ReloadUnitSystem>0</ReloadUnitSystem>
+  </Properties>
+  <Dependencies>
+    <Mod id="8411a7a8-dad3-4622-a18e-fcc18324c799" minversion="1" maxversion="999" title="(2) Vox Populi" />
+  </Dependencies>
+  <References />
+  <Blocks />
+  <Files>
+    <File md5="D4C51D441208C34A909B00206E19745C" import="1">Art/SquadsIcon.dds</File>
+    <File md5="E03AD108616A8849589AC92FC230F62A" import="0">DB/Squads.sql</File>
+    <File md5="415A5EFECD8950FEEF502C2AEE78E51B" import="0">DB/SquadsLate.sql</File>
+    <File md5="01AC9C75367F4D56A68CF89FC63587E8" import="1">UI/SquadNames.lua</File>
+    <File md5="992AE4E97515B4A1F34EAB3411C91523" import="1">UI/SquadNames.xml</File>
+    <File md5="AE302AE227AC37A7B2F32309BD117CD5" import="1">UI/Squads.lua</File>
+    <File md5="198E4A88DA6C2DDF13941D611BCADE5F" import="1">UI/Squads.xml</File>
+    <File md5="AF9C7ABD007F28743BB9D1B67359E2BB" import="0">XML/Squads_EN_US.xml</File>
+  </Files>
+  <Actions>
+    <OnModActivated>
+      <UpdateDatabase>XML/Squads_EN_US.xml</UpdateDatabase>
+      <UpdateDatabase>DB/Squads.sql</UpdateDatabase>
+      <UpdateDatabase>DB\SquadsLate.sql</UpdateDatabase>
+    </OnModActivated>
+  </Actions>
+  <EntryPoints>
+    <EntryPoint type="InGameUIAddin" file="UI/Squads.xml">
+      <Name>Squads</Name>
+      <Description>The squad panel &amp; its &quot;hotkeys&quot;</Description>
+    </EntryPoint>
+    <EntryPoint type="InGameUIAddin" file="UI/SquadNames.xml">
+      <Name>Squad names</Name>
+      <Description></Description>
+    </EntryPoint>
+  </EntryPoints>
+</Mod>

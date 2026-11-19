@@ -280,30 +280,24 @@ pub(crate) fn unescape_xml(text: &str) -> String {
         .replace("&amp;", "&")
 }
 
-/// Compare a Local Repo mod folder against its own `.modinfo` file list (Dev mode).
+/// Compare a Local Repo mod folder against the `.modinfo` it deploys with (Dev mode) - the
+/// completed one, when Modinfo Completion added to it, because that is what the game reads.
 ///
-/// Two mismatches, treated differently because they hurt differently:
-/// - a **listed file that is gone** breaks the mod in the game, so it fails the Deployment
-///   before anything is touched;
+/// Two mismatches, both said out loud and neither stopping the Deployment:
+/// - a **listed file that is gone** is skipped by the game - it registers the mod anyway, as every
+///   EUI install shows, where `(1)` and `(2)` list the `LUA/` files EUI strips (ADR-0013) - so the
+///   developer hears which entries now point at nothing, and the line is kept in the log file;
 /// - an **unlisted extra file** is deployed but silently ignored by the game - the classic
-///   "why does my change do nothing" of mod development - so it is said out loud in the
-///   activity log and the Deployment continues.
+///   "why does my change do nothing" of mod development.
 ///
-/// A modinfo with no `<Files>` list (or no modinfo at all - the DLC folders) checks nothing.
+/// A modinfo with no `<Files>` list checks nothing.
 pub(crate) fn validate_dev_manifest(
     folder_name: &str,
     source_folder: &Path,
+    modinfo: &str,
     progress: &crate::progress::ProgressReporter,
 ) -> Result<(), InstallError> {
-    let Some(path) = find(source_folder)? else {
-        return Ok(());
-    };
-    let text = std::fs::read_to_string(&path).map_err(|cause| InstallError::Deployment {
-        action: "read",
-        path: path.clone(),
-        cause,
-    })?;
-    let listed = listed_files(&text);
+    let listed = listed_files(modinfo);
     if listed.is_empty() {
         return Ok(());
     }
@@ -314,10 +308,15 @@ pub(crate) fn validate_dev_manifest(
         .cloned()
         .collect();
     if !missing.is_empty() {
-        return Err(InstallError::ModManifestMismatch {
-            folder_name: folder_name.to_owned(),
-            missing,
-        });
+        progress.heads_up(
+            crate::progress::Stage::Fetch,
+            format!(
+                "{folder_name}'s .modinfo lists {} file(s) that are not in the folder, and the \
+                 game will skip them: {}",
+                missing.len(),
+                first_few(&missing, 5)
+            ),
+        );
     }
 
     let listed_set: std::collections::HashSet<String> =
@@ -325,27 +324,29 @@ pub(crate) fn validate_dev_manifest(
     let mut extra = Vec::new();
     collect_unlisted(source_folder, String::new(), &listed_set, &mut extra)?;
     if !extra.is_empty() {
-        let mut named: Vec<&str> = extra.iter().take(5).map(String::as_str).collect();
-        let more = extra.len().saturating_sub(named.len());
-        if more > 0 {
-            named.push("…");
-        }
         progress.report(
             crate::progress::Stage::Fetch,
             format!(
                 "Heads-up: {folder_name} holds {} file(s) its .modinfo does not list, and \
-                 the game will ignore them: {}{}",
+                 the game will ignore them: {}",
                 extra.len(),
-                named.join(", "),
-                if more > 0 {
-                    format!(" and {more} more")
-                } else {
-                    String::new()
-                },
+                first_few(&extra, 5)
             ),
         );
     }
     Ok(())
+}
+
+/// The first `count` of `names`, comma-separated, then "… and N more" for the rest.
+pub(crate) fn first_few(names: &[String], count: usize) -> String {
+    let mut named: Vec<&str> = names.iter().take(count).map(String::as_str).collect();
+    let more = names.len().saturating_sub(named.len());
+    if more > 0 {
+        named.push("…");
+        format!("{} and {more} more", named.join(", "))
+    } else {
+        named.join(", ")
+    }
 }
 
 /// Files under `dir` (as `/`-relative paths) that the manifest does not list. The standard

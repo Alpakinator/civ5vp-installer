@@ -469,9 +469,8 @@ fn a_mod_nested_inside_its_folder_is_offered_and_baked_in() {
 
 /// Only a mod the pack can carry whole is offered: a player must never believe a mod is in
 /// their Modpack when part of it is not. A Modpack has no Mods menu, so an entry point the
-/// pack does not hook, or a file the modinfo names but the mod lacks, keeps it from being
-/// picked. It is still listed, after the ones that can be, with the reason in a player's
-/// words - a mod that silently is not there reads as a bug.
+/// pack does not hook keeps it from being picked. It is still listed, after the ones that can
+/// be, with the reason in a player's words - a mod that silently is not there reads as a bug.
 #[test]
 fn a_mod_the_pack_cannot_carry_whole_is_listed_as_refused_with_the_reason() {
     let game = modpack_game();
@@ -484,12 +483,6 @@ fn a_mod_the_pack_cannot_carry_whole_is_listed_as_refused_with_the_reason() {
          </Mod>",
     );
     game.plant("MODS/Giant Earth/GameSetup/Setup.xml", "<Context/>");
-    // A database update the mod does not carry.
-    game.plant(
-        "MODS/Half A Mod/Half A Mod.modinfo",
-        "<Mod id=\"half\" version=\"1\"><Actions><OnModActivated>\
-         <UpdateDatabase>Gone.sql</UpdateDatabase></OnModActivated></Actions></Mod>",
-    );
     // A minimap overlay: its hook target exists only if a mod brings MiniMapPanel.lua.
     game.plant(
         "MODS/Overlay/Overlay.modinfo",
@@ -531,10 +524,6 @@ fn a_mod_the_pack_cannot_carry_whole_is_listed_as_refused_with_the_reason() {
                 "Giant Earth",
                 "part of it (GameSetup/Setup.xml) only runs when the mod is activated in the \
                  Mods menu"
-            ),
-            (
-                "Half A Mod",
-                "its .modinfo lists \"Gone.sql\", which is not in the mod"
             ),
             (
                 "Overlay",
@@ -648,11 +637,13 @@ fn a_hook_target_counts_wherever_in_the_selection_it_comes_from() {
 fn a_refused_mod_provides_nothing() {
     let game = modpack_game();
     plant_hooks_and_a_provider(&game);
+    // An activation step a Modpack cannot run: refused for a reason of its own.
     game.plant(
         "MODS/Panel Provider/Panel Provider.modinfo",
         "<Mod id=\"panel-provider\" version=\"1\"><Actions><OnModActivated>\
-         <UpdateDatabase>Gone.sql</UpdateDatabase></OnModActivated></Actions></Mod>",
+         <UpdateUserData>Settings.sql</UpdateUserData></OnModActivated></Actions></Mod>",
     );
+    game.plant("MODS/Panel Provider/Settings.sql", "-- user data");
 
     let configuration = InstallConfiguration {
         extra_mods: vec!["Overlay".to_owned(), "Panel Provider".to_owned()],
@@ -1827,15 +1818,17 @@ fn the_build_proceeds_and_logs_same_named_files() {
 fn a_pick_the_pack_cannot_carry_whole_stops_the_deployment() {
     let game = modpack_game();
     plant_players_own_mods(&game);
+    // Since it was offered, it gained a game-setup screen only the Mods menu opens.
     game.plant(
         "MODS/Even More Bonuses/Even More Bonuses.modinfo",
         "<Mod id=\"11111111-2222-3333-4444-555555555555\" version=\"3\">\n\
          \t<Actions><OnModActivated>\n\
          \t\t<UpdateDatabase>Data/MoreBonuses.sql</UpdateDatabase>\n\
-         \t\t<UpdateDatabase>Data/AddedLater.sql</UpdateDatabase>\n\
          \t</OnModActivated></Actions>\n\
+         \t<EntryPoints><EntryPoint type=\"Custom\" file=\"Data/AddedLater.xml\"/></EntryPoints>\n\
          </Mod>",
     );
+    game.plant("MODS/Even More Bonuses/Data/AddedLater.xml", "<Context/>");
     let core = core_over(&game, FixtureModpackAssembler::ignored());
 
     let mut configuration = vox_populi_modpack();
@@ -1848,10 +1841,86 @@ fn a_pick_the_pack_cannot_carry_whole_stops_the_deployment() {
 
     let message = error.user_message();
     assert!(
-        message.contains("Even More Bonuses") && message.contains("Data/AddedLater.sql"),
+        message.contains("Even More Bonuses") && message.contains("Data/AddedLater.xml"),
         "got: {message}"
     );
     assert_eq!(game.files(), before, "rule 7: the game is untouched");
+}
+
+/// The shape of real mods that work in the game (ADR-0013): Hokath's Proposals switches a
+/// feature off by renaming its folder (`Pikes` to `Pikes_old`), leaving its modinfo's action,
+/// file and entry point pointing at nothing; Semper Fidelis lists two icon sizes it never had;
+/// Even More Resources lists a `Credits.txt` the copy lacks. The game skips all of that and runs
+/// the rest, so the mod is offered, baked in without them, and the log names what was skipped.
+#[test]
+fn a_mod_whose_modinfo_lists_files_it_lacks_is_baked_in_without_them() {
+    let game = modpack_game();
+    game.plant(
+        "MODS/Proposals/Proposals.modinfo",
+        "<Mod id=\"proposals\" version=\"11\">\n\
+         \t<Files>\n\
+         \t\t<File md5=\"0\" import=\"0\">Data/Kept.sql</File>\n\
+         \t\t<File md5=\"0\" import=\"0\">Pikes/Billman.sql</File>\n\
+         \t\t<File md5=\"0\" import=\"1\">Art/Harmony_32.dds</File>\n\
+         \t\t<File md5=\"0\" import=\"0\">Credits.txt</File>\n\
+         \t\t<File md5=\"0\" import=\"1\">UI/Present.lua</File>\n\
+         \t</Files>\n\
+         \t<Actions><OnModActivated>\n\
+         \t\t<UpdateDatabase>Data/Kept.sql</UpdateDatabase>\n\
+         \t\t<UpdateDatabase>Pikes/Billman.sql</UpdateDatabase>\n\
+         \t</OnModActivated></Actions>\n\
+         \t<EntryPoints>\n\
+         \t\t<EntryPoint type=\"InGameUIAddin\" file=\"Pikes/PikePanel.lua\"/>\n\
+         \t\t<EntryPoint type=\"Custom\" file=\"Pikes/PikeSetup.xml\"/>\n\
+         \t\t<EntryPoint type=\"InGameUIAddin\" file=\"UI/Present.lua\"/>\n\
+         \t</EntryPoints>\n\
+         </Mod>",
+    );
+    game.plant(
+        "MODS/Proposals/Data/Kept.sql",
+        "UPDATE Defines SET Value = 4;",
+    );
+    game.plant("MODS/Proposals/Pikes_old/Billman.sql", "-- switched off");
+    game.plant("MODS/Proposals/Pikes_old/PikePanel.lua", "-- switched off");
+    game.plant("MODS/Proposals/UI/Present.lua", "-- a panel");
+
+    let configuration = modpack_with(&["Proposals"]);
+    let (offered, refused) = offer_for(&game, &configuration);
+    assert!(offered.contains(&"Proposals".to_owned()), "{refused:?}");
+
+    let (assembler, jobs) = FixtureModpackAssembler::new();
+    let core = core_over(&game, assembler);
+    let plan = core.plan(&configuration, &game.folders()).unwrap();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    core.execute(&plan, &ProgressReporter::to_channel(sender))
+        .expect("the game runs this mod, so the pack carries it");
+
+    let updates: Vec<String> = jobs.lock().unwrap()[0]
+        .updates
+        .iter()
+        .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(updates.last().map(String::as_str), Some("Kept.sql"));
+    assert!(!updates.contains(&"Billman.sql".to_owned()), "{updates:?}");
+    let in_game = game.read("DLC/VP_MODPACK/UI/InGame.lua");
+    assert!(in_game.contains("\"Present\""), "{in_game}");
+    assert!(
+        !in_game.contains("PikePanel"),
+        "a hook for a file the mod lacks could load another mod's file of that name: {in_game}"
+    );
+    let kept: Vec<String> = receiver
+        .try_iter()
+        .filter(|event| event.heads_up)
+        .map(|event| event.message)
+        .collect();
+    assert_eq!(
+        kept,
+        [
+            "Proposals's .modinfo lists 5 file(s) the mod does not have, which the game skips \
+             and so does the Modpack: Pikes/Billman.sql, Art/Harmony_32.dds, Credits.txt, \
+             Pikes/PikePanel.lua, Pikes/PikeSetup.xml"
+        ]
+    );
 }
 
 /// A picked extra mod is baked into the pack - copied inside, its database updates applied

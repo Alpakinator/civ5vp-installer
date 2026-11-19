@@ -8,6 +8,7 @@ use crate::boundaries::{
     ToolchainRunner,
 };
 use crate::claimed::{ClaimedFile, ClaimedFolder, GameFolders};
+use crate::completion::ManagedModinfo;
 use crate::configuration::{DllSource, InstallConfiguration};
 use crate::error::{InstallError, SourceItem};
 use crate::fingerprint::{BuildFingerprint, DllProvenance, FINGERPRINT_FILE_NAME, fnv1a64_of_file};
@@ -40,6 +41,10 @@ struct FromSource {
     root: PathBuf,
     dll: PathBuf,
     fingerprint: BuildFingerprint,
+    /// The managed mods' `.modinfo` files as deployed - completed from their `.civ5proj` where
+    /// the committed ones lack something (ADR-0014). Decided here, before Sync, like everything
+    /// else about what goes into a Claimed Folder.
+    modinfos: Vec<ManagedModinfo>,
 }
 
 /// What a finished Deployment did.
@@ -234,11 +239,15 @@ impl Core {
                 Some(root) => self.resolve_sources(plan, root)?,
                 None => Vec::new(),
             };
+            let source = from_source.as_ref().map(|from| crate::modpack::PackSource {
+                root: from.root.as_path(),
+                resolved: &resolved,
+                modinfos: &from.modinfos,
+                dll: from.dll.as_path(),
+            });
             Some(crate::modpack::assemble(
                 plan,
-                source_root,
-                &resolved,
-                from_source.as_ref().map(|from| from.dll.as_path()),
+                source,
                 &self.work_dir,
                 self.modpack_assembler.as_ref(),
                 progress,
@@ -264,7 +273,7 @@ impl Core {
         plan: &Plan,
         progress: &ProgressReporter,
     ) -> Result<FromSource, InstallError> {
-        let source = self.fetch(plan, progress)?;
+        let (source, modinfos) = self.fetch(plan, progress)?;
         // Settled before the fingerprint is computed, because it is one of the fingerprint's
         // inputs: a Shipped DLL and a compiled one are different files from the same
         // sources.
@@ -300,6 +309,7 @@ impl Core {
             root: source.root,
             dll: built_dll,
             fingerprint,
+            modinfos,
         })
     }
 
@@ -388,11 +398,13 @@ impl Core {
         Ok(resolved)
     }
 
+    /// Materialize the Installation Source, check it holds everything the plan needs, and work
+    /// out the `.modinfo` each managed mod deploys with.
     fn fetch(
         &self,
         plan: &Plan,
         progress: &ProgressReporter,
-    ) -> Result<MaterializedSource, InstallError> {
+    ) -> Result<(MaterializedSource, Vec<ManagedModinfo>), InstallError> {
         progress.report(Stage::Fetch, "Getting the mod files ready.");
         let source = self
             .source_provider
@@ -403,24 +415,35 @@ impl Core {
         // and, more importantly, before Sync starts deleting.
         let resolved = self.resolve_sources(plan, &source.root)?;
 
-        // Dev mode only: hold the checkout against each mod's own .modinfo manifest. A
-        // listed-but-gone file fails here; unlisted extras warn and continue (the split is
-        // explained at `validate_dev_manifest`). Upstream Versions are not checked - they
-        // ship what upstream released, and the player cannot act on a difference.
-        if matches!(
-            plan.configuration.source,
-            crate::InstallationSource::LocalRepo { .. }
-        ) {
-            for (index, path) in &resolved {
-                let Some(deployment) = plan.deployments.get(*index) else {
-                    continue;
-                };
+        // Each managed mod's .modinfo as it will be deployed: completed from its .civ5proj
+        // where the committed one lacks something, the way ModBuddy's Build would have written
+        // it (ADR-0014). Read from the source folder, which the copy below never carries the
+        // .civ5proj into; nothing in the source is written.
+        let mut modinfos = Vec::new();
+        for (index, path) in &resolved {
+            let Some(deployment) = plan.deployments.get(*index) else {
+                continue;
+            };
+            let Some(modinfo) = crate::completion::managed_modinfo(deployment, path, progress)?
+            else {
+                continue;
+            };
+            // Dev mode only: hold the checkout against the .modinfo the game will read, and
+            // say what does not match (`validate_dev_manifest`). Upstream Versions are not
+            // checked - they ship what upstream released, and the player cannot act on a
+            // difference.
+            if matches!(
+                plan.configuration.source,
+                crate::InstallationSource::LocalRepo { .. }
+            ) {
                 crate::modinfo::validate_dev_manifest(
                     deployment.claimed.folder_name(),
                     path,
+                    &modinfo.text,
                     progress,
                 )?;
             }
+            modinfos.push(modinfo);
         }
 
         for source_path in plan.files.iter().filter_map(|file| file.source_path()) {
@@ -435,7 +458,7 @@ impl Core {
         }
 
         progress.report(Stage::Fetch, "Mod files ready.");
-        Ok(source)
+        Ok((source, modinfos))
     }
 
     /// The Shipped DLL this configuration may deploy instead of compiling one - `None` when
@@ -670,6 +693,13 @@ impl Core {
             }
             tree::remove_if_present(&destination)?;
             tree::copy_selected(&from, &destination, &deployment.selection)?;
+            if let Some(source) = from_source {
+                crate::completion::write_completed(
+                    &source.modinfos,
+                    deployment.claimed,
+                    &destination,
+                )?;
+            }
             progress.report(
                 Stage::Sync,
                 format!("Installed {}.", deployment.claimed.folder_name()),

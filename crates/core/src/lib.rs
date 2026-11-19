@@ -24,12 +24,15 @@
 
 mod boundaries;
 mod checkout;
+mod civ5proj;
 mod claimed;
+mod completion;
 mod configuration;
 mod detect;
 mod error;
 mod fingerprint;
 mod install;
+mod md5;
 mod modinfo;
 mod modpack;
 mod plan;
@@ -38,6 +41,7 @@ mod replaced;
 mod settings;
 mod tree;
 mod versions;
+mod xml_scan;
 
 pub use boundaries::{
     BoundaryError, BuildRequest, CacheState, LocalizedText, LuaJitBuildRequest, MaterializedSource,

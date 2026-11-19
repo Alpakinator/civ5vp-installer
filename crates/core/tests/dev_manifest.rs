@@ -2,10 +2,10 @@
 //!
 //! The scenario is a mod developer's everyday drift: files added to the working tree that
 //! the modinfo does not list yet (the game will silently ignore them), and files deleted
-//! while the modinfo still lists them (the game would refuse the mod). The first must be
-//! said out loud, the second must stop the Deployment before the game is touched - and an
-//! Upstream Cache Version must trigger neither, because a player cannot act on upstream's
-//! manifest hygiene.
+//! while the modinfo still lists them (the game skips them and loads the rest, as every EUI
+//! install shows - ADR-0013). Both must be said out loud and neither stops the Deployment -
+//! and an Upstream Cache Version must trigger neither, because a player cannot act on
+//! upstream's manifest hygiene.
 
 mod support;
 
@@ -14,7 +14,7 @@ use std::path::Path;
 
 use civ5vp_core::{
     BuildConfiguration, Core, DllSource, Eui, Flavor, FortyThreeCivs, InstallConfiguration,
-    InstallError, InstallMode, InstallationSource, LuaJitEngine, ProgressReporter, Version,
+    InstallMode, InstallationSource, LuaJitEngine, ProgressReporter, Version,
 };
 use support::{
     FixtureModpackAssembler, FixtureSourceProvider, GameFixture, MarkerToolchainRunner,
@@ -104,26 +104,38 @@ fn an_extra_unlisted_file_is_deployed_but_called_out() {
     );
 }
 
-/// The breaking case: a listed file is gone, so nothing is deployed and the sentence names
-/// the file and the fix.
+/// A listed file is gone: the game skips the entry and loads the rest of the mod, so the
+/// Deployment goes ahead - and the log file keeps a line naming the file and the mod.
 #[test]
-fn a_missing_listed_file_stops_the_deployment() {
+fn a_missing_listed_file_is_called_out_and_the_deployment_goes_ahead() {
     let game = GameFixture::new();
     let checkout = editable_repo(&game);
     fs::remove_file(checkout.join("(2) Vox Populi/LUA/PlotHelpManager.lua")).unwrap();
-    let before = game.files();
     let core = core_over(&game, &checkout);
 
+    let (sender, receiver) = std::sync::mpsc::channel();
     let plan = core.plan(&local_repo(&checkout), &game.folders()).unwrap();
-    let error = core
-        .execute(&plan, &ProgressReporter::silent())
-        .expect_err("a mod the game would refuse must not be deployed");
+    core.execute(&plan, &ProgressReporter::to_channel(sender))
+        .expect("the game loads a mod whose modinfo lists a file it lacks");
 
-    assert!(matches!(error, InstallError::ModManifestMismatch { .. }));
-    let message = error.user_message();
-    assert!(message.contains("PlotHelpManager.lua"), "got: {message}");
-    assert!(message.contains("(2) Vox Populi"), "got: {message}");
-    assert_eq!(game.files(), before, "rule 7: the game is untouched");
+    assert!(
+        game.game_root()
+            .join("MODS/(2) Vox Populi/Balance Changes/BalanceChanges.sql")
+            .is_file(),
+        "the rest of the mod is deployed"
+    );
+    let kept: Vec<String> = receiver
+        .try_iter()
+        .filter(|event| event.heads_up)
+        .map(|event| event.message)
+        .collect();
+    assert_eq!(
+        kept,
+        [
+            "(2) Vox Populi's .modinfo lists 1 file(s) that are not in the folder, and the game \
+          will skip them: LUA\\PlotHelpManager.lua"
+        ],
+    );
 }
 
 /// An Upstream Cache Version ships what upstream released: the same drift neither warns

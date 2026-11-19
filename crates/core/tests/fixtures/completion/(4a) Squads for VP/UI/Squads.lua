@@ -1,0 +1,2 @@
+-- Squads panel
+include("SquadNames");

@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 use crate::BUILT_DLL_FILE_NAME;
 use crate::boundaries::{CacheState, LocalizedText, ModpackAssembler, ModpackDatabaseJob};
 use crate::claimed::{ClaimedFolder, GameFolders};
+use crate::completion::ManagedModinfo;
 use crate::configuration::InstallConfiguration;
 use crate::error::InstallError;
 use crate::modinfo;
@@ -854,7 +855,11 @@ fn bakeable_mod_roots(folder: &Path) -> Result<(Vec<PathBuf>, ModFacts), Unbakea
 /// The per-mod rules for one mod root: why it cannot be baked in whole, if it cannot, and
 /// otherwise what the cross-mod rules need of it. A Modpack has no Mods menu: only the
 /// database updates and the UI addins the pack hooks reach the game, so a mod asking for
-/// anything else - or naming a file it does not carry - would arrive partly.
+/// anything else would arrive partly.
+///
+/// "Whole" means everything the game would run with the mod activated. A file the `.modinfo`
+/// names that the mod does not carry is not part of that - the game skips it and runs the rest
+/// (ADR-0013) - so it is no reason here; the build says which in the log.
 ///
 /// Whether a hook's target or a dependency will be in the pack is not decided here: that
 /// depends on the rest of the selection ([`settle_selection`]).
@@ -882,19 +887,9 @@ fn why_not_bakeable(root: &Path) -> Result<ModFacts, Unbakeable> {
             "it needs the Mods menu to run its {action} step when it is activated"
         )));
     }
+    // A file the modinfo names but the mod lacks is no reason: the game skips it - a database
+    // update, a `<File>`, an entry point - and runs the rest, and so does the pack (ADR-0013).
     let carries = |relative: &str| modinfo::resolve_case_insensitive(root, relative).is_some();
-    let missing = |relative: &str| {
-        Refused(format!(
-            "its .modinfo lists \"{relative}\", which is not in the mod"
-        ))
-    };
-    if let Some(absent) = modinfo::update_database_entries(&text)
-        .into_iter()
-        .chain(modinfo::listed_files(&text))
-        .find(|relative| !carries(relative))
-    {
-        return Err(missing(&absent));
-    }
     let brought = brought_ui_files();
     let mut facts = ModFacts {
         ids: id.into_iter().collect(),
@@ -909,10 +904,8 @@ fn why_not_bakeable(root: &Path) -> Result<ModFacts, Unbakeable> {
         ..ModFacts::default()
     };
     for point in modinfo::entry_points(&text) {
-        if point.addin_type.eq_ignore_ascii_case(MAP_SCRIPT_ADDIN) {
-            if !carries(&point.file) {
-                return Err(missing(&point.file));
-            }
+        // Pointing at nothing, it does nothing in the game either, whatever its type.
+        if !carries(&point.file) || point.addin_type.eq_ignore_ascii_case(MAP_SCRIPT_ADDIN) {
             continue;
         }
         let Some((ui_file, _)) = UI_ENTRY_FILES
@@ -924,9 +917,6 @@ fn why_not_bakeable(root: &Path) -> Result<ModFacts, Unbakeable> {
                 point.file
             )));
         };
-        if !carries(&point.file) {
-            return Err(missing(&point.file));
-        }
         // InGame, CityView and LeaderHeadRoot come from the game; the other entry files
         // exist in a Modpack only if something in it brings them.
         if brought.contains(ui_file) {
@@ -936,6 +926,42 @@ fn why_not_bakeable(root: &Path) -> Result<ModFacts, Unbakeable> {
     facts.brings = ui_files_brought_by(root, &brought);
     add_shadowing_files(root, &mut facts.files);
     Ok(facts)
+}
+
+/// Keep a line in the log naming the files a picked mod's `.modinfo` lists but the mod does not
+/// carry. Not a refusal - the game skips them, and so does the pack (ADR-0013) - but the first
+/// thing worth knowing when a baked-in mod seems to be missing something.
+fn say_what_the_mod_lacks(name: &str, root: &Path, progress: &ProgressReporter) {
+    let Ok(Some(modinfo)) = modinfo::find(root) else {
+        return;
+    };
+    let Ok(text) = std::fs::read_to_string(&modinfo) else {
+        return;
+    };
+    let mut seen = BTreeSet::new();
+    let lacked: Vec<String> = modinfo::listed_files(&text)
+        .into_iter()
+        .chain(modinfo::update_database_entries(&text))
+        .chain(
+            modinfo::entry_points(&text)
+                .into_iter()
+                .map(|point| point.file),
+        )
+        .filter(|relative| seen.insert(relative.replace('\\', "/").to_ascii_lowercase()))
+        .filter(|relative| modinfo::resolve_case_insensitive(root, relative).is_none())
+        .collect();
+    if lacked.is_empty() {
+        return;
+    }
+    progress.heads_up(
+        Stage::Modpack,
+        format!(
+            "{name}'s .modinfo lists {} file(s) the mod does not have, which the game skips and \
+             so does the Modpack: {}",
+            lacked.len(),
+            modinfo::first_few(&lacked, 5)
+        ),
+    );
 }
 
 /// Which of `wanted` (canonical names) are somewhere under `dir` in a form that takes hooks,
@@ -1000,19 +1026,25 @@ pub(crate) struct AssembledModpack {
     pub(crate) map_script_text: Option<String>,
 }
 
+/// What a Modpack takes from the Installation Source. None of it for a Flavor that takes
+/// nothing from there: the pack is then the player's own mods alone, on the bare game.
+pub(crate) struct PackSource<'a> {
+    pub(crate) root: &'a Path,
+    /// [`crate::Core`]'s resolve of the plan's deployments against `root` - the same list Sync
+    /// uses, so what lands inside the Modpack is exactly what a Mods-mode Deployment would have
+    /// put in MODS.
+    pub(crate) resolved: &'a [(usize, PathBuf)],
+    /// The managed mods' `.modinfo` files as deployed - completed from their `.civ5proj` where
+    /// needed (ADR-0014) - written over each copy before anything reads it.
+    pub(crate) modinfos: &'a [ManagedModinfo],
+    /// The DLL that goes into `(1)`.
+    pub(crate) dll: &'a Path,
+}
+
 /// Assemble the complete Modpack in the App Data Store, ready for Sync to deploy.
-///
-/// `resolved` is [`crate::Core`]'s resolve of the plan's deployments against the
-/// materialized source - the same list Sync uses, so what lands inside the Modpack is
-/// exactly what a Mods-mode Deployment would have put in MODS.
-///
-/// `source_root` and `built_dll` are `None` for a Flavor that takes nothing from the
-/// Installation Source: the pack is then the player's own mods alone, on the bare game.
 pub(crate) fn assemble(
     plan: &Plan,
-    source_root: Option<&Path>,
-    resolved: &[(usize, PathBuf)],
-    built_dll: Option<&Path>,
+    source: Option<PackSource<'_>>,
     work_dir: &Path,
     assembler: &dyn ModpackAssembler,
     progress: &ProgressReporter,
@@ -1029,6 +1061,9 @@ pub(crate) fn assemble(
     // The mods, exactly as a Mods-mode Deployment would have deployed them.
     let mods_dir = stage.join("Mods");
     let mut staged_mods = Vec::new();
+    let (resolved, modinfos) = source.as_ref().map_or((&[][..], &[][..]), |source| {
+        (source.resolved, source.modinfos)
+    });
     for (index, from) in resolved {
         let Some(deployment) = plan.deployments.get(*index) else {
             continue;
@@ -1038,6 +1073,9 @@ pub(crate) fn assemble(
         }
         let destination = mods_dir.join(deployment.claimed.folder_name());
         tree::copy_selected(from, &destination, &deployment.selection)?;
+        // Before the hooks, the map scripts, the selection's IDs and the database updates are
+        // read from it below: all of them go by the modinfo the game would read.
+        crate::completion::write_completed(modinfos, deployment.claimed, &destination)?;
         staged_mods.push(destination);
     }
 
@@ -1127,6 +1165,9 @@ pub(crate) fn assemble(
             tree::copy_file(&from.join(dll), &packed)?;
         }
         progress.report(Stage::Modpack, format!("Baked {name} into the Modpack."));
+        for root in &roots {
+            say_what_the_mod_lacks(name, root, progress);
+        }
         // Each mod root inside the copy - the folder itself, or a nested one - is where
         // its modinfo's paths resolve from.
         for root in roots {
@@ -1138,7 +1179,7 @@ pub(crate) fn assemble(
     // The DLL, where the game's VFS will find it: in `(1) Community Patch`, which every
     // Flavor with a DLL stages. A pack without the Community Patch runs the game's own, or the
     // one a pick brought.
-    if let Some(built_dll) = built_dll {
+    if let Some(built_dll) = source.as_ref().map(|source| source.dll) {
         let dll_home = mods_dir.join(ClaimedFolder::CommunityPatch.folder_name());
         tree::create_dir_all(&dll_home)?;
         tree::copy_file(built_dll, &dll_home.join(BUILT_DLL_FILE_NAME))?;
@@ -1154,7 +1195,7 @@ pub(crate) fn assemble(
     // labels (or hold an older Version's). Bake the selected source's Claimed Files into
     // the dump too: distributing the DLC must not depend on the creator's Text folder.
     // Apply these before mod actions, as the game does, so modmods can override them.
-    let mut updates: Vec<PathBuf> = match source_root {
+    let mut updates: Vec<PathBuf> = match source.as_ref().map(|source| source.root) {
         Some(source_root) => plan
             .files
             .iter()
@@ -1221,8 +1262,8 @@ fn stage_map_scripts(
             if !point.addin_type.eq_ignore_ascii_case(MAP_SCRIPT_ADDIN) {
                 continue;
             }
-            // A missing file is the game's business in a Mods Deployment and was refused
-            // for the player's own picks; a managed mod's dangling entry lists nothing.
+            // A map script the mod lacks lists nothing, as the game lists nothing for it
+            // (ADR-0013); the bake already said so in the log.
             if let Some(path) = modinfo::resolve_case_insensitive(staged, &point.file)
                 && let Some(name) = path.file_name().and_then(|name| name.to_str())
             {
@@ -1539,6 +1580,23 @@ fn stage_ui(
                 continue;
             };
             let stem = file_stem_of(&point.file);
+            // An entry point naming a file its mod lacks loads nothing in the game; hooked by
+            // its stem here, it could load another mod's file of that name instead. (A file
+            // named like a UI entry file was moved into `UI/` above, so it counts as there.)
+            let moved_to_ui = UI_ENTRY_FILES
+                .iter()
+                .any(|(name, _)| name.eq_ignore_ascii_case(&file_name_of(&point.file)));
+            if !moved_to_ui && modinfo::resolve_case_insensitive(staged, &point.file).is_none() {
+                progress.report(
+                    Stage::Modpack,
+                    format!(
+                        "Skipped the {stem} hook - its file {} is not in the mod, and the game \
+                         skips it the same way.",
+                        point.file
+                    ),
+                );
+                continue;
+            }
             if !target.is_file() {
                 progress.report(
                     Stage::Modpack,
@@ -1677,10 +1735,15 @@ fn join_relative(root: &Path, relative: &str) -> PathBuf {
     })
 }
 
+/// The file name of a modinfo path - tolerant of Windows separators.
+fn file_name_of(file: &str) -> String {
+    file.rsplit(['/', '\\']).next().unwrap_or(file).to_owned()
+}
+
 /// The file name without its extension - `Path::file_stem`, tolerant of Windows separators
 /// in modinfo values.
 fn file_stem_of(file: &str) -> String {
-    let name = file.rsplit(['/', '\\']).next().unwrap_or(file);
+    let name = file_name_of(file);
     match name.rsplit_once('.') {
         Some((stem, _)) => stem.to_owned(),
         None => name.to_owned(),

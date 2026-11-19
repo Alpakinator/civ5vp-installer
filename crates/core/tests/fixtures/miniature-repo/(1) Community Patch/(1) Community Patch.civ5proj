@@ -1,1 +1,31 @@
-<Project>ModBuddy project file. Never deployed.</Project>
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The ModBuddy project file. Never deployed. It lists nothing the modinfo beside it lacks, so
+     Modinfo Completion leaves that modinfo as committed. -->
+<Project DefaultTargets="Deploy" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Guid>d1b6328c-ff44-4b0d-aad7-c657f83610cd</Guid>
+    <ModVersion>1</ModVersion>
+    <Name>(1) Community Patch</Name>
+    <ModActions>
+      <Action>
+        <Set>OnModActivated</Set>
+        <Type>UpdateDatabase</Type>
+        <FileName>Core Files/Core Values/DefinesChanges.sql</FileName>
+      </Action>
+    </ModActions>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="Core Files\Core Values\DefinesChanges.sql">
+      <SubType>Lua</SubType>
+      <ImportIntoVFS>False</ImportIntoVFS>
+    </Content>
+    <Content Include="Core Files\Overrides\InGame.lua">
+      <SubType>Lua</SubType>
+      <ImportIntoVFS>True</ImportIntoVFS>
+    </Content>
+    <Content Include="LUA\CityView.lua">
+      <SubType>Lua</SubType>
+      <ImportIntoVFS>True</ImportIntoVFS>
+    </Content>
+  </ItemGroup>
+</Project>
