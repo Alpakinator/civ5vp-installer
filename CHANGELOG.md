@@ -4,6 +4,36 @@ Notable changes, newest first. Versions follow [semantic versioning](https://sem
 and each one is the tag the [releases page](https://github.com/Alpakinator/civ5vp-installer/releases)
 publishes binaries for.
 
+## 0.1.11 - 2026-11-19
+
+### Added
+
+- Community Patch and Vox Populi mods get what their `.civ5proj` lists but their `.modinfo`
+  forgot - a database update, a UI entry point, a file - written in as ModBuddy's build would
+  have. Upstream's `.modinfo` files sometimes fall behind the project: on some commits a
+  modpack failed to build for it, and today's `master` misses `GamecoreInit.lua` and two icon
+  atlases. Only additions, nothing changed or removed, and your own checkout in Dev mode is
+  never written to.
+
+### Changed
+
+- The installer looks like part of Civilization V, in the Vox Populi Civilopedia's style:
+  see-through navy panels over the game's main-menu painting, gold rims lit from above, the
+  Wonder popup's corner fans, hex radio buttons. The painting and the fans are read from your
+  own game at runtime; nothing of the game's is shipped.
+- "What to install" is a dropdown of cards, as in the Civilopedia's search: each with an
+  emblem (CBP, VP, VP over EUI, MOD) on the glass of the game's round buttons, in its icon
+  ring. The header's hex tile wears the same emblem.
+- Section headings have no glow and are a little larger; other text is a touch dimmer, so they
+  stand apart.
+
+### Fixed
+
+- Modpack: a mod whose `.modinfo` lists files it doesn't have is no longer refused. The game
+  skips those files, and so does the modpack now, naming them in the log. This refused
+  Enlightenment Era, Semper Fidelis and Hokath's Proposals, among others. Dev mode no longer
+  stops on such files either.
+
 ## 0.1.10 - 2026-11-02
 
 ### Fixed
